@@ -42,7 +42,7 @@ npm install
 npm run compile
 npx vsce package
 # Install the .vsix in VS Code
-code --install-extension kilo-code-patch-7.3.46.vsix
+code --install-extension kilo-code-patch-*.vsix
 ```
 
 ### Usage
@@ -121,7 +121,7 @@ Re-run `patch.py` after every Kilo Code extension update (the script auto-finds 
 
 ## Versioning
 
-The extension version uses four parts: `{kilo_major}.{kilo_minor}.{kilo_patch}.{patch_revision}` (e.g. `7.3.46.1`). The first three parts mirror the Kilo Code version being patched. The fourth part is the patch revision — bump it each time you republish for the same Kilo Code version. When Kilo Code updates, reset the first three parts and start revision at `1`.
+The extension uses independent semver (e.g. `1.0.0`). The supported Kilo Code version is noted in the header. When Kilo Code updates, verify the patch patterns still work and bump the extension version.
 
 ## How it works
 

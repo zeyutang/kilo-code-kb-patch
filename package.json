@@ -1,16 +1,16 @@
 {
-  "name": "kilo-code-patch",
-  "displayName": "Kilo Code Patch",
+  "name": "kilo-code-kb-patch",
+  "displayName": "Kilo Code KB Patch",
   "description": "Patches Kilo Code keyboard behavior to match Claude Code: Enter for newline, Cmd+Enter to send, smarter permission prompt key routing.",
   "version": "1.0.0",
   "publisher": "zeyutang",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zeyutang/kilo-code-patch.git"
+    "url": "https://github.com/zeyutang/kilo-code-kb-patch.git"
   },
   "bugs": {
-    "url": "https://github.com/zeyutang/kilo-code-patch/issues"
+    "url": "https://github.com/zeyutang/kilo-code-kb-patch/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -33,15 +33,15 @@
     "commands": [
       {
         "command": "kiloCodePatch.apply",
-        "title": "Kilo Code Patch: Apply Patches"
+        "title": "Kilo Code KB Patch: Apply Patches"
       },
       {
         "command": "kiloCodePatch.restore",
-        "title": "Kilo Code Patch: Restore Originals"
+        "title": "Kilo Code KB Patch: Restore Originals"
       },
       {
         "command": "kiloCodePatch.status",
-        "title": "Kilo Code Patch: Show Status"
+        "title": "Kilo Code KB Patch: Show Status"
       }
     ]
   },

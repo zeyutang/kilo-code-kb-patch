@@ -175,7 +175,7 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
   const extPath = findLatestKiloExt();
   if (!extPath) {
     vscode.window.showErrorMessage(
-      "Kilo Code Patch: Could not find kilocode.kilo-code-* in ~/.vscode/extensions/"
+      "Kilo Code KB Patch: Could not find kilocode.kilo-code-* in ~/.vscode/extensions/"
     );
     return;
   }
@@ -237,7 +237,7 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
   if (totalApplied > 0) {
     vscode.window
       .showInformationMessage(
-        `Kilo Code Patch: ${verb} ${totalApplied} patch(es) on v${version}. Reload window to take effect.`,
+        `Kilo Code KB Patch: ${verb} ${totalApplied} patch(es) on v${version}. Reload window to take effect.`,
         "Reload Window"
       )
       .then((choice) => {
@@ -247,7 +247,7 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
       });
   } else {
     vscode.window.showWarningMessage(
-      `Kilo Code Patch: No patches ${action} (${totalSkipped} skipped). v${version}`
+      `Kilo Code KB Patch: No patches ${action} (${totalSkipped} skipped). v${version}`
     );
   }
 }
@@ -282,7 +282,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const version = extractVersion(extPath);
     vscode.window
       .showInformationMessage(
-        `Kilo Code Patch: v${version} detected — apply keyboard patches?`,
+        `Kilo Code KB Patch: v${version} detected — apply keyboard patches?`,
         "Apply",
         "Ignore"
       )

@@ -1,4 +1,4 @@
-# kilo-code-patch
+# Kilo Code KB Patch
 
 Patches [Kilo Code](https://github.com/Kilo-Org/kilocode) VS Code extension keyboard behavior to match [Claude Code](https://github.com/anthropics/claude-code).
 
@@ -42,7 +42,7 @@ npm install
 npm run compile
 npx vsce package
 # Install the .vsix in VS Code
-code --install-extension kilo-code-patch-*.vsix
+code --install-extension kilo-code-kb-patch-*.vsix
 ```
 
 ### Usage
@@ -51,9 +51,9 @@ The extension auto-detects when Kilo Code is installed but unpatched and prompts
 
 Commands available via Command Palette (`Cmd+Shift+P`):
 
-- **Kilo Code Patch: Apply Patches** — Apply all patches
-- **Kilo Code Patch: Restore Originals** — Revert to original behavior
-- **Kilo Code Patch: Show Status** — Show which patches are applied/original/missing
+- **Kilo Code KB Patch: Apply Patches** — Apply all patches
+- **Kilo Code KB Patch: Restore Originals** — Revert to original behavior
+- **Kilo Code KB Patch: Show Status** — Show which patches are applied/original/missing
 
 After applying or restoring, you'll be prompted to reload the VS Code window.
 

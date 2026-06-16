@@ -32,15 +32,15 @@
   "contributes": {
     "commands": [
       {
-        "command": "kiloCodePatch.apply",
+        "command": "kiloCodeKbPatch.apply",
         "title": "Kilo Code KB Patch: Apply Patches"
       },
       {
-        "command": "kiloCodePatch.restore",
+        "command": "kiloCodeKbPatch.restore",
         "title": "Kilo Code KB Patch: Restore Originals"
       },
       {
-        "command": "kiloCodePatch.status",
+        "command": "kiloCodeKbPatch.status",
         "title": "Kilo Code KB Patch: Show Status"
       }
     ]

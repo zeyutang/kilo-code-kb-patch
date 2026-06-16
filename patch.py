@@ -56,14 +56,20 @@ PATCHES = {
         ),
         (
             "H?!1:S(j)",
-            'H?(j?.closest("textarea.prompt-input")?.value?.trim()?(z.key==="Enter"||z.key===" "||z.key==="Escape"&&!z.metaKey&&!z.ctrlKey):!1):S(j)',
-            "Permission L(): when chat has content, skip bare Enter/Space/Escape for chat; "
-            "Cmd+Escape rejects permission",
+            'document.querySelector("textarea.prompt-input")?.value?.trim()?(z.key==="Enter"||z.key===" "||z.key==="Escape"&&!z.metaKey&&!z.ctrlKey):!1',
+            "Permission L(): when textarea has content, skip bare Enter/Space/Escape; "
+            "works regardless of focus",
         ),
         (
             'if(M(z)){N(z,"once");return}',
-            'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&j?.closest("textarea.prompt-input")?.value?.trim()===""){N(z,"once");return}',
-            "Permission $: Space also approves when chat textarea is empty",
+            'if(M(z)||z.key==="Enter"&&z.metaKey&&!document.querySelector("textarea.prompt-input")?.value?.trim()||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!document.querySelector("textarea.prompt-input")?.value?.trim()){N(z,"once");return}',
+            "Permission $: Space also approves when textarea is empty",
+        ),
+        (
+            'R=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
+            'R=z=>{if(z.key==="Escape"&&(z.metaKey||!document.querySelector("textarea.prompt-input")?.value?.trim())){N(z,"reject");return}}',
+            "Permission R: bare Escape rejects only when textarea empty; "
+            "Cmd+Escape always rejects",
         ),
     ],
     "kiloclaw.js": [

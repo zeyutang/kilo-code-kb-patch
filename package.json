@@ -2,7 +2,7 @@
   "name": "kilo-code-patch",
   "displayName": "Kilo Code Patch",
   "description": "Patches Kilo Code keyboard behavior to match Claude Code: Enter for newline, Cmd+Enter to send, smarter permission prompt key routing.",
-  "version": "7.3.46",
+  "version": "7.3.46.2",
   "publisher": "zeyutang",
   "license": "MIT",
   "repository": {

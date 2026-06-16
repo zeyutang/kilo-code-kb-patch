@@ -121,7 +121,7 @@ Re-run `patch.py` after every Kilo Code extension update (the script auto-finds 
 
 ## Versioning
 
-The extension version mirrors the Kilo Code version it supports (e.g. `7.3.46`). When Kilo Code updates, update this extension's version in `package.json` to match and verify the patch patterns still work.
+The extension version uses four parts: `{kilo_major}.{kilo_minor}.{kilo_patch}.{patch_revision}` (e.g. `7.3.46.1`). The first three parts mirror the Kilo Code version being patched. The fourth part is the patch revision — bump it each time you republish for the same Kilo Code version. When Kilo Code updates, reset the first three parts and start revision at `1`.
 
 ## How it works
 

@@ -56,9 +56,9 @@ PATCHES = {
         ),
         (
             "H?!1:S(j)",
-            'H?(j?.closest("textarea.prompt-input")?.value?.trim()?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.metaKey&&!z.ctrlKey):!1):S(j)',
-            "Permission L(): bare Enter/Escape→approve/reject when input empty; "
-            "blocked when input has content",
+            'H?(j?.closest("textarea.prompt-input")?.value?.trim()?(z.key==="Enter"||z.key===" "||z.key==="Escape"&&!z.metaKey&&!z.ctrlKey):!1):S(j)',
+            "Permission L(): when chat has content, skip bare Enter/Space/Escape for chat; "
+            "Cmd+Escape rejects permission",
         ),
         (
             'if(M(z)){N(z,"once");return}',

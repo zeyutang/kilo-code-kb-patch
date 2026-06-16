@@ -2,6 +2,10 @@
 """
 Patch Kilo Code VS Code extension keyboard behavior to match Claude Code.
 
+This is the standalone script. For the VS Code extension version with
+auto-detection, commands, and status checking, see:
+https://github.com/zeyutang/kilo-code-patch
+
 Claude Code behavior (reference):
   - useCtrlEnterToSend=true: Enter=newline, Cmd+Enter=send
   - When chat input is empty + permission visible: chat input is hidden (display:none),

@@ -1,0 +1,58 @@
+{
+  "name": "kilo-code-patch",
+  "displayName": "Kilo Code Patch",
+  "description": "Patches Kilo Code keyboard behavior to match Claude Code: Enter for newline, Cmd+Enter to send, smarter permission prompt key routing.",
+  "version": "7.3.46",
+  "publisher": "zeyutang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zeyutang/kilo-code-patch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zeyutang/kilo-code-patch/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI"
+  ],
+  "keywords": [
+    "kilo code",
+    "kilocode",
+    "keyboard",
+    "enter",
+    "claude code"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "kiloCodePatch.apply",
+        "title": "Kilo Code Patch: Apply Patches"
+      },
+      {
+        "command": "kiloCodePatch.restore",
+        "title": "Kilo Code Patch: Restore Originals"
+      },
+      {
+        "command": "kiloCodePatch.status",
+        "title": "Kilo Code Patch: Show Status"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}

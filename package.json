@@ -1,10 +1,11 @@
 {
   "name": "kilo-code-kb-patch",
   "displayName": "Kilo Code KB Patch",
-  "description": "Patches Kilo Code keyboard behavior to match Claude Code: Enter for newline, Cmd+Enter to send, smarter permission prompt key routing.",
+  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, smarter permission prompt key routing.",
   "version": "1.0.1",
   "publisher": "zeyutang",
   "license": "MIT",
+  "icon": "icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/zeyutang/kilo-code-kb-patch.git"

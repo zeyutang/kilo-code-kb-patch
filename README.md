@@ -1,6 +1,6 @@
-# Kilo Code KB Patch
+# Kilo Code Keyboard Patch
 
-Patches [Kilo Code](https://github.com/Kilo-Org/kilocode) VS Code extension keyboard behavior to match [Claude Code](https://github.com/anthropics/claude-code).
+Patches [Kilo Code](https://github.com/Kilo-Org/kilocode) VS Code extension keyboard behavior.
 
 > **Supported versions** (patterns verified against these):
 >

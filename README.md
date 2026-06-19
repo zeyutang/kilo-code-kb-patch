@@ -2,10 +2,12 @@
 
 Patches [Kilo Code](https://github.com/Kilo-Org/kilocode) VS Code extension keyboard behavior.
 
-> **Supported versions** (patterns verified against these):
+> **Supported versions**:
 >
-> - Kilo Code: **7.3.46** (`kilocode.kilo-code-7.3.46-darwin-arm64`)
-> - Claude Code (reference): **2.1.178** (`anthropic.claude-code-2.1.178-darwin-arm64`)
+> | Kilo Code | KB Patch |
+> | --------- | -------- |
+> | 7.3.50    | 1.1.x    |
+> | 7.3.46    | 1.0.x    |
 
 This repo provides two ways to apply the patches:
 
@@ -17,18 +19,18 @@ This repo provides two ways to apply the patches:
 | Context                           | Key           | Before (Kilo Code default) | After (patched)                        |
 | --------------------------------- | ------------- | -------------------------- | -------------------------------------- |
 | Chat input                        | `Enter`       | Send message               | New line                               |
-| Chat input                        | `Cmd+Enter`   | N/A                        | Send message                           |
+| Chat input                        | `Cmd+Enter`   | --                         | Send message                           |
 | Chat input                        | `Shift+Enter` | New line                   | New line (unchanged)                   |
 | Permission + textarea empty       | `Enter`       | Approve                    | Approve (unchanged)                    |
-| Permission + textarea empty       | `Space`       | N/A                        | Approve (unchanged)                    |
+| Permission + textarea empty       | `Space`       | --                         | Approve                                |
 | Permission + textarea empty       | `Escape`      | Reject                     | Reject (unchanged)                     |
 | Permission + textarea has content | `Enter`       | Approve                    | New line (chat handles it)             |
-| Permission + textarea has content | `Cmd+Enter`   | N/A                        | No action (address prompt first)       |
-| Permission + textarea has content | `Space`       | N/A                        | Space (chat handles it)                |
+| Permission + textarea has content | `Cmd+Enter`   | --                         | No action (address prompt first)       |
+| Permission + textarea has content | `Space`       | --                         | Space (chat handles it)                |
 | Permission + textarea has content | `Escape`      | Reject                     | Dismiss autocomplete (chat handles it) |
-| Permission + textarea has content | `Cmd+Escape`  | N/A                        | Reject permission                      |
+| Permission + textarea has content | `Cmd+Escape`  | --                         | Reject permission                      |
 | KiloClaw chat                     | `Enter`       | Send message               | New line                               |
-| KiloClaw chat                     | `Cmd+Enter`   | N/A                        | Send message                           |
+| KiloClaw chat                     | `Cmd+Enter`   | --                         | Send message                           |
 
 ## VS Code Extension
 
@@ -100,32 +102,6 @@ When the textarea has content, all Enter/Space/Escape keydowns are routed to the
 | `Enter`  | Approve     | Approve            | Approve             |
 | `Space`  | Approve     | Approve            | Approve             |
 | `Escape` | Reject      | Reject             | Reject              |
-
-### Key Architectural Difference
-
-- **Claude Code**: Permission keydown handler is on the container `div` (bubbling phase). Chat input events never reach it since the input is a sibling, not a child. When chat input is empty + permission visible, the input is hidden (`display:none`), so focus shifts to permission buttons and bare Enter/Escape work for approve/reject.
-
-- **Kilo Code (native)**: Permission keydown handler is on `document.addEventListener("keydown", $, true)` -- **capture phase**. It intercepts ALL keydown events before any element handler runs. The `L(z,j)` function decides whether to skip, but for the chat textarea branch it always returned `false` (`H?!1`), meaning bare Enter/Escape always reached the permission handler regardless of chat focus.
-
-- **Kilo Code (patched)**: The `L()` function now checks `document.querySelector("textarea.prompt-input")?.value?.trim()` to determine textarea content regardless of focus. When the textarea has content, it returns `true` for Enter/Space/Escape (the capture-phase handler skips them, chat input handles them). When the textarea is empty, it returns `false` (the permission handler processes Enter/Space/Escape for approve/reject). The `R` handler (element-level Escape on the permission container) is also patched to only reject on bare Escape when the textarea is empty; Cmd+Escape always rejects. This emulates Claude Code's behavior of hiding the input when empty + permission visible.
-
-## Versioning
-
-The extension uses independent semver. The supported Kilo Code version is noted in the header. When Kilo Code updates, verify the patch patterns still work and bump the extension version.
-
-## How it works
-
-The patches do string replacements on the minified JavaScript in Kilo Code's `dist/` directory:
-
-1. **`webview.js` -- Chat input Enter handler**: Changes the condition from `!Pe.shiftKey` (bare Enter) to `Pe.metaKey` (Cmd+Enter) for sending messages.
-
-2. **`webview.js` -- Permission prompt L() function**: The `L(z,j)` function determines whether the global capture-phase keydown handler should skip a key event. The original returns `false` for the chat textarea branch (`H?!1`), meaning the handler never skips. The patch checks textarea content via `document.querySelector("textarea.prompt-input")?.value?.trim()` (focus-independent): when it has text, all Enter/Space/Escape are skipped (chat handles them); when empty, the permission handler processes them normally.
-
-3. **`webview.js` -- Permission $ handler**: Cmd+Enter approves only when textarea is empty; Space also approves when textarea is empty.
-
-4. **`webview.js` -- Permission R handler**: Bare Escape only rejects when textarea is empty; Cmd+Escape always rejects.
-
-5. **`kiloclaw.js` -- KiloClaw chat input**: Same Enter/Cmd+Enter swap for the two KiloClaw chat handlers.
 
 ## Troubleshooting
 

@@ -22,32 +22,25 @@ const PATCHES: FilePatches[] = [
     patches: [
       {
         original:
-          'Pe.key==="Enter"&&!Pe.shiftKey&&!Pe.isComposing&&(Pe.preventDefault(),ve())',
+          'Fm(je)&&!je.shiftKey&&(je.preventDefault(),Ce())',
         patched:
-          'Pe.key==="Enter"&&Pe.metaKey&&!Pe.isComposing&&(Pe.preventDefault(),ve())',
+          'Fm(je)&&je.metaKey&&(je.preventDefault(),Ce())',
         description: "Chat input: Enter→newline, Cmd+Enter→send",
       },
       {
-        original: "H?!1:S(j)",
+        original: "G?!1:S(j)",
         patched:
           'document.querySelector("textarea.prompt-input")?.value?.trim()?(z.key==="Enter"||z.key===" "||z.key==="Escape"&&!z.metaKey&&!z.ctrlKey):!1',
         description:
           "Permission L(): when textarea has content, skip bare Enter/Space/Escape; works regardless of focus",
       },
       {
-        original: 'if(M(z)){N(z,"once");return}',
-        patched:
-          'if(M(z)||z.key==="Enter"&&z.metaKey&&!document.querySelector("textarea.prompt-input")?.value?.trim()||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!document.querySelector("textarea.prompt-input")?.value?.trim()){N(z,"once");return}',
-        description:
-          "Permission $: Space also approves when textarea is empty",
-      },
-      {
         original:
-          'R=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
+          'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
         patched:
-          'R=z=>{if(z.key==="Escape"&&(z.metaKey||!document.querySelector("textarea.prompt-input")?.value?.trim())){N(z,"reject");return}}',
+          'P=z=>{if(z.key==="Escape"&&(z.metaKey||!document.querySelector("textarea.prompt-input")?.value?.trim())){N(z,"reject");return}}',
         description:
-          "Permission R: bare Escape rejects only when textarea empty; Cmd+Escape always rejects",
+          "Permission P: bare Escape rejects only when textarea empty; Cmd+Escape always rejects",
       },
     ],
   },
@@ -56,15 +49,16 @@ const PATCHES: FilePatches[] = [
     patches: [
       {
         original:
-          'Q.key==="Enter"&&!Q.shiftKey?(Q.preventDefault(),y())',
-        patched: 'Q.key==="Enter"&&Q.metaKey?(Q.preventDefault(),y())',
-        description: "KiloClaw chat (pattern 1): Enter→newline, Cmd+Enter→send",
+          'LA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+        patched:
+          'LA(Q)&&Q.metaKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+        description: "KiloClaw edit: Enter→newline, Cmd+Enter→save",
       },
       {
         original:
-          'I.key==="Enter"&&!I.shiftKey&&(I.preventDefault(),v())',
-        patched: 'I.key==="Enter"&&I.metaKey&&(I.preventDefault(),v())',
-        description: "KiloClaw chat (pattern 2): Enter→newline, Cmd+Enter→send",
+          'LA(D)&&!D.shiftKey&&(D.preventDefault(),v())',
+        patched: 'LA(D)&&D.metaKey&&(D.preventDefault(),v())',
+        description: "KiloClaw chat: Enter→newline, Cmd+Enter→send",
       },
     ],
   },
@@ -290,7 +284,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const version = extractVersion(extPath);
     vscode.window
       .showInformationMessage(
-        `Kilo Code KB Patch: v${version} detected — apply keyboard patches?`,
+        `Kilo Code KB Patch: v${version} detected, apply keyboard patches?`,
         "Apply",
         "Ignore"
       )

@@ -50,38 +50,33 @@ def find_latest_ext():
 PATCHES = {
     "webview.js": [
         (
-            'Pe.key==="Enter"&&!Pe.shiftKey&&!Pe.isComposing&&(Pe.preventDefault(),ve())',
-            'Pe.key==="Enter"&&Pe.metaKey&&!Pe.isComposing&&(Pe.preventDefault(),ve())',
+            "Fm(je)&&!je.shiftKey&&(je.preventDefault(),Ce())",
+            "Fm(je)&&je.metaKey&&(je.preventDefault(),Ce())",
             "Chat input: Enter→newline, Cmd+Enter→send",
         ),
         (
-            "H?!1:S(j)",
+            "G?!1:S(j)",
             'document.querySelector("textarea.prompt-input")?.value?.trim()?(z.key==="Enter"||z.key===" "||z.key==="Escape"&&!z.metaKey&&!z.ctrlKey):!1',
             "Permission L(): when textarea has content, skip bare Enter/Space/Escape; "
             "works regardless of focus",
         ),
         (
-            'if(M(z)){N(z,"once");return}',
-            'if(M(z)||z.key==="Enter"&&z.metaKey&&!document.querySelector("textarea.prompt-input")?.value?.trim()||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!document.querySelector("textarea.prompt-input")?.value?.trim()){N(z,"once");return}',
-            "Permission $: Space also approves when textarea is empty",
-        ),
-        (
-            'R=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
-            'R=z=>{if(z.key==="Escape"&&(z.metaKey||!document.querySelector("textarea.prompt-input")?.value?.trim())){N(z,"reject");return}}',
-            "Permission R: bare Escape rejects only when textarea empty; "
+            'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
+            'P=z=>{if(z.key==="Escape"&&(z.metaKey||!document.querySelector("textarea.prompt-input")?.value?.trim())){N(z,"reject");return}}',
+            "Permission P: bare Escape rejects only when textarea empty; "
             "Cmd+Escape always rejects",
         ),
     ],
     "kiloclaw.js": [
         (
-            'Q.key==="Enter"&&!Q.shiftKey?(Q.preventDefault(),y())',
-            'Q.key==="Enter"&&Q.metaKey?(Q.preventDefault(),y())',
-            "KiloClaw chat (pattern 1): Enter→newline, Cmd+Enter→send",
+            'LA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+            'LA(Q)&&Q.metaKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+            "KiloClaw edit: Enter→newline, Cmd+Enter→save",
         ),
         (
-            'I.key==="Enter"&&!I.shiftKey&&(I.preventDefault(),v())',
-            'I.key==="Enter"&&I.metaKey&&(I.preventDefault(),v())',
-            "KiloClaw chat (pattern 2): Enter→newline, Cmd+Enter→send",
+            "LA(D)&&!D.shiftKey&&(D.preventDefault(),v())",
+            "LA(D)&&D.metaKey&&(D.preventDefault(),v())",
+            "KiloClaw chat: Enter→newline, Cmd+Enter→send",
         ),
     ],
 }

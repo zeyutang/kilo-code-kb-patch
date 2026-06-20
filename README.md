@@ -2,12 +2,12 @@
 
 Patches [Kilo Code](https://github.com/Kilo-Org/kilocode) VS Code extension keyboard behavior.
 
-> **Supported versions**:
->
-> | Kilo Code | KB Patch |
-> | --------- | -------- |
-> | 7.3.50    | 1.1.x    |
-> | 7.3.46    | 1.0.x    |
+**Supported versions**:
+
+| Kilo Code Release | KB Patch Version |
+| ----------------- | ---------------- |
+| 7.3.50            | 1.1.x            |
+| 7.3.46            | 1.0.x            |
 
 This repo provides two ways to apply the patches:
 
@@ -16,21 +16,33 @@ This repo provides two ways to apply the patches:
 
 ## What it does
 
-| Context                           | Key           | Before (Kilo Code default) | After (patched)                        |
-| --------------------------------- | ------------- | -------------------------- | -------------------------------------- |
-| Chat input                        | `Enter`       | Send message               | New line                               |
-| Chat input                        | `Cmd+Enter`   | --                         | Send message                           |
-| Chat input                        | `Shift+Enter` | New line                   | New line (unchanged)                   |
-| Permission + textarea empty       | `Enter`       | Approve                    | Approve (unchanged)                    |
-| Permission + textarea empty       | `Space`       | --                         | Approve                                |
-| Permission + textarea empty       | `Escape`      | Reject                     | Reject (unchanged)                     |
-| Permission + textarea has content | `Enter`       | Approve                    | New line (chat handles it)             |
-| Permission + textarea has content | `Cmd+Enter`   | --                         | No action (address prompt first)       |
-| Permission + textarea has content | `Space`       | --                         | Space (chat handles it)                |
-| Permission + textarea has content | `Escape`      | Reject                     | Dismiss autocomplete (chat handles it) |
-| Permission + textarea has content | `Cmd+Escape`  | --                         | Reject permission                      |
-| KiloClaw chat                     | `Enter`       | Send message               | New line                               |
-| KiloClaw chat                     | `Cmd+Enter`   | --                         | Send message                           |
+### Unified keyboard behaviors
+
+These apply everywhere -- chat input, permission prompts, and KiloClaw edit/chat panels:
+
+| Key            | Before (Kilo Code) | After (patched)                            |
+| -------------- | ------------------ | ------------------------------------------ |
+| `Enter`        | Send / Approve     | **New line** (Approve when textarea empty) |
+| `Cmd+Enter`    | Send / Save        | **Send / Approve / Save**                  |
+| `Shift+Enter`  | New line           | New line (unchanged)                       |
+| `Shift+Escape` | Reject / Abort     | **Reject / Abort** (always)                |
+| `Escape`       | Reject / Abort     | Reject / Abort only when textarea is empty |
+
+### Permission prompt scenarios
+
+When a permission prompt is visible, the textarea content determines which keys are routed to the chat input vs the permission buttons:
+
+| Key            | Textarea empty | Textarea has content                 |
+| -------------- | -------------- | ------------------------------------ |
+| `Enter`        | Approve        | **New line** (chat handles it)       |
+| `Space`        | Approve        | **Space** (chat handles it)          |
+| `Escape`       | Reject         | **Dismiss autocomplete only** (chat) |
+| `Cmd+Enter`    | Approve        | **Approve** (without submitting)     |
+| `Shift+Escape` | Reject         | **Reject**                           |
+
+Whitespace counts as content, so a textarea with only spaces or newlines routes keys to the chat input.
+
+KB patch uses `Shift+Escape` instead of `Cmd+Escape` to avoid clashes with Claude Code's quick-launch shortcut.
 
 ## VS Code Extension
 
@@ -70,38 +82,39 @@ Then reload the VS Code window: `Cmd+Shift+P` → `Developer: Reload Window`
 
 Re-run `patch.py` after every Kilo Code extension update (the script auto-finds the latest version).
 
-## Detailed Behavior Comparison
+## Detailed Behavior Comparison to Claude Code
 
 ### Chat Input (no permission prompt)
 
-| Key           | Claude Code (default)      | Claude Code (`useCtrlEnterToSend=true`) | Kilo Code (native)         | Kilo Code (patched) |
-| ------------- | -------------------------- | --------------------------------------- | -------------------------- | ------------------- |
-| `Enter`       | Send                       | Newline                                 | Send                       | **Newline**         |
-| `Shift+Enter` | Newline                    | Newline                                 | Newline                    | Newline             |
-| `Cmd+Enter`   | --                         | Send                                    | --                         | **Send**            |
-| `Escape`      | Dismiss autocomplete/abort | Same                                    | Dismiss autocomplete/abort | Same                |
+| Key           | Claude Code (default)      | Claude Code (`useCtrlEnterToSend=true`) | Kilo Code (native)         | Kilo Code (patched)                        |
+| ------------- | -------------------------- | --------------------------------------- | -------------------------- | ------------------------------------------ |
+| `Enter`       | Send                       | Newline                                 | Send                       | **Newline**                                |
+| `Shift+Enter` | Newline                    | Newline                                 | Newline                    | Newline                                    |
+| `Cmd+Enter`   | --                         | Send                                    | Send                       | **Send**                                   |
+| `Escape`      | Dismiss autocomplete/abort | Same                                    | Dismiss autocomplete/abort | Dismiss autocomplete / abort only if empty |
 
 ### Permission Prompt -- Textarea Has Content
 
-When the textarea has content, all Enter/Space/Escape keydowns are routed to the chat input. The permission prompt must be addressed first (via mouse click or Cmd+Escape).
+When the textarea has content, bare Enter/Space/Escape keydowns are routed to the chat input. Cmd+Enter approves, Shift+Escape rejects.
 
-| Key          | Claude Code                                                    | Kilo Code (native) | Kilo Code (patched)                  |
-| ------------ | -------------------------------------------------------------- | ------------------ | ------------------------------------ |
-| `Enter`      | Wait for a short period before switching focus, if stop typing | Approve            | **Newline** (chat handles it)        |
-| `Cmd+Enter`  | --                                                             | --                 | **No action** (address prompt first) |
-| `Space`      | --                                                             | --                 | **Space** (chat handles it)          |
-| `Escape`     | Wait for a short period before switching focus, if stop typing | Reject             | **Dismiss autocomplete only** (chat) |
-| `Cmd+Escape` | --                                                             | --                 | **Reject**                           |
+| Key            | Claude Code                                                    | Kilo Code (native) | Kilo Code (patched)                  |
+| -------------- | -------------------------------------------------------------- | ------------------ | ------------------------------------ |
+| `Enter`        | Wait for a short period before switching focus, if stop typing | Approve            | **Newline** (chat handles it)        |
+| `Cmd+Enter`    | --                                                             | --                 | **Approve**                          |
+| `Space`        | --                                                             | --                 | **Space** (chat handles it)          |
+| `Escape`       | Wait for a short period before switching focus, if stop typing | Reject             | **Dismiss autocomplete only** (chat) |
+| `Shift+Escape` | --                                                             | Reject             | **Reject**                           |
 
 ### Permission Prompt -- Textarea Empty
 
 (Claude Code hides the input in this case, so focus is on permission buttons)
 
-| Key      | Claude Code | Kilo Code (native) | Kilo Code (patched) |
-| -------- | ----------- | ------------------ | ------------------- |
-| `Enter`  | Approve     | Approve            | Approve             |
-| `Space`  | Approve     | Approve            | Approve             |
-| `Escape` | Reject      | Reject             | Reject              |
+| Key            | Claude Code | Kilo Code (native) | Kilo Code (patched) |
+| -------------- | ----------- | ------------------ | ------------------- |
+| `Enter`        | Approve     | Approve            | Approve             |
+| `Space`        | Approve     | --                 | Approve             |
+| `Escape`       | Reject      | Reject             | Reject              |
+| `Shift+Escape` | --          | Reject             | Reject              |
 
 ## Troubleshooting
 

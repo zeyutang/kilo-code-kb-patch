@@ -28,9 +28,17 @@ const PATCHES: FilePatches[] = [
         description: "Chat input: Enter→newline, Cmd+Enter→send",
       },
       {
+        original:
+          'if(je.key==="Escape"&&ge()){je.preventDefault(),je.stopPropagation(),t.abort();return}',
+        patched:
+          'if(je.key==="Escape"&&ge()&&(je.shiftKey||!je.target?.value)){je.preventDefault(),je.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty; Shift+Escape always aborts",
+      },
+      {
         original: "G?!1:S(j)",
         patched:
-          'document.querySelector("textarea.prompt-input")?.value?.trim()?(z.key==="Enter"||z.key===" "||z.key==="Escape"&&!z.metaKey&&!z.ctrlKey):!1',
+          'z.target?.value?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.shiftKey&&!z.ctrlKey):!1',
         description:
           "Permission L(): when textarea has content, skip bare Enter/Space/Escape; works regardless of focus",
       },
@@ -38,9 +46,25 @@ const PATCHES: FilePatches[] = [
         original:
           'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
         patched:
-          'P=z=>{if(z.key==="Escape"&&(z.metaKey||!document.querySelector("textarea.prompt-input")?.value?.trim())){N(z,"reject");return}}',
+          'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value)){N(z,"reject");return}}',
         description:
-          "Permission P: bare Escape rejects only when textarea empty; Cmd+Escape always rejects",
+          "Permission P: bare Escape rejects only when textarea empty; Shift+Escape always rejects",
+      },
+      {
+        original:
+          'if(M(z)){N(z,"once");return}}};',
+        patched:
+          'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!z.target?.value||z.key==="Enter"&&z.metaKey){N(z,"once");return}if(z.key==="Escape"&&z.shiftKey){N(z,"reject");return}}};',
+        description:
+          "Permission O: Cmd+Enter approves always; Space approves when empty; Shift+Escape rejects always",
+      },
+      {
+        original:
+          'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||(ee.preventDefault(),t.abort())',
+        patched:
+          'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||!ee.shiftKey&&ee.target?.value||(ee.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort; Shift+Escape aborts",
       },
     ],
   },

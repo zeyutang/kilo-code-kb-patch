@@ -9,22 +9,25 @@ https://github.com/zeyutang/kilo-code-kb-patch
 Claude Code behavior (reference):
   - useCtrlEnterToSend=true: Enter=newline, Cmd+Enter=send
   - When chat input is empty + permission visible: chat input is hidden (display:none),
-    focus shifts to permission buttons → bare Enter approves, Escape rejects
+    focus shifts to permission buttons -> bare Enter approves, Escape rejects
   - When chat input has content + permission visible: chat input stays visible,
-    bare Enter→newline, bare Escape→dismiss popups, NOT approve/reject
+    bare Enter->newline, bare Escape->dismiss popups, NOT approve/reject
   - Permission handler is on container div (bubbling), so chat input events
     never reach it (siblings, not parent-child)
 
 This patch applies to Kilo Code:
   1. Chat input: Enter=newline, Cmd+Enter=send (always, like useCtrlEnterToSend=true)
   2. Permission prompt behavior depends on chat textarea content:
-     - Textarea EMPTY + focused: bare Enter approves, Escape rejects
+     - Textarea EMPTY (or whitespace-only) + focused: bare Enter approves, Escape rejects
        (matches Claude Code where empty input is hidden + focus on permission)
-     - Textarea HAS CONTENT + focused: bare Enter/Space/Escape go to chat
+     - Textarea HAS NON-WHITESPACE CONTENT + focused: bare Enter/Space/Escape go to chat
        (newline/typing/dismiss), NOT to permission handler
-       Cmd+Enter CAN approve, Cmd+Escape CAN reject
+       Cmd+Enter CAN approve, Shift+Escape CAN reject
      - Textarea NOT focused: bare Enter approves, Escape rejects (unchanged)
   3. KiloClaw chat: same Enter/Cmd+Enter swap
+
+Whitespace-only input (spaces or newlines) is treated as empty, so keys route to
+the permission buttons rather than the chat input.
 
 Key difference: Claude Code hides the input when empty+permission visible.
 Kilo Code doesn't, so we check textarea content to emulate the same behavior.
@@ -47,53 +50,65 @@ def find_latest_ext():
     return dirs[-1]
 
 
+# Each patch is (original, patched, description, previous).
+# `previous` is the prior patched form (for upgrading already-patched installs);
+# use None when the patch has no prior form to migrate from.
 PATCHES = {
     "webview.js": [
         (
             "Fm(je)&&!je.shiftKey&&(je.preventDefault(),Ce())",
             "Fm(je)&&je.metaKey&&(je.preventDefault(),Ce())",
-            "Chat input: Enter→newline, Cmd+Enter→send",
+            "Chat input: Enter->newline, Cmd+Enter->send",
+            None,
         ),
         (
             'if(je.key==="Escape"&&ge()){je.preventDefault(),je.stopPropagation(),t.abort();return}',
-            'if(je.key==="Escape"&&ge()&&(je.shiftKey||!je.target?.value)){je.preventDefault(),je.stopPropagation(),t.abort();return}',
-            "Chat Escape: bare Escape aborts when textarea empty; "
+            'if(je.key==="Escape"&&ge()&&(je.shiftKey||!je.target?.value?.trim())){je.preventDefault(),je.stopPropagation(),t.abort();return}',
+            "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; "
             "Shift+Escape always aborts",
+            'if(je.key==="Escape"&&ge()&&(je.shiftKey||!je.target?.value)){je.preventDefault(),je.stopPropagation(),t.abort();return}',
         ),
         (
             "G?!1:S(j)",
+            'z.target?.value?.trim()?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.shiftKey&&!z.ctrlKey):!1',
+            "Permission L(): when textarea has non-whitespace content, skip bare "
+            "Enter/Space/Escape; works regardless of focus",
             'z.target?.value?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.shiftKey&&!z.ctrlKey):!1',
-            "Permission L(): when textarea has content, skip bare Enter/Space/Escape; "
-            "works regardless of focus",
         ),
         (
             'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
-            'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value)){N(z,"reject");return}}',
-            "Permission P: bare Escape rejects only when textarea empty; "
+            'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value?.trim())){N(z,"reject");return}}',
+            "Permission P: bare Escape rejects only when textarea empty/whitespace-only; "
             "Shift+Escape always rejects",
+            'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value)){N(z,"reject");return}}',
         ),
         (
             'if(M(z)){N(z,"once");return}}};',
+            'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!z.target?.value?.trim()||z.key==="Enter"&&z.metaKey){N(z,"once");return}if(z.key==="Escape"&&z.shiftKey){N(z,"reject");return}}};',
+            "Permission O: Cmd+Enter approves always; Space approves when "
+            "empty/whitespace-only; Shift+Escape rejects always",
             'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!z.target?.value||z.key==="Enter"&&z.metaKey){N(z,"once");return}if(z.key==="Escape"&&z.shiftKey){N(z,"reject");return}}};',
-            "Permission O: Cmd+Enter approves always; Space approves when empty; "
-            "Shift+Escape rejects always",
         ),
         (
             'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||(ee.preventDefault(),t.abort())',
+            'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||!ee.shiftKey&&ee.target?.value?.trim()||(ee.preventDefault(),t.abort())',
+            "Document Escape: bare Escape does not abort when textarea has "
+            "non-whitespace content; Shift+Escape aborts",
             'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||!ee.shiftKey&&ee.target?.value||(ee.preventDefault(),t.abort())',
-            "Document Escape: bare Escape does not abort; Shift+Escape aborts",
         ),
     ],
     "kiloclaw.js": [
         (
             'LA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
             'LA(Q)&&Q.metaKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
-            "KiloClaw edit: Enter→newline, Cmd+Enter→save",
+            "KiloClaw edit: Enter->newline, Cmd+Enter->save",
+            None,
         ),
         (
             "LA(D)&&!D.shiftKey&&(D.preventDefault(),v())",
             "LA(D)&&D.metaKey&&(D.preventDefault(),v())",
-            "KiloClaw chat: Enter→newline, Cmd+Enter→send",
+            "KiloClaw chat: Enter->newline, Cmd+Enter->send",
+            None,
         ),
     ],
 }
@@ -106,12 +121,19 @@ def apply_patches(path, patches):
     original = content
     changes = []
 
-    for old, new, desc in patches:
+    for old, new, desc, prev in patches:
+        if new in content:
+            changes.append(f"SKIP: {desc} (already patched)")
+            continue
         if old in content:
             content = content.replace(old, new)
             changes.append(desc)
-        else:
-            changes.append(f"SKIP: {desc} (pattern not found)")
+            continue
+        if prev and prev in content:
+            content = content.replace(prev, new)
+            changes.append(f"{desc} (upgraded)")
+            continue
+        changes.append(f"SKIP: {desc} (pattern not found)")
 
     if content != original:
         with open(path, "w") as f:
@@ -130,12 +152,19 @@ def restore_patches(path, patches):
     original = content
     changes = []
 
-    for old, new, desc in patches:
+    for old, new, desc, prev in patches:
         if new in content:
             content = content.replace(new, old)
             changes.append(f"Reverted: {desc}")
-        else:
-            changes.append(f"SKIP: {desc} (patched pattern not found)")
+            continue
+        if prev and prev in content:
+            content = content.replace(prev, old)
+            changes.append(f"Reverted: {desc} (previous version)")
+            continue
+        if old in content:
+            changes.append(f"SKIP: {desc} (already original)")
+            continue
+        changes.append(f"SKIP: {desc} (patched pattern not found)")
 
     if content != original:
         with open(path, "w") as f:
@@ -173,7 +202,7 @@ def main():
 
     print()
     print("Done! Reload the VS Code window for changes to take effect:")
-    print("  Cmd+Shift+P → 'Developer: Reload Window'")
+    print("  Cmd+Shift+P -> 'Developer: Reload Window'")
 
 
 if __name__ == "__main__":

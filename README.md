@@ -6,7 +6,7 @@ Patches [Kilo Code](https://github.com/Kilo-Org/kilocode) VS Code extension keyb
 
 | Kilo Code Release | KB Patch Version |
 | ----------------- | ---------------- |
-| 7.3.50            | 1.1.x            |
+| 7.3.50+           | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
 This repo provides two ways to apply the patches:
@@ -40,7 +40,7 @@ When a permission prompt is visible, the textarea content determines which keys 
 | `Cmd+Enter`    | Approve        | **Approve** (without submitting)     |
 | `Shift+Escape` | Reject         | **Reject**                           |
 
-Whitespace counts as content, so a textarea with only spaces or newlines routes keys to the chat input.
+Whitespace does **not** count as content, so a textarea with only spaces or newlines is treated as empty and keys route to the permission buttons.
 
 KB patch uses `Shift+Escape` instead of `Cmd+Escape` to avoid clashes with Claude Code's quick-launch shortcut.
 
@@ -95,7 +95,7 @@ Re-run `patch.py` after every Kilo Code extension update (the script auto-finds 
 
 ### Permission Prompt -- Textarea Has Content
 
-When the textarea has content, bare Enter/Space/Escape keydowns are routed to the chat input. Cmd+Enter approves, Shift+Escape rejects.
+When the textarea has non-whitespace content, bare Enter/Space/Escape keydowns are routed to the chat input. Cmd+Enter approves, Shift+Escape rejects. (Whitespace-only input is treated as empty -- see below.)
 
 | Key            | Claude Code                                                    | Kilo Code (native) | Kilo Code (patched)                  |
 | -------------- | -------------------------------------------------------------- | ------------------ | ------------------------------------ |
@@ -107,7 +107,7 @@ When the textarea has content, bare Enter/Space/Escape keydowns are routed to th
 
 ### Permission Prompt -- Textarea Empty
 
-(Claude Code hides the input in this case, so focus is on permission buttons)
+A textarea that is empty or contains only whitespace is treated as empty. (Claude Code hides the input in this case, so focus is on permission buttons)
 
 | Key            | Claude Code | Kilo Code (native) | Kilo Code (patched) |
 | -------------- | ----------- | ------------------ | ------------------- |

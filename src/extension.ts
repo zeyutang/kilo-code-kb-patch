@@ -8,6 +8,7 @@ const EXT_DIR = path.join(os.homedir(), ".vscode/extensions");
 interface PatchDef {
   original: string;
   patched: string;
+  previous?: string;
   description: string;
 }
 
@@ -30,41 +31,51 @@ const PATCHES: FilePatches[] = [
       {
         original:
           'if(je.key==="Escape"&&ge()){je.preventDefault(),je.stopPropagation(),t.abort();return}',
-        patched:
+        previous:
           'if(je.key==="Escape"&&ge()&&(je.shiftKey||!je.target?.value)){je.preventDefault(),je.stopPropagation(),t.abort();return}',
+        patched:
+          'if(je.key==="Escape"&&ge()&&(je.shiftKey||!je.target?.value?.trim())){je.preventDefault(),je.stopPropagation(),t.abort();return}',
         description:
-          "Chat Escape: bare Escape aborts when textarea empty; Shift+Escape always aborts",
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts",
       },
       {
         original: "G?!1:S(j)",
-        patched:
+        previous:
           'z.target?.value?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.shiftKey&&!z.ctrlKey):!1',
+        patched:
+          'z.target?.value?.trim()?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.shiftKey&&!z.ctrlKey):!1',
         description:
-          "Permission L(): when textarea has content, skip bare Enter/Space/Escape; works regardless of focus",
+          "Permission L(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus",
       },
       {
         original:
           'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
-        patched:
+        previous:
           'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value)){N(z,"reject");return}}',
+        patched:
+          'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value?.trim())){N(z,"reject");return}}',
         description:
-          "Permission P: bare Escape rejects only when textarea empty; Shift+Escape always rejects",
+          "Permission P: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects",
       },
       {
         original:
           'if(M(z)){N(z,"once");return}}};',
-        patched:
+        previous:
           'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!z.target?.value||z.key==="Enter"&&z.metaKey){N(z,"once");return}if(z.key==="Escape"&&z.shiftKey){N(z,"reject");return}}};',
+        patched:
+          'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!z.target?.value?.trim()||z.key==="Enter"&&z.metaKey){N(z,"once");return}if(z.key==="Escape"&&z.shiftKey){N(z,"reject");return}}};',
         description:
-          "Permission O: Cmd+Enter approves always; Space approves when empty; Shift+Escape rejects always",
+          "Permission O: Cmd+Enter approves always; Space approves when empty/whitespace-only; Shift+Escape rejects always",
       },
       {
         original:
           'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||(ee.preventDefault(),t.abort())',
-        patched:
+        previous:
           'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||!ee.shiftKey&&ee.target?.value||(ee.preventDefault(),t.abort())',
+        patched:
+          'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||!ee.shiftKey&&ee.target?.value?.trim()||(ee.preventDefault(),t.abort())',
         description:
-          "Document Escape: bare Escape does not abort; Shift+Escape aborts",
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts",
       },
     ],
   },
@@ -118,18 +129,21 @@ function applyPatches(filePath: string, patches: PatchDef[]): PatchResult {
   const skipped: string[] = [];
 
   for (const p of patches) {
-    if (modified.includes(p.original) && p.patched !== p.original) {
-      if (modified.includes(p.patched)) {
-        skipped.push(`${p.description} (already patched)`);
-        continue;
-      }
+    if (modified.includes(p.patched)) {
+      skipped.push(`${p.description} (already patched)`);
+      continue;
+    }
+    if (modified.includes(p.original)) {
       modified = modified.replace(p.original, p.patched);
       applied.push(p.description);
-    } else if (modified.includes(p.patched)) {
-      skipped.push(`${p.description} (already patched)`);
-    } else {
-      skipped.push(`${p.description} (pattern not found)`);
+      continue;
     }
+    if (p.previous && modified.includes(p.previous)) {
+      modified = modified.replace(p.previous, p.patched);
+      applied.push(`${p.description} (upgraded)`);
+      continue;
+    }
+    skipped.push(`${p.description} (pattern not found)`);
   }
 
   if (modified !== content) {
@@ -155,11 +169,18 @@ function restorePatches(filePath: string, patches: PatchDef[]): PatchResult {
     if (modified.includes(p.patched)) {
       modified = modified.replace(p.patched, p.original);
       reverted.push(p.description);
-    } else if (modified.includes(p.original)) {
-      skipped.push(`${p.description} (already original)`);
-    } else {
-      skipped.push(`${p.description} (neither pattern found)`);
+      continue;
     }
+    if (p.previous && modified.includes(p.previous)) {
+      modified = modified.replace(p.previous, p.original);
+      reverted.push(`${p.description} (previous version)`);
+      continue;
+    }
+    if (modified.includes(p.original)) {
+      skipped.push(`${p.description} (already original)`);
+      continue;
+    }
+    skipped.push(`${p.description} (neither pattern found)`);
   }
 
   if (modified !== content) {
@@ -187,6 +208,8 @@ function checkStatus(
   for (const p of patches) {
     if (content.includes(p.patched)) {
       patched.push(p.description);
+    } else if (p.previous && content.includes(p.previous)) {
+      patched.push(`${p.description} (previous version)`);
     } else if (content.includes(p.original)) {
       original.push(p.description);
     } else {
@@ -301,7 +324,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const content = fs.readFileSync(webviewPath, "utf8");
   const needsPatching = PATCHES[0].patches.some(
-    (p) => content.includes(p.original) && !content.includes(p.patched)
+    (p) =>
+      !content.includes(p.patched) &&
+      (content.includes(p.original) ||
+        (p.previous && content.includes(p.previous)))
   );
 
   if (needsPatching) {

@@ -55,45 +55,88 @@ def find_latest_ext():
 # use None when the patch has no prior form to migrate from.
 PATCHES = {
     "webview.js": [
+        # --- v7.3.63+ patterns (new minified symbols: $m, Ne, Oa, Fe, z, q, H, j, O) ---
+        (
+            "$m(Ne)&&!Ne.shiftKey&&(Ne.preventDefault(),Oa())",
+            "$m(Ne)&&Ne.metaKey&&(Ne.preventDefault(),Oa())",
+            "Chat input: Enter->newline, Cmd+Enter->send (v7.3.63+)",
+            None,
+        ),
+        (
+            'if(Ne.key==="Escape"&&Fe()){Ne.preventDefault(),Ne.stopPropagation(),t.abort();return}',
+            'if(Ne.key==="Escape"&&Fe()&&(Ne.shiftKey||!Ne.target?.value?.trim())){Ne.preventDefault(),Ne.stopPropagation(),t.abort();return}',
+            "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; "
+            "Shift+Escape always aborts (v7.3.63+)",
+            None,
+        ),
+        (
+            "K?!1:L(H)",
+            'K?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:L(H)',
+            "Permission P(): when textarea has non-whitespace content, skip bare "
+            "Enter/Space/Escape; works regardless of focus (v7.3.63+)",
+            None,
+        ),
+        (
+            'j=q=>{if(q.key==="Escape"){$(q,"reject");return}}',
+            'j=q=>{if(q.key==="Escape"&&(q.shiftKey||!q.target?.value?.trim())){$(q,"reject");return}}',
+            "Permission j: bare Escape rejects only when textarea empty/whitespace-only; "
+            "Shift+Escape always rejects (v7.3.63+)",
+            None,
+        ),
+        (
+            'if(z(q)){$(q,"once");return}}};',
+            'if(z(q)||q.key===" "&&!q.metaKey&&!q.ctrlKey&&!q.target?.value?.trim()||q.key==="Enter"&&q.metaKey){$(q,"once");return}}};',
+            "Permission O: Cmd+Enter approves always; Space approves when "
+            "empty/whitespace-only (v7.3.63+)",
+            None,
+        ),
+        (
+            'Z.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Z.defaultPrevented||(Z.preventDefault(),t.abort())',
+            'Z.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Z.defaultPrevented||!Z.shiftKey&&Z.target?.value?.trim()||(Z.preventDefault(),t.abort())',
+            "Document Escape: bare Escape does not abort when textarea has "
+            "non-whitespace content; Shift+Escape aborts (v7.3.63+)",
+            None,
+        ),
+        # --- v7.3.50-7.3.54 patterns (legacy minified symbols: Fm, je, Ce, ge, G, S, P, M, N, ee) ---
         (
             "Fm(je)&&!je.shiftKey&&(je.preventDefault(),Ce())",
             "Fm(je)&&je.metaKey&&(je.preventDefault(),Ce())",
-            "Chat input: Enter->newline, Cmd+Enter->send",
+            "Chat input: Enter->newline, Cmd+Enter->send (v7.3.50-54)",
             None,
         ),
         (
             'if(je.key==="Escape"&&ge()){je.preventDefault(),je.stopPropagation(),t.abort();return}',
             'if(je.key==="Escape"&&ge()&&(je.shiftKey||!je.target?.value?.trim())){je.preventDefault(),je.stopPropagation(),t.abort();return}',
             "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; "
-            "Shift+Escape always aborts",
+            "Shift+Escape always aborts (v7.3.50-54)",
             'if(je.key==="Escape"&&ge()&&(je.shiftKey||!je.target?.value)){je.preventDefault(),je.stopPropagation(),t.abort();return}',
         ),
         (
             "G?!1:S(j)",
             'z.target?.value?.trim()?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.shiftKey&&!z.ctrlKey):!1',
             "Permission L(): when textarea has non-whitespace content, skip bare "
-            "Enter/Space/Escape; works regardless of focus",
+            "Enter/Space/Escape; works regardless of focus (v7.3.50-54)",
             'z.target?.value?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.shiftKey&&!z.ctrlKey):!1',
         ),
         (
             'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
             'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value?.trim())){N(z,"reject");return}}',
             "Permission P: bare Escape rejects only when textarea empty/whitespace-only; "
-            "Shift+Escape always rejects",
+            "Shift+Escape always rejects (v7.3.50-54)",
             'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value)){N(z,"reject");return}}',
         ),
         (
             'if(M(z)){N(z,"once");return}}};',
             'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!z.target?.value?.trim()||z.key==="Enter"&&z.metaKey){N(z,"once");return}if(z.key==="Escape"&&z.shiftKey){N(z,"reject");return}}};',
             "Permission O: Cmd+Enter approves always; Space approves when "
-            "empty/whitespace-only; Shift+Escape rejects always",
+            "empty/whitespace-only; Shift+Escape rejects always (v7.3.50-54)",
             'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!z.target?.value||z.key==="Enter"&&z.metaKey){N(z,"once");return}if(z.key==="Escape"&&z.shiftKey){N(z,"reject");return}}};',
         ),
         (
             'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||(ee.preventDefault(),t.abort())',
             'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||!ee.shiftKey&&ee.target?.value?.trim()||(ee.preventDefault(),t.abort())',
             "Document Escape: bare Escape does not abort when textarea has "
-            "non-whitespace content; Shift+Escape aborts",
+            "non-whitespace content; Shift+Escape aborts (v7.3.50-54)",
             'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||!ee.shiftKey&&ee.target?.value||(ee.preventDefault(),t.abort())',
         ),
     ],

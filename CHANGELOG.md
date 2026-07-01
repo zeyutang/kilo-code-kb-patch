@@ -4,8 +4,14 @@
 
 | Kilo Code Release | KB Patch Version |
 | ----------------- | ---------------- |
-| 7.3.50+           | 1.1.x            |
+| 7.3.63+           | 1.2.x            |
+| 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
+
+## 1.2.0
+
+- Retarget chat, permission, and document-level patterns to Kilo Code 7.3.63's new minified symbols (`$m`, `Ne`, `Oa`, `Fe`, `z`, `q`, `j`, `O`)
+- Keep legacy 7.3.50-7.3.54 patterns for backward compatibility
 
 ## 1.1.2
 

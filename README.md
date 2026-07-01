@@ -6,7 +6,8 @@ Patches [Kilo Code](https://github.com/Kilo-Org/kilocode) VS Code extension keyb
 
 | Kilo Code Release | KB Patch Version |
 | ----------------- | ---------------- |
-| 7.3.50+           | 1.1.x            |
+| 7.3.63+           | 1.2.x            |
+| 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
 This repo provides two ways to apply the patches:

@@ -89,12 +89,12 @@ Rebuild and reinstall from source without bumping the version or editing `packag
 
 ```bash
 # Build a local .vsix and (re)install it (no version bump, no package*.json changes)
-rm -f kilo-code-kb-patch-*.vsix   # remove any old local .vsix
 npm ci                            # install from the lockfile (writes only node_modules/)
 npm run compile                   # rebuild out/ (optional: vsce compiles too)
 npx @vscode/vsce package          # build kilo-code-kb-patch-<version>.vsix
 mv kilo-code-kb-patch-*.vsix kilo-code-kb-patch-latest.vsix   # fixed, version-independent name
 code --install-extension kilo-code-kb-patch-latest.vsix --force
+rm -f kilo-code-kb-patch-*.vsix
 ```
 
 `--force` reinstalls even when the version is unchanged. Then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`) so the reinstalled extension re-applies the patch.

@@ -168,6 +168,168 @@ const PATCHES: FilePatches[] = [
   },
 ];
 
+// A single logical behavior can have several minified variants (one per Kilo
+// version). Collapse them so the status view shows each behavior once, using a
+// version-agnostic label, rather than one line per per-version variant.
+const FEATURE_ORDER = [
+  "chat-input",
+  "chat-escape",
+  "perm-keys",
+  "perm-escape",
+  "perm-approve",
+  "doc-escape",
+  "kiloclaw-edit",
+  "kiloclaw-chat",
+] as const;
+
+const FEATURE_LABELS: Record<string, string> = {
+  "chat-input": "Chat input: Enter adds a newline, Cmd+Enter sends",
+  "chat-escape": "Chat Escape: aborts only when the input is empty",
+  "perm-keys": "Permission prompt: typing keys stay in the input",
+  "perm-escape": "Permission Escape: rejects only when the input is empty",
+  "perm-approve": "Permission approve: Cmd+Enter always, Space when empty",
+  "doc-escape": "Document Escape: non-empty input is not aborted",
+  "kiloclaw-edit": "KiloClaw edit: Cmd+Enter saves",
+  "kiloclaw-chat": "KiloClaw chat: Cmd+Enter sends",
+};
+
+function featureKey(description: string): string {
+  if (description.startsWith("Chat input")) return "chat-input";
+  if (description.startsWith("Chat Escape")) return "chat-escape";
+  if (description.startsWith("Document Escape")) return "doc-escape";
+  if (description.startsWith("KiloClaw edit")) return "kiloclaw-edit";
+  if (description.startsWith("KiloClaw chat")) return "kiloclaw-chat";
+  if (description.includes("P()") || description.includes("L()"))
+    return "perm-keys";
+  if (description.includes("approves")) return "perm-approve";
+  if (description.includes("rejects")) return "perm-escape";
+  return "other";
+}
+
+type FeatureState = "patched" | "unpatched";
+type Verdict =
+  | "fully patched"
+  | "partially patched"
+  | "not patched"
+  | "version not recognized";
+
+interface FileStatus {
+  filename: string;
+  found: boolean;
+  features: { label: string; state: FeatureState }[];
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// The native modal dialog has a fixed, narrow width that wraps long rows, so the
+// status view uses a webview panel where the width is under our control and each
+// feature stays on one line.
+function showStatusPanel(
+  version: string,
+  verdict: Verdict,
+  files: FileStatus[]
+): void {
+  const panel = vscode.window.createWebviewPanel(
+    "kiloCodeKbPatchStatus",
+    "Kilo Code KB Patch",
+    vscode.ViewColumn.Active,
+    { enableScripts: false }
+  );
+
+  const verdictClass =
+    verdict === "fully patched"
+      ? "ok"
+      : verdict === "not patched" || verdict === "version not recognized"
+      ? "bad"
+      : "warn";
+
+  const sections = files
+    .map((f) => {
+      let rows: string;
+      if (!f.found) {
+        rows = `<div class="row muted">file not found in dist/</div>`;
+      } else if (f.features.length === 0) {
+        rows = `<div class="row muted">no matching patch points</div>`;
+      } else {
+        rows = f.features
+          .map((ft) => {
+            const cls = ft.state === "patched" ? "ok" : "bad";
+            const mark = ft.state === "patched" ? "✓" : "✗";
+            return `<div class="row"><span class="mark ${cls}">${mark}</span><span class="label">${escapeHtml(
+              ft.label
+            )}</span></div>`;
+          })
+          .join("");
+      }
+      return `<section><h2>${escapeHtml(f.filename)}</h2>${rows}</section>`;
+    })
+    .join("");
+
+  panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+<style>
+  body {
+    font-family: var(--vscode-font-family);
+    font-size: calc(var(--vscode-font-size) * 1.2);
+    color: var(--vscode-foreground);
+    padding: 28px 32px;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 26px;
+  }
+  header .version { font-size: 1.6em; font-weight: 600; }
+  .badge {
+    padding: 4px 14px;
+    border-radius: 12px;
+    font-size: 0.95em;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge.ok { background: #1a7f37; color: #fff; }
+  .badge.warn { background: var(--vscode-editorWarning-foreground, #d29922); color: #000; }
+  .badge.bad { background: var(--vscode-testing-iconFailed, #f85149); color: #fff; }
+  section { margin-bottom: 24px; }
+  h2 {
+    font-size: 1.05em;
+    font-weight: 600;
+    opacity: 0.7;
+    margin: 0 0 12px;
+    font-family: var(--vscode-editor-font-family, monospace);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    white-space: nowrap;
+    padding: 5px 0;
+  }
+  .mark { width: 1em; text-align: center; font-weight: 700; }
+  .mark.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+  .mark.bad { color: var(--vscode-testing-iconFailed, #f85149); }
+  .muted { opacity: 0.6; font-style: italic; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="version">Kilo Code v${escapeHtml(version)}</span>
+    <span class="badge ${verdictClass}">${escapeHtml(verdict)}</span>
+  </header>
+  ${sections}
+</body>
+</html>`;
+}
+
 function findLatestKiloExt(): string | undefined {
   if (!fs.existsSync(EXT_DIR)) return undefined;
   const dirs = fs
@@ -265,30 +427,6 @@ function restorePatches(filePath: string, patches: PatchDef[]): PatchResult {
   };
 }
 
-function checkStatus(
-  filePath: string,
-  patches: PatchDef[]
-): { patched: string[]; original: string[]; missing: string[] } {
-  const content = fs.readFileSync(filePath, "utf8");
-  const patched: string[] = [];
-  const original: string[] = [];
-  const missing: string[] = [];
-
-  for (const p of patches) {
-    if (content.includes(p.patched)) {
-      patched.push(p.description);
-    } else if (p.previous && content.includes(p.previous)) {
-      patched.push(`${p.description} (previous version)`);
-    } else if (content.includes(p.original)) {
-      original.push(p.description);
-    } else {
-      missing.push(p.description);
-    }
-  }
-
-  return { patched, original, missing };
-}
-
 async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
   const extPath = findLatestKiloExt();
   if (!extPath) {
@@ -302,22 +440,45 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
   const distDir = path.join(extPath, "dist");
 
   if (mode === "status") {
-    const lines: string[] = [`Kilo Code v${version}`, ""];
+    const files: FileStatus[] = [];
+    const states: FeatureState[] = [];
 
     for (const fp of PATCHES) {
       const fpath = path.join(distDir, fp.filename);
       if (!fs.existsSync(fpath)) {
-        lines.push(`${fp.filename}: NOT FOUND`);
+        files.push({ filename: fp.filename, found: false, features: [] });
         continue;
       }
-      const s = checkStatus(fpath, fp.patches);
-      lines.push(`${fp.filename}:`);
-      for (const d of s.patched) lines.push(`  PATCHED: ${d}`);
-      for (const d of s.original) lines.push(`  ORIGINAL: ${d}`);
-      for (const d of s.missing) lines.push(`  MISSING: ${d}`);
+
+      const content = fs.readFileSync(fpath, "utf8");
+      // Collapse per-version variants into one state per logical feature.
+      // A variant whose text is absent belongs to a different Kilo version, so
+      // it is skipped rather than reported as missing.
+      const byFeature = new Map<string, FeatureState>();
+      for (const p of fp.patches) {
+        const key = featureKey(p.description);
+        if (content.includes(p.patched) || (p.previous && content.includes(p.previous))) {
+          byFeature.set(key, "patched");
+        } else if (content.includes(p.original)) {
+          if (byFeature.get(key) !== "patched") byFeature.set(key, "unpatched");
+        }
+      }
+
+      const features = FEATURE_ORDER.filter((k) => byFeature.has(k)).map((k) => {
+        const state = byFeature.get(k)!;
+        states.push(state);
+        return { label: FEATURE_LABELS[k], state };
+      });
+      files.push({ filename: fp.filename, found: true, features });
     }
 
-    vscode.window.showInformationMessage(lines.join("\n"), { modal: true });
+    let verdict: Verdict;
+    if (states.length === 0) verdict = "version not recognized";
+    else if (states.every((s) => s === "patched")) verdict = "fully patched";
+    else if (states.every((s) => s === "unpatched")) verdict = "not patched";
+    else verdict = "partially patched";
+
+    showStatusPanel(version, verdict, files);
     return;
   }
 

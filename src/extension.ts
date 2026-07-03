@@ -21,13 +21,32 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
-      // --- v7.3.63+ patterns (new minified symbols: $m, Ne, Oa, Fe, z, q, H, j, O) ---
+      // --- v7.4.0+ chat patterns (Ge event, Om Enter-check, Ea send). 7.4.0 added a
+      //     bare-Escape "dismiss autocomplete" branch to the chat keydown handler, which
+      //     re-minified this scope's symbols; the permission and document-level patterns
+      //     below are unchanged from 7.3.63 and match both releases. ---
+      {
+        original:
+          'Om(Ge)&&!Ge.shiftKey&&(Ge.preventDefault(),Ea())',
+        patched:
+          'Om(Ge)&&Ge.metaKey&&(Ge.preventDefault(),Ea())',
+        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.0+)",
+      },
+      {
+        original:
+          'if(Ge.key==="Escape"&&Fe()){Ge.preventDefault(),Ge.stopPropagation(),t.abort();return}',
+        patched:
+          'if(Ge.key==="Escape"&&Fe()&&(Ge.shiftKey||!Ge.target?.value?.trim())){Ge.preventDefault(),Ge.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.0+)",
+      },
+      // --- v7.3.63 chat patterns (Ne event, $m Enter-check, Oa send) ---
       {
         original:
           '$m(Ne)&&!Ne.shiftKey&&(Ne.preventDefault(),Oa())',
         patched:
           '$m(Ne)&&Ne.metaKey&&(Ne.preventDefault(),Oa())',
-        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.3.63+)",
+        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.3.63)",
       },
       {
         original:
@@ -35,8 +54,10 @@ const PATCHES: FilePatches[] = [
         patched:
           'if(Ne.key==="Escape"&&Fe()&&(Ne.shiftKey||!Ne.target?.value?.trim())){Ne.preventDefault(),Ne.stopPropagation(),t.abort();return}',
         description:
-          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.3.63+)",
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.3.63)",
       },
+      // --- v7.3.63+ permission and document-level patterns (z, q, H, j, O, Z).
+      //     These symbols are unchanged in 7.4.0, so one pattern covers both. ---
       {
         original: "K?!1:L(H)",
         patched:

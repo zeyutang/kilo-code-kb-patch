@@ -1,124 +1,100 @@
 # Kilo Code Keyboard Patch
 
-Patches [Kilo Code](https://github.com/Kilo-Org/kilocode) VS Code extension keyboard behavior.
+Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd+Enter` sends, and permission prompts stop hijacking your keystrokes while you are typing.
 
-**Supported versions**:
+## Supported versions
 
-| Kilo Code Release | KB Patch Version |
-| ----------------- | ---------------- |
-| 7.3.63+           | 1.2.x            |
-| 7.3.50-54         | 1.1.x            |
-| 7.3.46            | 1.0.x            |
+| Kilo Code | KB Patch |
+| --------- | -------- |
+| 7.4.0+    | 1.3.x    |
+| 7.3.63    | 1.2.x    |
+| 7.3.50-54 | 1.1.x    |
+| 7.3.46    | 1.0.x    |
 
-This repo provides two ways to apply the patches:
-
-1. **VS Code extension** (`src/extension.ts`) -- Auto-detection, commands, status checking. Install as a `.vsix`.
-2. **Standalone script** (`patch.py`) -- Quick one-liner, no extension needed.
+Each patch release keeps the earlier versions' patterns, so a newer patch still works on an older Kilo Code.
 
 ## What it does
 
-### Unified keyboard behaviors
+| Key            | Kilo Code (default) | KB Patched                                         |
+| -------------- | ------------------- | -------------------------------------------------- |
+| `Enter`        | Send / Approve      | **New line** (approves when the chat box is empty) |
+| `Cmd+Enter`    | Send / Save         | **Send / Approve / Save**                          |
+| `Shift+Enter`  | New line            | New line (unchanged)                               |
+| `Escape`       | Reject / Abort      | Reject / Abort **only when the chat box is empty** |
+| `Shift+Escape` | Reject / Abort      | **Reject / Abort** (always)                        |
 
-These apply everywhere -- chat input, permission prompts, and KiloClaw edit/chat panels:
+Applies to the chat input, the permission prompt, and the KiloClaw edit/chat panels.
 
-| Key            | Before (Kilo Code) | After (patched)                            |
-| -------------- | ------------------ | ------------------------------------------ |
-| `Enter`        | Send / Approve     | **New line** (Approve when textarea empty) |
-| `Cmd+Enter`    | Send / Save        | **Send / Approve / Save**                  |
-| `Shift+Enter`  | New line           | New line (unchanged)                       |
-| `Shift+Escape` | Reject / Abort     | **Reject / Abort** (always)                |
-| `Escape`       | Reject / Abort     | Reject / Abort only when textarea is empty |
+## Install
 
-### Permission prompt scenarios
+Install from the **VS Code Marketplace**: [Kilo Code KB Patch](https://marketplace.visualstudio.com/items?itemName=zeyutang.kilo-code-kb-patch)
 
-When a permission prompt is visible, the textarea content determines which keys are routed to the chat input vs the permission buttons:
+The extension detects an unpatched Kilo Code and offers to apply. Three commands are available from the Command Palette (`Cmd+Shift+P` → "Kilo Code KB Patch"): **Apply Patches**, **Restore Originals**, and **Show Status**. Reload the window when prompted, and re-apply after a Kilo Code update.
 
-| Key            | Textarea empty | Textarea has content                 |
-| -------------- | -------------- | ------------------------------------ |
-| `Enter`        | Approve        | **New line** (chat handles it)       |
-| `Space`        | Approve        | **Space** (chat handles it)          |
-| `Escape`       | Reject         | **Dismiss autocomplete only** (chat) |
-| `Cmd+Enter`    | Approve        | **Approve** (without submitting)     |
-| `Shift+Escape` | Reject         | **Reject**                           |
-
-Whitespace does **not** count as content, so a textarea with only spaces or newlines is treated as empty and keys route to the permission buttons.
-
-KB patch uses `Shift+Escape` instead of `Cmd+Escape` to avoid clashes with Claude Code's quick-launch shortcut.
-
-## VS Code Extension
-
-### Install
+Prefer not to install the extension? Use the standalone script instead:
 
 ```bash
-npm install
-npm run compile
-npx @vscode/vsce package
-# Install the .vsix in VS Code
-code --install-extension kilo-code-kb-patch-*.vsix
+python3 patch.py           # apply patches
+python3 patch.py restore   # revert patches
 ```
 
-### Usage
+Then reload the window: `Cmd+Shift+P` → `Developer: Reload Window`.
 
-The extension auto-detects when Kilo Code is installed but unpatched and prompts you to apply.
+## How keystrokes are routed
 
-Commands available via Command Palette (`Cmd+Shift+P`):
+Kilo Code asks for your input in three ways. The patch rewires only one of them (permission prompts) and decides purely by **whether the chat box contains text**; spaces and newlines do not count.
 
-- **Kilo Code KB Patch: Apply Patches** -- Apply all patches
-- **Kilo Code KB Patch: Restore Originals** -- Revert to original behavior
-- **Kilo Code KB Patch: Show Status** -- Show which patches are applied/original/missing
+KB Patch never moves the keyboard focus. Because Kilo Code moves focus on its own, a choice can take over the keyboard even when you have typed something. When that happens your keys act on the highlighted choice (this is intended, with minimal interference with the native Kilo Code experience).
 
-After applying or restoring, you will be prompted to reload the VS Code window.
+### Permission prompts
 
-## Standalone Script
+Approve or reject a tool or command. The only surface the patch rewires.
 
-```bash
-# Apply patches (default)
-python3 patch.py
+- Kilo Code does **not** shift focus here: it leaves focus in the chat box and intercepts keys with a document-level listener, so the patch can read the chat box content and route accordingly.
 
-# Revert all patches to original
-python3 patch.py restore
-```
+The chat box content decides where each key goes:
 
-Then reload the VS Code window: `Cmd+Shift+P` → `Developer: Reload Window`
+| Key            | Chat box empty | Chat box has text         |
+| -------------- | -------------- | ------------------------- |
+| `Enter`        | Approve        | New line                  |
+| `Space`        | Approve        | Space                     |
+| `Cmd+Enter`    | Approve        | Approve                   |
+| `Escape`       | Reject         | Dismiss autocomplete only |
+| `Shift+Escape` | Reject         | Reject                    |
 
-Re-run `patch.py` after every Kilo Code extension update (the script auto-finds the latest version).
+Reject and abort use `Shift+Escape` (not `Cmd+Escape`, which is Claude Code's quick-launch shortcut).
 
-## Detailed Behavior Comparison to Claude Code
+### Follow-up questions
 
-### Chat Input (no permission prompt)
+Pick a suggested answer or type your own. The patch leaves these alone.
 
-| Key           | Claude Code (default)      | Claude Code (`useCtrlEnterToSend=true`) | Kilo Code (native)         | Kilo Code (patched)                        |
-| ------------- | -------------------------- | --------------------------------------- | -------------------------- | ------------------------------------------ |
-| `Enter`       | Send                       | Newline                                 | Send                       | **Newline**                                |
-| `Shift+Enter` | Newline                    | Newline                                 | Newline                    | Newline                                    |
-| `Cmd+Enter`   | --                         | Send                                    | Send                       | **Send**                                   |
-| `Escape`      | Dismiss autocomplete/abort | Same                                    | Dismiss autocomplete/abort | Dismiss autocomplete / abort only if empty |
+- Kilo Code **auto-focuses the first option** when the prompt appears, so keys act on the highlighted choice regardless of what is in the chat box.
+- Arrow keys move between choices, `Enter` selects, and `Cmd+Enter` send the choice.
 
-### Permission Prompt -- Textarea Has Content
+### Menus and dialogs
 
-When the textarea has non-whitespace content, bare Enter/Space/Escape keydowns are routed to the chat input. Cmd+Enter approves, Shift+Escape rejects. (Whitespace-only input is treated as empty -- see below.)
+Model and mode pickers, confirmations, `@`-mentions. The patch leaves these alone.
 
-| Key            | Claude Code                                                    | Kilo Code (native) | Kilo Code (patched)                  |
-| -------------- | -------------------------------------------------------------- | ------------------ | ------------------------------------ |
-| `Enter`        | Wait for a short period before switching focus, if stop typing | Approve            | **Newline** (chat handles it)        |
-| `Cmd+Enter`    | --                                                             | --                 | **Approve**                          |
-| `Space`        | --                                                             | --                 | **Space** (chat handles it)          |
-| `Escape`       | Wait for a short period before switching focus, if stop typing | Reject             | **Dismiss autocomplete only** (chat) |
-| `Shift+Escape` | --                                                             | Reject             | **Reject**                           |
-
-### Permission Prompt -- Textarea Empty
-
-A textarea that is empty or contains only whitespace is treated as empty. (Claude Code hides the input in this case, so focus is on permission buttons)
-
-| Key            | Claude Code | Kilo Code (native) | Kilo Code (patched) |
-| -------------- | ----------- | ------------------ | ------------------- |
-| `Enter`        | Approve     | Approve            | Approve             |
-| `Space`        | Approve     | --                 | Approve             |
-| `Escape`       | Reject      | Reject             | Reject              |
-| `Shift+Escape` | --          | Reject             | Reject              |
+- Kilo Code moves focus into them when they open and handles their keys: arrow keys or type-ahead to move, `Enter` to choose, `Escape` to close pop-up menu **without** invoking the permission prompt abort.
 
 ## Troubleshooting
 
-- **Patch has no effect**: Make sure you reloaded the VS Code window after patching.
-- **Patterns not found**: The Kilo Code extension may have updated and changed the minified code structure. Check the "Show Status" command output (extension) or `SKIP` messages (script) and update the patch patterns in `src/extension.ts` or `patch.py`.
-- **Behavior reverts after update**: Extension updates overwrite `dist/`. Re-apply patches.
+- **No effect:** reload the VS Code window after applying.
+- **"Show Status" lists MISSING lines:** it lists patterns for every supported Kilo Code version, so `MISSING` for a version you do not have is normal. What matters is that each behavior is `PATCHED` for your version.
+- **Stopped working after a Kilo Code update:** updates overwrite the patched files and can rename Kilo Code's internal code. Re-apply; if a behavior still shows `MISSING` for your version, the patterns need updating.
+
+## Build and install locally
+
+Rebuild and reinstall from source without bumping the version or editing `package*.json`:
+
+```bash
+# Build a local .vsix and (re)install it (no version bump, no package*.json changes)
+rm -f kilo-code-kb-patch-*.vsix   # remove any old local .vsix
+npm ci                            # install from the lockfile (writes only node_modules/)
+npm run compile                   # rebuild out/ (optional: vsce compiles too)
+npx @vscode/vsce package          # build kilo-code-kb-patch-<version>.vsix
+mv kilo-code-kb-patch-*.vsix kilo-code-kb-patch-latest.vsix   # fixed, version-independent name
+code --install-extension kilo-code-kb-patch-latest.vsix --force
+```
+
+`--force` reinstalls even when the version is unchanged. Then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`) so the reinstalled extension re-applies the patch.

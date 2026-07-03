@@ -9,6 +9,11 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.3.2
+
+- Improve patch status webview
+- README updates
+
 ## 1.3.0
 
 - Add Kilo Code 7.4.0 chat-input patterns (`Ge` event, `Om` Enter-check, `Ea` send); 7.4.0 re-minified the chat keydown scope after adding a bare-Escape autocomplete-dismiss branch, which left the two chat patterns unmatched on 7.4.0

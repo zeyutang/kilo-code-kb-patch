@@ -29,16 +29,13 @@ Applies to the chat input, the permission prompt, and the KiloClaw edit/chat pan
 
 Install from the **VS Code Marketplace**: [Kilo Code KB Patch](https://marketplace.visualstudio.com/items?itemName=zeyutang.kilo-code-kb-patch)
 
-The extension detects an unpatched Kilo Code and offers to apply. Three commands are available from the Command Palette (`Cmd+Shift+P` → "Kilo Code KB Patch"): **Apply Patches**, **Restore Originals**, and **Show Status**. Reload the window when prompted, and re-apply after a Kilo Code update.
+The extension detects an unpatched Kilo Code and offers to apply. Three commands are available from the Command Palette (`Cmd+Shift+P` → "Kilo Code KB Patch"):
 
-Prefer not to install the extension? Use the standalone script instead:
+- **Apply Patches**
+- **Restore Originals**
+- **Show Status**
 
-```bash
-python3 patch.py           # apply patches
-python3 patch.py restore   # revert patches
-```
-
-Then reload the window: `Cmd+Shift+P` → `Developer: Reload Window`.
+Reload the window after applying KB Patch: `Cmd+Shift+P` → `Developer: Reload Window`.
 
 ## How keystrokes are routed
 
@@ -80,8 +77,7 @@ Model and mode pickers, confirmations, `@`-mentions. The patch leaves these alon
 ## Troubleshooting
 
 - **No effect:** reload the VS Code window after applying.
-- **"Show Status" lists MISSING lines:** it lists patterns for every supported Kilo Code version, so `MISSING` for a version you do not have is normal. What matters is that each behavior is `PATCHED` for your version.
-- **Stopped working after a Kilo Code update:** updates overwrite the patched files and can rename Kilo Code's internal code. Re-apply; if a behavior still shows `MISSING` for your version, the patterns need updating.
+- **Stopped working after a Kilo Code update:** updates overwrite the patched files and can rename Kilo Code's internal code. Re-apply by `Cmd+Shift+P` → `Kilo Code KB Patch: Apply Patches`.
 
 ## Build and install locally
 
@@ -89,12 +85,12 @@ Rebuild and reinstall from source without bumping the version or editing `packag
 
 ```bash
 # Build a local .vsix and (re)install it (no version bump, no package*.json changes)
+rm -f kilo-code-kb-patch-*.vsix
 npm ci                            # install from the lockfile (writes only node_modules/)
 npm run compile                   # rebuild out/ (optional: vsce compiles too)
 npx @vscode/vsce package          # build kilo-code-kb-patch-<version>.vsix
 mv kilo-code-kb-patch-*.vsix kilo-code-kb-patch-latest.vsix   # fixed, version-independent name
 code --install-extension kilo-code-kb-patch-latest.vsix --force
-rm -f kilo-code-kb-patch-*.vsix
 ```
 
 `--force` reinstalls even when the version is unchanged. Then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`) so the reinstalled extension re-applies the patch.

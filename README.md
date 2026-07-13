@@ -6,7 +6,8 @@ Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `
 
 | Kilo Code | KB Patch |
 | --------- | -------- |
-| 7.4.0+    | 1.3.x    |
+| 7.4.7+    | 1.4.x    |
+| 7.4.0-6   | 1.3.x    |
 | 7.3.63    | 1.2.x    |
 | 7.3.50-54 | 1.1.x    |
 | 7.3.46    | 1.0.x    |
@@ -78,19 +79,3 @@ Model and mode pickers, confirmations, `@`-mentions. The patch leaves these alon
 
 - **No effect:** reload the VS Code window after applying.
 - **Stopped working after a Kilo Code update:** updates overwrite the patched files and can rename Kilo Code's internal code. Re-apply by `Cmd+Shift+P` → `Kilo Code KB Patch: Apply Patches`.
-
-## Build and install locally
-
-Rebuild and reinstall from source without bumping the version or editing `package*.json`:
-
-```bash
-# Build a local .vsix and (re)install it (no version bump, no package*.json changes)
-rm -f kilo-code-kb-patch-*.vsix
-npm ci                            # install from the lockfile (writes only node_modules/)
-npm run compile                   # rebuild out/ (optional: vsce compiles too)
-npx @vscode/vsce package          # build kilo-code-kb-patch-<version>.vsix
-mv kilo-code-kb-patch-*.vsix kilo-code-kb-patch-latest.vsix   # fixed, version-independent name
-code --install-extension kilo-code-kb-patch-latest.vsix --force
-```
-
-`--force` reinstalls even when the version is unchanged. Then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`) so the reinstalled extension re-applies the patch.

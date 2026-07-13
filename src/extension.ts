@@ -21,6 +21,53 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.7+ patterns. 7.4.7 re-minified webview.js wholesale, so every 7.4.0/
+      //     7.3.x symbol below stopped matching. New symbols: chat uses Vm (Enter-check),
+      //     $e (event), da (send), ot (abort guard); permission uses N (skip predicate),
+      //     j/O (handlers), z (dispatch), $ (bare-Enter check), ie (document event).
+      //     Re-derived from the 7.4.7 bundle. ---
+      {
+        original: 'Vm($e)&&!$e.shiftKey&&($e.preventDefault(),da())',
+        patched: 'Vm($e)&&$e.metaKey&&($e.preventDefault(),da())',
+        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.7+)",
+      },
+      {
+        original:
+          'if($e.key==="Escape"&&ot()){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
+        patched:
+          'if($e.key==="Escape"&&ot()&&($e.shiftKey||!$e.target?.value?.trim())){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.7+)",
+      },
+      {
+        original: "U?!1:L(H)",
+        patched:
+          'U?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:L(H)',
+        description:
+          "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.7+)",
+      },
+      {
+        original: 'j=q=>{if(q.key==="Escape"){z(q,"reject");return}}',
+        patched:
+          'j=q=>{if(q.key==="Escape"&&(q.shiftKey||!q.target?.value?.trim())){z(q,"reject");return}}',
+        description:
+          "Permission j: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.4.7+)",
+      },
+      {
+        original: 'if($(q)){z(q,"once");return}}};',
+        patched:
+          'if($(q)||q.key===" "&&!q.metaKey&&!q.ctrlKey&&!q.target?.value?.trim()||q.key==="Enter"&&q.metaKey){z(q,"once");return}}};',
+        description:
+          "Permission O: Cmd+Enter approves always; Space approves when empty/whitespace-only (v7.4.7+)",
+      },
+      {
+        original:
+          'ie.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ie.defaultPrevented||(ie.preventDefault(),t.abort())',
+        patched:
+          'ie.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ie.defaultPrevented||!ie.shiftKey&&ie.target?.value?.trim()||(ie.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.4.7+)",
+      },
       // --- v7.4.0+ chat patterns (Ge event, Om Enter-check, Ea send). 7.4.0 added a
       //     bare-Escape "dismiss autocomplete" branch to the chat keydown handler, which
       //     re-minified this scope's symbols; the permission and document-level patterns
@@ -199,7 +246,11 @@ function featureKey(description: string): string {
   if (description.startsWith("Document Escape")) return "doc-escape";
   if (description.startsWith("KiloClaw edit")) return "kiloclaw-edit";
   if (description.startsWith("KiloClaw chat")) return "kiloclaw-chat";
-  if (description.includes("P()") || description.includes("L()"))
+  if (
+    description.includes("P()") ||
+    description.includes("L()") ||
+    description.includes("N()")
+  )
     return "perm-keys";
   if (description.includes("approves")) return "perm-approve";
   if (description.includes("rejects")) return "perm-escape";
@@ -472,8 +523,18 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
       files.push({ filename: fp.filename, found: true, features });
     }
 
+    // A found file that yields zero features has no matching patch points: its
+    // minified symbols changed and its patterns need re-targeting for this Kilo
+    // version. Such a file contributes nothing to `states`, so it must be counted
+    // separately — otherwise an unrecognized webview.js would be invisible to the
+    // verdict and a patched kiloclaw.js alone would read as "fully patched".
+    const unrecognizedFiles = files.filter(
+      (f) => f.found && f.features.length === 0
+    ).length;
+
     let verdict: Verdict;
     if (states.length === 0) verdict = "version not recognized";
+    else if (unrecognizedFiles > 0) verdict = "partially patched";
     else if (states.every((s) => s === "patched")) verdict = "fully patched";
     else if (states.every((s) => s === "unpatched")) verdict = "not patched";
     else verdict = "partially patched";

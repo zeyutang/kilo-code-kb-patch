@@ -4,10 +4,17 @@
 
 | Kilo Code Release | KB Patch Version |
 | ----------------- | ---------------- |
-| 7.4.0+            | 1.3.x            |
+| 7.4.7+            | 1.4.x            |
+| 7.4.0-6           | 1.3.x            |
 | 7.3.63            | 1.2.x            |
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
+
+## 1.4.0
+
+- Retarget all six `webview.js` patterns to Kilo Code 7.4.7's re-minified symbols (chat: `Vm` Enter-check, `$e` event, `da` send, `ot` abort guard; permission: `N` skip predicate, `j`/`O` handlers, `z` dispatch, `$` bare-Enter check, `ie` document event); 7.4.7 re-minified `webview.js` wholesale, so every 7.4.0 and 7.3.x pattern stopped matching
+- Keep all earlier versions' patterns, so 1.4.x still applies on older Kilo Code releases
+- Fix the status verdict: a file with no matching patch points is no longer ignored when deciding the verdict, so an unrecognized `webview.js` alongside a patched `kiloclaw.js` now reads as "partially patched" instead of "fully patched"
 
 ## 1.3.2
 
@@ -51,4 +58,4 @@
 - Initial release for Kilo Code 7.3.46
 - `Enter` inserts a newline; `Cmd+Enter` sends/approves
 - Smarter permission-prompt key routing based on textarea content
-- Standalone `patch.py` script plus VS Code extension (apply/restore/status commands with auto-detection)
+- VS Code extension with apply/restore/status commands and auto-detection

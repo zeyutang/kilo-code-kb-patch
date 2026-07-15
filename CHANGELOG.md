@@ -4,12 +4,19 @@
 
 | Kilo Code Release | KB Patch Version |
 | ----------------- | ---------------- |
-| 7.4.8+            | 1.5.x            |
+| 7.4.9+            | 1.6.x            |
+| 7.4.8             | 1.5.x            |
 | 7.4.7             | 1.4.x            |
 | 7.4.0-6           | 1.3.x            |
 | 7.3.63            | 1.2.x            |
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
+
+## 1.6.0
+
+- Retarget the four `webview.js` patterns that 7.4.9 re-minified: chat input (Enter-check `Wm`→`Zm`), chat Escape (abort guard `it`→`ot`), the permission skip predicate `N()` (in-textarea guard `U`→`K`, element helper `L(G)`→`Q(U)`, event `q` unchanged), and the document-level Escape (event `ie`→`re`); the chat event `ze` and send `ua` are unchanged from 7.4.8
+- The permission reject (`j`) and approve (`O`) handlers re-minified back to the `$`-dispatch form, so they keep applying through the existing 7.3.63+ patterns and need no new pattern
+- Keep all earlier versions' patterns, so 1.6.x still applies on older Kilo Code releases
 
 ## 1.5.0
 

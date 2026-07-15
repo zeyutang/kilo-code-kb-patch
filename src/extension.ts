@@ -21,6 +21,41 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.9+ patterns. 7.4.9 re-minified the chat-input scope again and the whole
+      //     permission scope. Chat: Enter-check Wm→Zm, chat abort-guard it→ot (event ze and
+      //     send ua unchanged from 7.4.8). Permission: the skip-predicate N=(q,U) kept event
+      //     q but renamed its in-textarea guard to K (K=!!U?.closest("textarea.prompt-input"))
+      //     and its element helper to Q(U); the reject (j) and approve (O) handlers now match
+      //     the $-dispatch v7.3.63+ patterns below, so only the skip-predicate is repeated
+      //     here. Document-level Escape event ie/Z→re. Re-derived from the 7.4.9 bundle. ---
+      {
+        original: "Zm(ze)&&!ze.shiftKey&&(ze.preventDefault(),ua())",
+        patched: "Zm(ze)&&ze.metaKey&&(ze.preventDefault(),ua())",
+        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.9+)",
+      },
+      {
+        original:
+          'if(ze.key==="Escape"&&ot()){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
+        patched:
+          'if(ze.key==="Escape"&&ot()&&(ze.shiftKey||!ze.target?.value?.trim())){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.9+)",
+      },
+      {
+        original: "K?!1:Q(U)",
+        patched:
+          'K?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:Q(U)',
+        description:
+          "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.9+)",
+      },
+      {
+        original:
+          're.key!=="Escape"||!t.submitting()&&t.status()==="idle"||re.defaultPrevented||(re.preventDefault(),t.abort())',
+        patched:
+          're.key!=="Escape"||!t.submitting()&&t.status()==="idle"||re.defaultPrevented||!re.shiftKey&&re.target?.value?.trim()||(re.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.4.9+)",
+      },
       // --- v7.4.8+ patterns. 7.4.8 re-minified only the chat-input scope and renamed
       //     one permission symbol; the permission-button and document-level handlers kept
       //     the symbols they had, so those keep matching the v7.3.63+/v7.4.7+ patterns

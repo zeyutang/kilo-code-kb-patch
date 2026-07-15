@@ -21,6 +21,32 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.8+ patterns. 7.4.8 re-minified only the chat-input scope and renamed
+      //     one permission symbol; the permission-button and document-level handlers kept
+      //     the symbols they had, so those keep matching the v7.3.63+/v7.4.7+ patterns
+      //     below and are not repeated here. Changed: chat event $e→ze, Enter-check Vm→Wm,
+      //     send da→ua, chat abort-guard ot→it; permission skip-predicate argument H→G.
+      //     Re-derived from the 7.4.8 bundle. ---
+      {
+        original: "Wm(ze)&&!ze.shiftKey&&(ze.preventDefault(),ua())",
+        patched: "Wm(ze)&&ze.metaKey&&(ze.preventDefault(),ua())",
+        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.8+)",
+      },
+      {
+        original:
+          'if(ze.key==="Escape"&&it()){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
+        patched:
+          'if(ze.key==="Escape"&&it()&&(ze.shiftKey||!ze.target?.value?.trim())){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.8+)",
+      },
+      {
+        original: "U?!1:L(G)",
+        patched:
+          'U?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:L(G)',
+        description:
+          "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.8+)",
+      },
       // --- v7.4.7+ patterns. 7.4.7 re-minified webview.js wholesale, so every 7.4.0/
       //     7.3.x symbol below stopped matching. New symbols: chat uses Vm (Enter-check),
       //     $e (event), da (send), ot (abort guard); permission uses N (skip predicate),
@@ -198,6 +224,21 @@ const PATCHES: FilePatches[] = [
   {
     filename: "kiloclaw.js",
     patches: [
+      // --- v7.4.8+ patterns. 7.4.8 renamed only the Enter-check helper LA→NA; the event
+      //     variables and the save/send/abort calls are unchanged. ---
+      {
+        original:
+          'NA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+        patched:
+          'NA(Q)&&Q.metaKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+        description: "KiloClaw edit: Enter→newline, Cmd+Enter→save (v7.4.8+)",
+      },
+      {
+        original: 'NA(D)&&!D.shiftKey&&(D.preventDefault(),v())',
+        patched: 'NA(D)&&D.metaKey&&(D.preventDefault(),v())',
+        description: "KiloClaw chat: Enter→newline, Cmd+Enter→send (v7.4.8+)",
+      },
+      // --- pre-7.4.8 patterns (Enter-check helper LA) ---
       {
         original:
           'LA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
@@ -257,7 +298,12 @@ function featureKey(description: string): string {
   return "other";
 }
 
-type FeatureState = "patched" | "unpatched";
+// "patched": the patched text is present. "unpatched": the original text is
+// present (Apply will fix it). "missing": no known variant of this feature was
+// found, so its minified symbols changed for this Kilo version and the pattern
+// needs re-targeting. "missing" is what the status view must surface rather than
+// dropping the row, so an out-of-date pattern is visible instead of silent.
+type FeatureState = "patched" | "unpatched" | "missing";
 type Verdict =
   | "fully patched"
   | "partially patched"
@@ -268,6 +314,77 @@ interface FileStatus {
   filename: string;
   found: boolean;
   features: { label: string; state: FeatureState }[];
+}
+
+// Collapse a file's per-version patch variants into one state per logical
+// feature, and list every feature the file is meant to cover (not just the ones
+// whose text happens to be present). A feature with a matching patched/original
+// variant is "patched"/"unpatched"; a feature whose every variant is absent is
+// "missing" so the status view can show it rather than omitting the row.
+function statusForFile(
+  content: string,
+  patches: PatchDef[]
+): { label: string; state: FeatureState }[] {
+  const byFeature = new Map<string, FeatureState>();
+  const intended = new Set<string>();
+
+  for (const p of patches) {
+    const key = featureKey(p.description);
+    intended.add(key);
+    if (
+      content.includes(p.patched) ||
+      (p.previous && content.includes(p.previous))
+    ) {
+      byFeature.set(key, "patched");
+    } else if (content.includes(p.original)) {
+      if (byFeature.get(key) !== "patched") byFeature.set(key, "unpatched");
+    }
+  }
+
+  return FEATURE_ORDER.filter((k) => intended.has(k)).map((k) => ({
+    label: FEATURE_LABELS[k],
+    state: byFeature.get(k) ?? "missing",
+  }));
+}
+
+function computeVerdict(files: FileStatus[]): Verdict {
+  const states = files
+    .filter((f) => f.found)
+    .flatMap((f) => f.features.map((ft) => ft.state));
+
+  if (states.length === 0) return "version not recognized";
+
+  const patched = states.filter((s) => s === "patched").length;
+  const missing = states.filter((s) => s === "missing").length;
+
+  // Every intended feature is missing: nothing in this build matches any known
+  // pattern, so the whole version is unrecognized (a re-minify we have not caught
+  // up to), not merely unpatched.
+  if (missing === states.length) return "version not recognized";
+  if (patched === states.length) return "fully patched";
+  if (patched === 0) return "not patched";
+  return "partially patched";
+}
+
+function computeStatus(distDir: string): {
+  files: FileStatus[];
+  verdict: Verdict;
+} {
+  const files: FileStatus[] = [];
+  for (const fp of PATCHES) {
+    const fpath = path.join(distDir, fp.filename);
+    if (!fs.existsSync(fpath)) {
+      files.push({ filename: fp.filename, found: false, features: [] });
+      continue;
+    }
+    const content = fs.readFileSync(fpath, "utf8");
+    files.push({
+      filename: fp.filename,
+      found: true,
+      features: statusForFile(content, fp.patches),
+    });
+  }
+  return { files, verdict: computeVerdict(files) };
 }
 
 function escapeHtml(s: string): string {
@@ -299,6 +416,19 @@ function showStatusPanel(
       ? "bad"
       : "warn";
 
+  // Each feature state gets a distinct mark, color, and hint so an unpatched or
+  // stale-pattern row reads differently from a patched one at a glance.
+  const marks: Record<FeatureState, { mark: string; cls: string; hint: string }> =
+    {
+      patched: { mark: "✓", cls: "ok", hint: "" },
+      unpatched: { mark: "○", cls: "warn", hint: "not applied — run Apply" },
+      missing: {
+        mark: "✗",
+        cls: "bad",
+        hint: "no matching code — patch needs update",
+      },
+    };
+
   const sections = files
     .map((f) => {
       let rows: string;
@@ -309,11 +439,15 @@ function showStatusPanel(
       } else {
         rows = f.features
           .map((ft) => {
-            const cls = ft.state === "patched" ? "ok" : "bad";
-            const mark = ft.state === "patched" ? "✓" : "✗";
-            return `<div class="row"><span class="mark ${cls}">${mark}</span><span class="label">${escapeHtml(
+            const m = marks[ft.state];
+            const hint = m.hint
+              ? `<span class="hint">${escapeHtml(m.hint)}</span>`
+              : "";
+            return `<div class="row"><span class="mark ${
+              m.cls
+            }">${m.mark}</span><span class="label">${escapeHtml(
               ft.label
-            )}</span></div>`;
+            )}</span>${hint}</div>`;
           })
           .join("");
       }
@@ -367,7 +501,9 @@ function showStatusPanel(
   }
   .mark { width: 1em; text-align: center; font-weight: 700; }
   .mark.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+  .mark.warn { color: var(--vscode-editorWarning-foreground, #d29922); }
   .mark.bad { color: var(--vscode-testing-iconFailed, #f85149); }
+  .hint { opacity: 0.6; font-style: italic; font-size: 0.85em; }
   .muted { opacity: 0.6; font-style: italic; }
 </style>
 </head>
@@ -491,54 +627,7 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
   const distDir = path.join(extPath, "dist");
 
   if (mode === "status") {
-    const files: FileStatus[] = [];
-    const states: FeatureState[] = [];
-
-    for (const fp of PATCHES) {
-      const fpath = path.join(distDir, fp.filename);
-      if (!fs.existsSync(fpath)) {
-        files.push({ filename: fp.filename, found: false, features: [] });
-        continue;
-      }
-
-      const content = fs.readFileSync(fpath, "utf8");
-      // Collapse per-version variants into one state per logical feature.
-      // A variant whose text is absent belongs to a different Kilo version, so
-      // it is skipped rather than reported as missing.
-      const byFeature = new Map<string, FeatureState>();
-      for (const p of fp.patches) {
-        const key = featureKey(p.description);
-        if (content.includes(p.patched) || (p.previous && content.includes(p.previous))) {
-          byFeature.set(key, "patched");
-        } else if (content.includes(p.original)) {
-          if (byFeature.get(key) !== "patched") byFeature.set(key, "unpatched");
-        }
-      }
-
-      const features = FEATURE_ORDER.filter((k) => byFeature.has(k)).map((k) => {
-        const state = byFeature.get(k)!;
-        states.push(state);
-        return { label: FEATURE_LABELS[k], state };
-      });
-      files.push({ filename: fp.filename, found: true, features });
-    }
-
-    // A found file that yields zero features has no matching patch points: its
-    // minified symbols changed and its patterns need re-targeting for this Kilo
-    // version. Such a file contributes nothing to `states`, so it must be counted
-    // separately — otherwise an unrecognized webview.js would be invisible to the
-    // verdict and a patched kiloclaw.js alone would read as "fully patched".
-    const unrecognizedFiles = files.filter(
-      (f) => f.found && f.features.length === 0
-    ).length;
-
-    let verdict: Verdict;
-    if (states.length === 0) verdict = "version not recognized";
-    else if (unrecognizedFiles > 0) verdict = "partially patched";
-    else if (states.every((s) => s === "patched")) verdict = "fully patched";
-    else if (states.every((s) => s === "unpatched")) verdict = "not patched";
-    else verdict = "partially patched";
-
+    const { files, verdict } = computeStatus(distDir);
     showStatusPanel(version, verdict, files);
     return;
   }
@@ -638,3 +727,13 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+// Exposed for the offline test harness only; the extension host ignores extra
+// exports, so this has no effect at runtime.
+export const __test = {
+  PATCHES,
+  computeStatus,
+  applyPatches,
+  restorePatches,
+  showStatusPanel,
+};

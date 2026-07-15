@@ -6,7 +6,8 @@ Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `
 
 | Kilo Code | KB Patch |
 | --------- | -------- |
-| 7.4.7+    | 1.4.x    |
+| 7.4.8+    | 1.5.x    |
+| 7.4.7     | 1.4.x    |
 | 7.4.0-6   | 1.3.x    |
 | 7.3.63    | 1.2.x    |
 | 7.3.50-54 | 1.1.x    |

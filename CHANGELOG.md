@@ -4,11 +4,19 @@
 
 | Kilo Code Release | KB Patch Version |
 | ----------------- | ---------------- |
-| 7.4.7+            | 1.4.x            |
+| 7.4.8+            | 1.5.x            |
+| 7.4.7             | 1.4.x            |
 | 7.4.0-6           | 1.3.x            |
 | 7.3.63            | 1.2.x            |
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
+
+## 1.5.0
+
+- Retarget the three `webview.js` patterns that 7.4.8 re-minified: chat input (Enter-check `Vm`→`Wm`, event `$e`→`ze`, send `da`→`ua`), chat Escape (abort guard `ot`→`it`), and the permission skip predicate (`L(H)`→`L(G)`); 7.4.8 renamed only the chat scope and one permission symbol, so the permission-button and document-level patterns still match through the existing 7.4.7/7.3.63 patterns
+- Retarget both `kiloclaw.js` patterns to 7.4.8's renamed Enter-check helper (`LA`→`NA`)
+- Keep all earlier versions' patterns, so 1.5.x still applies on older Kilo Code releases
+- Status panel now lists every feature the patch targets: a feature whose code it can no longer locate shows as a red `✗` "no matching code" row and one it recognizes but has not yet applied shows as an amber `○` "not applied" row, instead of dropping the row and signaling only through the "partially patched" badge
 
 ## 1.4.0
 

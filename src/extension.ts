@@ -365,6 +365,16 @@ interface FileStatus {
   features: { label: string; state: FeatureState }[];
 }
 
+// Bonus (opt-in) items are reported in their own status section and never feed
+// the verdict. "on": enabled and applied. "off": not enabled, drawn as a neutral
+// white circle. "pending": enabled but the file does not reflect it yet (reload
+// to apply). "unavailable": enabled but this Kilo build has no matching code.
+type BonusState = "on" | "off" | "pending" | "unavailable";
+interface BonusStatus {
+  label: string;
+  state: BonusState;
+}
+
 // Collapse a file's per-version patch variants into one state per logical
 // feature, and list every feature the file is meant to cover (not just the ones
 // whose text happens to be present). A feature with a matching patched/original
@@ -449,7 +459,8 @@ function escapeHtml(s: string): string {
 function showStatusPanel(
   version: string,
   verdict: Verdict,
-  files: FileStatus[]
+  files: FileStatus[],
+  bonuses: BonusStatus[]
 ): void {
   const panel = vscode.window.createWebviewPanel(
     "kiloCodeKbPatchStatus",
@@ -504,6 +515,37 @@ function showStatusPanel(
     })
     .join("");
 
+  // Bonus rows use their own marks. "off" is a neutral white circle (the item is
+  // simply not enabled); it never reads as a problem. These rows do not feed the
+  // verdict badge above.
+  const bonusMarks: Record<BonusState, { mark: string; cls: string; hint: string }> =
+    {
+      on: { mark: "✓", cls: "ok", hint: "" },
+      off: { mark: "○", cls: "off", hint: "" },
+      pending: { mark: "○", cls: "warn", hint: "reload to apply" },
+      unavailable: {
+        mark: "✗",
+        cls: "bad",
+        hint: "no matching code — patch needs update",
+      },
+    };
+  const bonusRows = bonuses
+    .map((b) => {
+      const m = bonusMarks[b.state];
+      const hint = m.hint
+        ? `<span class="hint">${escapeHtml(m.hint)}</span>`
+        : "";
+      return `<div class="row"><span class="mark ${
+        m.cls
+      }">${m.mark}</span><span class="label">${escapeHtml(
+        b.label
+      )}</span>${hint}</div>`;
+    })
+    .join("");
+  const bonusSection = bonusRows
+    ? `<section><h2>Bonus <span class="sub">(opt-in, does not affect status)</span></h2>${bonusRows}</section>`
+    : "";
+
   panel.webview.html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -552,7 +594,9 @@ function showStatusPanel(
   .mark.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
   .mark.warn { color: var(--vscode-editorWarning-foreground, #d29922); }
   .mark.bad { color: var(--vscode-testing-iconFailed, #f85149); }
+  .mark.off { color: var(--vscode-foreground); opacity: 0.6; }
   .hint { opacity: 0.6; font-style: italic; font-size: 0.85em; }
+  .sub { font-weight: 400; font-size: 0.8em; opacity: 0.85; font-family: var(--vscode-font-family); }
   .muted { opacity: 0.6; font-style: italic; }
 </style>
 </head>
@@ -562,6 +606,7 @@ function showStatusPanel(
     <span class="badge ${verdictClass}">${escapeHtml(verdict)}</span>
   </header>
   ${sections}
+  ${bonusSection}
 </body>
 </html>`;
 }
@@ -789,6 +834,41 @@ async function forceSettingOff(key: string): Promise<void> {
   }
 }
 
+// Status for the two bonus items, for the status panel only. Each item's state
+// comes from its setting first (not enabled -> "off"), then from whether the file
+// actually reflects it. Bonus state never affects the verdict.
+function computeBonusStatus(extPath: string): BonusStatus[] {
+  const cfg = vscode.workspace.getConfiguration("kiloCodeKbPatch");
+  const read = (p: string) => (fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "");
+
+  let attach: BonusState = "off";
+  if (cfg.get<boolean>("addAttachFileButton", false)) {
+    const content = read(path.join(extPath, "dist", "webview.js"));
+    attach = content.includes(ATTACH_FILE_BUTTON.patched)
+      ? "on"
+      : content.includes(ATTACH_FILE_BUTTON.original)
+      ? "pending"
+      : "unavailable";
+  }
+
+  let openInTab: BonusState = "off";
+  if (cfg.get<boolean>("renameOpenInTab", false)) {
+    const match = read(path.join(extPath, "package.json")).match(
+      OPEN_IN_TAB_TITLE_RE
+    );
+    openInTab = !match
+      ? "unavailable"
+      : match[0].includes(JSON.stringify(OPEN_IN_TAB_RENAMED))
+      ? "on"
+      : "pending";
+  }
+
+  return [
+    { label: "Prompt toolbar: + button opens the file picker", state: attach },
+    { label: 'Editor title: group the "Open in Tab" icon', state: openInTab },
+  ];
+}
+
 interface PatchResult {
   filename: string;
   applied: string[];
@@ -885,7 +965,7 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
 
   if (mode === "status") {
     const { files, verdict } = computeStatus(distDir);
-    showStatusPanel(version, verdict, files);
+    showStatusPanel(version, verdict, files, computeBonusStatus(extPath));
     return;
   }
 
@@ -1032,6 +1112,7 @@ export const __test = {
   reconcileAttachFileButton,
   ATTACH_FILE_BUTTON,
   forceSettingOff,
+  computeBonusStatus,
   parseKiloVersion,
   compareKiloVersions,
   findLatestKiloExt,

@@ -20,6 +20,7 @@
 - Add an opt-in attach-file `+` button to the prompt toolbar that opens Kilo Code's file picker directly; enable it with `"kiloCodeKbPatch.addAttachFileButton": true` in `settings.json`
 - Register both bonus settings (`addAttachFileButton`, `renameOpenInTab`) in the manifest so they appear in the Settings UI and the extension can toggle them off (VS Code refuses to write an unregistered setting)
 - Restore Originals now also switches the bonuses off: it flips any present `addAttachFileButton`/`renameOpenInTab` setting to `false` and reverts its file, so a full restore stays pristine after a reload
+- Status panel now lists the bonus items in their own section (a neutral white circle when off, a check when on); the bonus rows never change the overall status verdict
 - Keep all earlier versions' patterns, so 1.7.x still applies on older Kilo Code releases
 
 ## 1.6.0

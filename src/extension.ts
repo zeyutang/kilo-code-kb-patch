@@ -46,6 +46,20 @@ const PATCHES: FilePatches[] = [
         description:
           "Attach-file button: adds a + button to the prompt toolbar that opens the file picker (v7.4.11)",
       },
+      // --- v7.4.11+ patterns. 7.4.11 re-minified only the document-level Escape
+      //     handler's event variable (re→ae); every other webview keyboard scope kept
+      //     symbols that still match the patterns below — chat input/Escape via the
+      //     v7.4.9+ block (Zm/ze/ua/ot), the permission skip predicate via the v7.3.63+
+      //     block (K?!1:L(H), event q), and the permission reject/approve handlers via
+      //     the v7.4.7+ block (j/O, z-dispatch, $). Re-derived from the 7.4.11 bundle. ---
+      {
+        original:
+          'ae.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ae.defaultPrevented||(ae.preventDefault(),t.abort())',
+        patched:
+          'ae.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ae.defaultPrevented||!ae.shiftKey&&ae.target?.value?.trim()||(ae.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.4.11+)",
+      },
       // --- v7.4.9+ patterns. 7.4.9 re-minified the chat-input scope again and the whole
       //     permission scope. Chat: Enter-check Wm→Zm, chat abort-guard it→ot (event ze and
       //     send ua unchanged from 7.4.8). Permission: the skip-predicate N=(q,U) kept event
@@ -580,19 +594,41 @@ function showStatusPanel(
 </html>`;
 }
 
+// Kilo extension dirs are named "kilocode.kilo-code-<version>[-<platform>]",
+// e.g. "kilocode.kilo-code-7.4.11-darwin-arm64". Pull out the leading dotted
+// numeric version as an array of ints so it can be compared and displayed.
+function parseKiloVersion(dirName: string): number[] {
+  const m = dirName.match(/kilocode\.kilo-code-(\d+(?:\.\d+)*)/);
+  return m ? m[1].split(".").map((n) => parseInt(n, 10)) : [];
+}
+
+// Numeric, component-wise version compare. Must NOT be a string sort: as
+// strings "7.4.11" < "7.4.9" (they differ at the patch digit, "1" vs "9"), which
+// would wrongly rank 7.4.9 above 7.4.11 and pick the older build as "latest".
+function compareKiloVersions(a: number[], b: number[]): number {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 function findLatestKiloExt(): string | undefined {
   if (!fs.existsSync(EXT_DIR)) return undefined;
   const dirs = fs
     .readdirSync(EXT_DIR)
-    .filter((d) => d.startsWith("kilocode.kilo-code-"))
-    .sort();
-  return dirs.length > 0 ? path.join(EXT_DIR, dirs[dirs.length - 1]) : undefined;
+    .filter((d) => d.startsWith("kilocode.kilo-code-"));
+  if (dirs.length === 0) return undefined;
+  dirs.sort((a, b) =>
+    compareKiloVersions(parseKiloVersion(a), parseKiloVersion(b))
+  );
+  return path.join(EXT_DIR, dirs[dirs.length - 1]);
 }
 
 function extractVersion(extPath: string): string {
-  const base = path.basename(extPath);
-  const match = base.match(/kilocode\.kilo-code-(.+)$/);
-  return match ? match[1] : "unknown";
+  const parts = parseKiloVersion(path.basename(extPath));
+  return parts.length > 0 ? parts.join(".") : "unknown";
 }
 
 // --- Hidden editor-title icon knob ------------------------------------------
@@ -882,4 +918,8 @@ export const __test = {
   OPEN_IN_TAB_TITLE_RE,
   OPEN_IN_TAB_ORIGINAL,
   OPEN_IN_TAB_RENAMED,
+  parseKiloVersion,
+  compareKiloVersions,
+  findLatestKiloExt,
+  extractVersion,
 };

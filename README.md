@@ -2,29 +2,26 @@
 
 Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd+Enter` sends, and permission prompts stop hijacking your keystrokes while you are typing.
 
-## Supported versions
+## Supported versions (latest three)
 
 | Kilo Code | KB Patch |
 | --------- | -------- |
-| 7.4.9+    | 1.6.x    |
+| 7.4.11+   | 1.7.x    |
+| 7.4.9     | 1.6.x    |
 | 7.4.8     | 1.5.x    |
-| 7.4.7     | 1.4.x    |
-| 7.4.0-6   | 1.3.x    |
-| 7.3.63    | 1.2.x    |
-| 7.3.50-54 | 1.1.x    |
-| 7.3.46    | 1.0.x    |
+| (prev.)   | (prev.)  |
 
 Each patch release keeps the earlier versions' patterns, so a newer patch still works on an older Kilo Code.
 
 ## What it does
 
-| Key            | Kilo Code (default) | KB Patched                                         |
-| -------------- | ------------------- | -------------------------------------------------- |
-| `Enter`        | Send / Approve      | **New line** (approves when the chat box is empty) |
-| `Cmd+Enter`    | Send / Save         | **Send / Approve / Save**                          |
-| `Shift+Enter`  | New line            | New line (unchanged)                               |
-| `Escape`       | Reject / Abort      | Reject / Abort **only when the chat box is empty** |
-| `Shift+Escape` | Reject / Abort      | **Reject / Abort** (always)                        |
+| Key            | Before Patched (native Kilo Code) | After Patched                                      |
+| -------------- | --------------------------------- | -------------------------------------------------- |
+| `Enter`        | Send / Approve                    | **New line** (approves when the chat box is empty) |
+| `Cmd+Enter`    | Send / Save                       | **Send / Approve / Save**                          |
+| `Shift+Enter`  | New line                          | New line (unchanged)                               |
+| `Escape`       | Reject / Abort                    | Reject / Abort **only when the chat box is empty** |
+| `Shift+Escape` | Reject / Abort                    | **Reject / Abort** (always)                        |
 
 Applies to the chat input, the permission prompt, and the KiloClaw edit/chat panels.
 

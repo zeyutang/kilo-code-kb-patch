@@ -567,6 +567,76 @@ function extractVersion(extPath: string): string {
   return match ? match[1] : "unknown";
 }
 
+// --- Hidden editor-title icon knob ------------------------------------------
+// Kilo's editor/title action `kilo-code.new.openInTab` ("Open in Tab") rides on
+// every editor's title bar. VSCode sorts same-group, same-order title actions by
+// their raw title (localeCompare), so retitling this command relocates the icon.
+// "Kilo Code: Open" sorts just after Claude Code's "Claude Code: Open", grouping
+// the two AI "Open" icons together.
+//
+// This is deliberately a hidden knob: the boolean below is NOT declared in this
+// extension's package.json, so it never shows in the Settings UI, never appears
+// in the status webview, and is settable only by hand in settings.json.
+const OPEN_IN_TAB_ORIGINAL = "Open in Tab";
+const OPEN_IN_TAB_RENAMED = "Kilo Code: Open";
+
+// Anchored on the unique command id. The command definition is the only place
+// where "title" immediately follows this id (the menu contribution is followed
+// by "group"/"when"), so this matches exactly once and stays idempotent no
+// matter what the title currently is. Capture group 1 is everything up to and
+// including `"title": `, so only the quoted value is rewritten.
+const OPEN_IN_TAB_TITLE_RE =
+  /("command":\s*"kilo-code\.new\.openInTab"\s*,\s*"title":\s*)"(?:[^"\\]|\\.)*"/;
+
+function desiredOpenInTabTitle(): string {
+  const rename = vscode.workspace
+    .getConfiguration("kiloCodeKbPatch")
+    .get<boolean>("renameOpenInTab", false);
+  return rename ? OPEN_IN_TAB_RENAMED : OPEN_IN_TAB_ORIGINAL;
+}
+
+// Rewrite the openInTab title in Kilo's manifest to match the hidden setting.
+// Returns true only when the file actually changed. Fails safe: a missing
+// manifest or a manifest whose shape a future Kilo has changed (pattern not
+// found) is a silent no-op rather than an error.
+function reconcileOpenInTabTitle(extPath: string): boolean {
+  const pkgPath = path.join(extPath, "package.json");
+  if (!fs.existsSync(pkgPath)) return false;
+  const content = fs.readFileSync(pkgPath, "utf8");
+  if (!OPEN_IN_TAB_TITLE_RE.test(content)) return false;
+  const desired = desiredOpenInTabTitle();
+  const updated = content.replace(
+    OPEN_IN_TAB_TITLE_RE,
+    (_match, prefix: string) => `${prefix}${JSON.stringify(desired)}`
+  );
+  if (updated === content) return false;
+  fs.writeFileSync(pkgPath, updated, "utf8");
+  return true;
+}
+
+// Reconcile, and only when the manifest actually changed offer a reload so the
+// manifest re-scan picks up the new title. That change plus this transient
+// prompt are the only surfaces; the status webview never lists this knob.
+function syncOpenInTabTitle(extPath: string): void {
+  let changed = false;
+  try {
+    changed = reconcileOpenInTabTitle(extPath);
+  } catch {
+    return;
+  }
+  if (!changed) return;
+  vscode.window
+    .showInformationMessage(
+      "Kilo Code KB Patch: editor title icon updated. Reload window to apply.",
+      "Reload Window"
+    )
+    .then((choice) => {
+      if (choice === "Reload Window") {
+        vscode.commands.executeCommand("workbench.action.reloadWindow");
+      }
+    });
+}
+
 interface PatchResult {
   filename: string;
   applied: string[];
@@ -733,6 +803,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const extPath = findLatestKiloExt();
   if (!extPath) return;
 
+  // Reconcile the hidden editor-title knob on startup (self-heals after a Kilo
+  // update resets the manifest) and whenever settings change. The listener is
+  // unguarded by affectsConfiguration on purpose: the setting is unregistered,
+  // so change events may not report it by section; a full reconcile is cheap.
+  syncOpenInTabTitle(extPath);
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(() => syncOpenInTabTitle(extPath))
+  );
+
   const distDir = path.join(extPath, "dist");
   const webviewPath = path.join(distDir, "webview.js");
   if (!fs.existsSync(webviewPath)) return;
@@ -771,4 +850,8 @@ export const __test = {
   applyPatches,
   restorePatches,
   showStatusPanel,
+  reconcileOpenInTabTitle,
+  OPEN_IN_TAB_TITLE_RE,
+  OPEN_IN_TAB_ORIGINAL,
+  OPEN_IN_TAB_RENAMED,
 };

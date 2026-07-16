@@ -21,6 +21,31 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.11 attach-file button (a feature, not a keyboard tweak). Adds a "+"
+      //     button to the prompt input's action toolbar (.prompt-input-hint-actions)
+      //     that opens Kilo's file picker directly, instead of the type-"@" →
+      //     "Browse files..." mention flow. It is injected just before the indexing
+      //     (database) button so it lands at the left edge of the icon cluster.
+      //
+      //     The button reuses Kilo's own tooltip (Gn), ghost button (_t), and
+      //     sprite-icon (tn, name:"plus") components, plus the already-localized
+      //     "prompt.action.attachFile" label (defined in every locale but otherwise
+      //     unused). onClick reaches four in-scope PromptInput locals: the textarea
+      //     ref k, the mention controller h, its value setter L, and the post-input
+      //     sync an. It inserts "@" at the caret (execCommand, so a real input event
+      //     fires) then calls h.selectMention({type:"file-picker"},k,L,an) — the exact
+      //     call the mention menu's own "Browse files..." row makes; the host replies
+      //     with filePickerResult and the chosen path is spliced in over the "@".
+      //     Re-derived from the 7.4.11 bundle; symbols differ from 7.4.9 (absent
+      //     there), so this pattern is 7.4.11-specific. ---
+      {
+        original:
+          'R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
+        patched:
+          'R(Re,C(Gn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,an)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(tn,{name:"plus",size:"small"})}})}}),null),R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
+        description:
+          "Attach-file button: adds a + button to the prompt toolbar that opens the file picker (v7.4.11)",
+      },
       // --- v7.4.9+ patterns. 7.4.9 re-minified the chat-input scope again and the whole
       //     permission scope. Chat: Enter-check Wm→Zm, chat abort-guard it→ot (event ze and
       //     send ua unchanged from 7.4.8). Permission: the skip-predicate N=(q,U) kept event
@@ -295,6 +320,7 @@ const PATCHES: FilePatches[] = [
 // version). Collapse them so the status view shows each behavior once, using a
 // version-agnostic label, rather than one line per per-version variant.
 const FEATURE_ORDER = [
+  "attach-button",
   "chat-input",
   "chat-escape",
   "perm-keys",
@@ -306,6 +332,7 @@ const FEATURE_ORDER = [
 ] as const;
 
 const FEATURE_LABELS: Record<string, string> = {
+  "attach-button": "Prompt toolbar: + button opens the file picker",
   "chat-input": "Chat input: Enter adds a newline, Cmd+Enter sends",
   "chat-escape": "Chat Escape: aborts only when the input is empty",
   "perm-keys": "Permission prompt: typing keys stay in the input",
@@ -317,6 +344,7 @@ const FEATURE_LABELS: Record<string, string> = {
 };
 
 function featureKey(description: string): string {
+  if (description.startsWith("Attach-file button")) return "attach-button";
   if (description.startsWith("Chat input")) return "chat-input";
   if (description.startsWith("Chat Escape")) return "chat-escape";
   if (description.startsWith("Document Escape")) return "doc-escape";

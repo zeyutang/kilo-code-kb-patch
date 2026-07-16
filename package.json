@@ -44,7 +44,22 @@
         "command": "kiloCodeKbPatch.status",
         "title": "Kilo Code KB Patch: Show Status"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Kilo Code KB Patch",
+      "properties": {
+        "kiloCodeKbPatch.addAttachFileButton": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Add a `+` button to the Kilo Code prompt toolbar that opens the file picker directly. Reload the window after changing."
+        },
+        "kiloCodeKbPatch.renameOpenInTab": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Retitle Kilo Code's editor-title \"Open in Tab\" action to \"Kilo Code: Open\" so its icon groups next to other AI \"Open\" icons in the editor title bar. Reload the window after changing."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

@@ -618,9 +618,10 @@ let suspendReconcile = false;
 // "Kilo Code: Open" sorts just after Claude Code's "Claude Code: Open", grouping
 // the two AI "Open" icons together.
 //
-// This is an opt-in bonus setting: the boolean below is NOT declared in this
-// extension's package.json, so it is set by hand in settings.json and does not
-// appear in the Settings UI or the status webview.
+// This is an opt-in bonus setting, declared in the extension's package.json (the
+// contributes.configuration block) so VS Code lists it in the Settings UI and
+// allows config.update to write it. It never appears in the status webview,
+// which stays keyboard-only.
 const OPEN_IN_TAB_ORIGINAL = "Open in Tab";
 const OPEN_IN_TAB_RENAMED = "Kilo Code: Open";
 
@@ -972,14 +973,15 @@ export function activate(context: vscode.ExtensionContext): void {
   if (!extPath) return;
 
   // Reconcile the bonus knobs on startup (self-heals after a Kilo update resets
-  // the files) and whenever settings change. The listener is unguarded by
-  // affectsConfiguration on purpose: the settings are unregistered, so change
-  // events may not report them by section; a full reconcile is cheap.
+  // the files) and whenever one of our settings changes. The settings are
+  // registered in package.json, so affectsConfiguration reports them reliably and
+  // limits the reconcile (which reads the webview bundle) to relevant changes.
   syncOpenInTabTitle(extPath);
   syncAttachFileButton(extPath);
   context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(() => {
+    vscode.workspace.onDidChangeConfiguration((e) => {
       if (suspendReconcile) return;
+      if (!e.affectsConfiguration("kiloCodeKbPatch")) return;
       syncOpenInTabTitle(extPath);
       syncAttachFileButton(extPath);
     })

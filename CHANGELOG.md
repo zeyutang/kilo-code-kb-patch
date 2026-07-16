@@ -18,6 +18,7 @@
 - Retarget the document-level Escape pattern that 7.4.11 re-minified (event variable `re`→`ae`); every other `webview.js` and `kiloclaw.js` pattern still matches through the existing 7.4.9/7.4.8/7.4.7/7.3.63 blocks, so only this one needed a new pattern
 - Compare installed Kilo Code versions numerically when choosing the build to patch, so 7.4.11 is picked over 7.4.9 when both are present (a string sort ranked `7.4.9` above `7.4.11`)
 - Add an opt-in attach-file `+` button to the prompt toolbar that opens Kilo Code's file picker directly; enable it with `"kiloCodeKbPatch.addAttachFileButton": true` in `settings.json`
+- Register both bonus settings (`addAttachFileButton`, `renameOpenInTab`) in the manifest so they appear in the Settings UI and the extension can toggle them off (VS Code refuses to write an unregistered setting)
 - Restore Originals now also switches the bonuses off: it flips any present `addAttachFileButton`/`renameOpenInTab` setting to `false` and reverts its file, so a full restore stays pristine after a reload
 - Keep all earlier versions' patterns, so 1.7.x still applies on older Kilo Code releases
 

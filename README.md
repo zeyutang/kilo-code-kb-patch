@@ -30,7 +30,7 @@ Applies to the chat input, the permission prompt, and the KiloClaw edit/chat pan
 ### Bonus
 
 Two optional extras, off by default.
-Enable either one by adding it to your `settings.json`, then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`).
+Enable either one from the Settings UI (search "Kilo Code KB Patch") or in your `settings.json`, then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`).
 To turn one off, set it to `false` (or run **Restore Originals**, which switches both off) and reload.
 
 - **Attach-file button.**

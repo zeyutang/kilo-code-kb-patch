@@ -21,31 +21,6 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
-      // --- v7.4.11 attach-file button (a feature, not a keyboard tweak). Adds a "+"
-      //     button to the prompt input's action toolbar (.prompt-input-hint-actions)
-      //     that opens Kilo's file picker directly, instead of the type-"@" →
-      //     "Browse files..." mention flow. It is injected just before the indexing
-      //     (database) button so it lands at the left edge of the icon cluster.
-      //
-      //     The button reuses Kilo's own tooltip (Gn), ghost button (_t), and
-      //     sprite-icon (tn, name:"plus") components, plus the already-localized
-      //     "prompt.action.attachFile" label (defined in every locale but otherwise
-      //     unused). onClick reaches four in-scope PromptInput locals: the textarea
-      //     ref k, the mention controller h, its value setter L, and the post-input
-      //     sync an. It inserts "@" at the caret (execCommand, so a real input event
-      //     fires) then calls h.selectMention({type:"file-picker"},k,L,an) — the exact
-      //     call the mention menu's own "Browse files..." row makes; the host replies
-      //     with filePickerResult and the chosen path is spliced in over the "@".
-      //     Re-derived from the 7.4.11 bundle; symbols differ from 7.4.9 (absent
-      //     there), so this pattern is 7.4.11-specific. ---
-      {
-        original:
-          'R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
-        patched:
-          'R(Re,C(Gn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,an)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(tn,{name:"plus",size:"small"})}})}}),null),R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
-        description:
-          "Attach-file button: adds a + button to the prompt toolbar that opens the file picker (v7.4.11)",
-      },
       // --- v7.4.11+ patterns. 7.4.11 re-minified only the document-level Escape
       //     handler's event variable (re→ae); every other webview keyboard scope kept
       //     symbols that still match the patterns below — chat input/Escape via the
@@ -334,7 +309,6 @@ const PATCHES: FilePatches[] = [
 // version). Collapse them so the status view shows each behavior once, using a
 // version-agnostic label, rather than one line per per-version variant.
 const FEATURE_ORDER = [
-  "attach-button",
   "chat-input",
   "chat-escape",
   "perm-keys",
@@ -346,7 +320,6 @@ const FEATURE_ORDER = [
 ] as const;
 
 const FEATURE_LABELS: Record<string, string> = {
-  "attach-button": "Prompt toolbar: + button opens the file picker",
   "chat-input": "Chat input: Enter adds a newline, Cmd+Enter sends",
   "chat-escape": "Chat Escape: aborts only when the input is empty",
   "perm-keys": "Permission prompt: typing keys stay in the input",
@@ -358,7 +331,6 @@ const FEATURE_LABELS: Record<string, string> = {
 };
 
 function featureKey(description: string): string {
-  if (description.startsWith("Attach-file button")) return "attach-button";
   if (description.startsWith("Chat input")) return "chat-input";
   if (description.startsWith("Chat Escape")) return "chat-escape";
   if (description.startsWith("Document Escape")) return "doc-escape";
@@ -631,16 +603,24 @@ function extractVersion(extPath: string): string {
   return parts.length > 0 ? parts.join(".") : "unknown";
 }
 
-// --- Hidden editor-title icon knob ------------------------------------------
+// Restore Originals flips the bonus settings off and reverts their files in one
+// batch. Suspend the config-change listener for the duration so it cannot fire
+// mid-batch and re-reconcile a bonus whose setting has not been flipped yet (for
+// example re-applying the still-enabled title rename right after its file was
+// reverted). Once the batch ends, settings and files agree, so any late change
+// event reconciles to a no-op.
+let suspendReconcile = false;
+
+// --- Bonus editor-title icon knob -------------------------------------------
 // Kilo's editor/title action `kilo-code.new.openInTab` ("Open in Tab") rides on
 // every editor's title bar. VSCode sorts same-group, same-order title actions by
 // their raw title (localeCompare), so retitling this command relocates the icon.
 // "Kilo Code: Open" sorts just after Claude Code's "Claude Code: Open", grouping
 // the two AI "Open" icons together.
 //
-// This is deliberately a hidden knob: the boolean below is NOT declared in this
-// extension's package.json, so it never shows in the Settings UI, never appears
-// in the status webview, and is settable only by hand in settings.json.
+// This is an opt-in bonus setting: the boolean below is NOT declared in this
+// extension's package.json, so it is set by hand in settings.json and does not
+// appear in the Settings UI or the status webview.
 const OPEN_IN_TAB_ORIGINAL = "Open in Tab";
 const OPEN_IN_TAB_RENAMED = "Kilo Code: Open";
 
@@ -659,7 +639,7 @@ function desiredOpenInTabTitle(): string {
   return rename ? OPEN_IN_TAB_RENAMED : OPEN_IN_TAB_ORIGINAL;
 }
 
-// Rewrite the openInTab title in Kilo's manifest to match the hidden setting.
+// Rewrite the openInTab title in Kilo's manifest to match the bonus setting.
 // Returns true only when the file actually changed. Fails safe: a missing
 // manifest or a manifest whose shape a future Kilo has changed (pattern not
 // found) is a silent no-op rather than an error.
@@ -699,6 +679,113 @@ function syncOpenInTabTitle(extPath: string): void {
         vscode.commands.executeCommand("workbench.action.reloadWindow");
       }
     });
+}
+
+// --- Bonus: attach-file "+" button ------------------------------------------
+// Adds a "+" button to the prompt input's action toolbar
+// (.prompt-input-hint-actions) that opens Kilo's file picker directly, instead
+// of the type-"@" then "Browse files..." mention flow. It is injected just
+// before the indexing (database) button so it lands at the left edge of the icon
+// cluster.
+//
+// The button reuses Kilo's own tooltip (Gn), ghost button (_t), and sprite-icon
+// (tn, name:"plus") components, plus the already-localized
+// "prompt.action.attachFile" label (defined in every locale but otherwise
+// unused). onClick reaches four in-scope PromptInput locals: the textarea ref k,
+// the mention controller h, its value setter L, and the post-input sync an. It
+// inserts "@" at the caret (execCommand, so a real input event fires) then calls
+// h.selectMention({type:"file-picker"},k,L,an), the exact call the mention menu's
+// own "Browse files..." row makes; the host replies with filePickerResult and
+// the chosen path is spliced in over the "@".
+//
+// Opt-in: off unless "kiloCodeKbPatch.addAttachFileButton" is true in
+// settings.json. The symbols are 7.4.11-specific (absent in 7.4.9) and, like
+// every webview.js pattern, may change when a future Kilo re-minifies the bundle.
+const ATTACH_FILE_BUTTON = {
+  original:
+    'R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
+  patched:
+    'R(Re,C(Gn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,an)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(tn,{name:"plus",size:"small"})}})}}),null),R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
+};
+
+function addAttachFileButtonEnabled(): boolean {
+  return vscode.workspace
+    .getConfiguration("kiloCodeKbPatch")
+    .get<boolean>("addAttachFileButton", false);
+}
+
+// Apply or remove the attach-file button in Kilo's webview bundle to match the
+// setting. Returns true only when the file actually changed. The patched text
+// contains the original as a suffix, so "already patched" is tested before "is
+// pristine". Fails safe: a missing bundle, or a pattern a future Kilo has
+// re-minified (neither text present), is a silent no-op.
+function reconcileAttachFileButton(extPath: string): boolean {
+  const webviewPath = path.join(extPath, "dist", "webview.js");
+  if (!fs.existsSync(webviewPath)) return false;
+  const content = fs.readFileSync(webviewPath, "utf8");
+  const enabled = addAttachFileButtonEnabled();
+  const isPatched = content.includes(ATTACH_FILE_BUTTON.patched);
+  if (enabled === isPatched) return false;
+
+  let updated = content;
+  if (enabled) {
+    if (content.includes(ATTACH_FILE_BUTTON.original)) {
+      updated = content.replace(
+        ATTACH_FILE_BUTTON.original,
+        ATTACH_FILE_BUTTON.patched
+      );
+    }
+  } else {
+    updated = content.replace(
+      ATTACH_FILE_BUTTON.patched,
+      ATTACH_FILE_BUTTON.original
+    );
+  }
+  if (updated === content) return false;
+  fs.writeFileSync(webviewPath, updated, "utf8");
+  return true;
+}
+
+// Reconcile, and only when the bundle actually changed offer a reload so Kilo's
+// webview re-loads with (or without) the button.
+function syncAttachFileButton(extPath: string): void {
+  let changed = false;
+  try {
+    changed = reconcileAttachFileButton(extPath);
+  } catch {
+    return;
+  }
+  if (!changed) return;
+  vscode.window
+    .showInformationMessage(
+      "Kilo Code KB Patch: attach-file button updated. Reload window to apply.",
+      "Reload Window"
+    )
+    .then((choice) => {
+      if (choice === "Reload Window") {
+        vscode.commands.executeCommand("workbench.action.reloadWindow");
+      }
+    });
+}
+
+// Flip a bonus setting to false, but only in the scopes where the user has
+// actually set it (globalValue/workspaceValue/workspaceFolderValue defined), so
+// Restore Originals turns the bonus off for good without writing settings
+// entries the user never added. An absent or already-false entry is left alone.
+async function forceSettingOff(key: string): Promise<void> {
+  const config = vscode.workspace.getConfiguration("kiloCodeKbPatch");
+  const info = config.inspect<boolean>(key);
+  if (!info) return;
+  const scopes: [boolean | undefined, vscode.ConfigurationTarget][] = [
+    [info.globalValue, vscode.ConfigurationTarget.Global],
+    [info.workspaceValue, vscode.ConfigurationTarget.Workspace],
+    [info.workspaceFolderValue, vscode.ConfigurationTarget.WorkspaceFolder],
+  ];
+  for (const [value, target] of scopes) {
+    if (value !== undefined && value !== false) {
+      await config.update(key, false, target);
+    }
+  }
 }
 
 interface PatchResult {
@@ -823,10 +910,27 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
     }
   }
 
-  const totalApplied = results.reduce(
-    (s, r) => s + r.applied.length + r.reverted.length,
-    0
-  );
+  // Restore Originals also turns the bonuses off. Flip each present setting to
+  // false so it stays off, then reconcile (the reconcilers read the settings, so
+  // this reverts the button and title now and stops the next activation from
+  // re-applying them). The listener is suspended so its own reconcile cannot
+  // double-fire mid-batch; the final settings and files agree.
+  let bonusReverted = 0;
+  if (mode === "restore") {
+    suspendReconcile = true;
+    try {
+      await forceSettingOff("addAttachFileButton");
+      await forceSettingOff("renameOpenInTab");
+      if (reconcileAttachFileButton(extPath)) bonusReverted++;
+      if (reconcileOpenInTabTitle(extPath)) bonusReverted++;
+    } finally {
+      suspendReconcile = false;
+    }
+  }
+
+  const totalApplied =
+    results.reduce((s, r) => s + r.applied.length + r.reverted.length, 0) +
+    bonusReverted;
   const totalSkipped = results.reduce((s, r) => s + r.skipped.length, 0);
 
   const action = mode === "apply" ? "applied" : "restored";
@@ -867,13 +971,18 @@ export function activate(context: vscode.ExtensionContext): void {
   const extPath = findLatestKiloExt();
   if (!extPath) return;
 
-  // Reconcile the hidden editor-title knob on startup (self-heals after a Kilo
-  // update resets the manifest) and whenever settings change. The listener is
-  // unguarded by affectsConfiguration on purpose: the setting is unregistered,
-  // so change events may not report it by section; a full reconcile is cheap.
+  // Reconcile the bonus knobs on startup (self-heals after a Kilo update resets
+  // the files) and whenever settings change. The listener is unguarded by
+  // affectsConfiguration on purpose: the settings are unregistered, so change
+  // events may not report them by section; a full reconcile is cheap.
   syncOpenInTabTitle(extPath);
+  syncAttachFileButton(extPath);
   context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(() => syncOpenInTabTitle(extPath))
+    vscode.workspace.onDidChangeConfiguration(() => {
+      if (suspendReconcile) return;
+      syncOpenInTabTitle(extPath);
+      syncAttachFileButton(extPath);
+    })
   );
 
   const distDir = path.join(extPath, "dist");
@@ -918,6 +1027,9 @@ export const __test = {
   OPEN_IN_TAB_TITLE_RE,
   OPEN_IN_TAB_ORIGINAL,
   OPEN_IN_TAB_RENAMED,
+  reconcileAttachFileButton,
+  ATTACH_FILE_BUTTON,
+  forceSettingOff,
   parseKiloVersion,
   compareKiloVersions,
   findLatestKiloExt,

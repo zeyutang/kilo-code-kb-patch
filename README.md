@@ -15,6 +15,8 @@ Each patch release keeps the earlier versions' patterns, so a newer patch still 
 
 ## What it does
 
+### Keyboard patches
+
 | Key            | Before Patched (native Kilo Code) | After Patched                                      |
 | -------------- | --------------------------------- | -------------------------------------------------- |
 | `Enter`        | Send / Approve                    | **New line** (approves when the chat box is empty) |
@@ -25,6 +27,26 @@ Each patch release keeps the earlier versions' patterns, so a newer patch still 
 
 Applies to the chat input, the permission prompt, and the KiloClaw edit/chat panels.
 
+### Bonus
+
+Two optional extras, off by default.
+Enable either one by adding it to your `settings.json`, then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`).
+To turn one off, set it to `false` (or run **Restore Originals**, which switches both off) and reload.
+
+- **Attach-file button.**
+  Adds a `+` button to the prompt toolbar that opens Kilo Code's file picker directly, instead of typing `@` and choosing "Browse files...".
+
+  ```json
+  "kiloCodeKbPatch.addAttachFileButton": true
+  ```
+
+- **Relocate the "Open in Tab" icon.**
+  Retitles Kilo Code's editor-title "Open in Tab" action to "Kilo Code: Open" so its icon sorts next to other AI "Open" icons in the editor title bar.
+
+  ```json
+  "kiloCodeKbPatch.renameOpenInTab": true
+  ```
+
 ## Install
 
 Install from the **VS Code Marketplace**: [Kilo Code KB Patch](https://marketplace.visualstudio.com/items?itemName=zeyutang.kilo-code-kb-patch)
@@ -32,7 +54,7 @@ Install from the **VS Code Marketplace**: [Kilo Code KB Patch](https://marketpla
 The extension detects an unpatched Kilo Code and offers to apply. Three commands are available from the Command Palette (`Cmd+Shift+P` → "Kilo Code KB Patch"):
 
 - **Apply Patches**
-- **Restore Originals**
+- **Restore Originals** (also switches the bonus settings off)
 - **Show Status**
 
 Reload the window after applying KB Patch: `Cmd+Shift+P` → `Developer: Reload Window`.

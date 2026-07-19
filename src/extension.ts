@@ -3,7 +3,22 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const EXT_DIR = path.join(os.homedir(), ".vscode/extensions");
+const KILO_EXT_ID = "kilocode.kilo-code";
+
+// Last-resort extensions roots by editor fork, relative to the home directory.
+// Used only when the running editor cannot be asked (Kilo Code disabled) and
+// this extension is not installed next to it. Every fork keeps its own folder,
+// which is why no single path can be hardcoded (VSCodium users hit exactly
+// that: Kilo-Org/kilocode#8641).
+const KNOWN_EXT_DIRS = [
+  ".vscode/extensions", // VS Code
+  ".vscode-insiders/extensions", // VS Code Insiders
+  ".vscode-oss/extensions", // VSCodium and other OSS builds
+  ".cursor/extensions", // Cursor
+  ".windsurf/extensions", // Windsurf
+  ".vscode-server/extensions", // VS Code remote server
+  ".vscodium-server/extensions", // VSCodium remote server
+];
 
 interface PatchDef {
   original: string;
@@ -631,16 +646,62 @@ function compareKiloVersions(a: number[], b: number[]): number {
   return 0;
 }
 
+// Set at activation. Used to derive the extensions folder this editor loads
+// from, so discovery follows the editor rather than a hardcoded path.
+let extensionContext: vscode.ExtensionContext | undefined;
+
+// Candidate extensions roots, most authoritative first:
+//   1. The folder the running editor loaded Kilo Code from (host API). Exact
+//      for every fork, portable installs, and --extensions-dir.
+//   2. The folder this extension itself is installed in. Kilo Code normally
+//      sits next to it, and this signal survives Kilo Code being disabled. In
+//      a development host it is the checkout's parent, which contains no Kilo
+//      install and falls through.
+//   3. Known per-fork default folders.
+// Deduplicated, existing directories only, priority order preserved.
+function candidateExtensionRoots(): string[] {
+  const roots: string[] = [];
+  const kilo = vscode.extensions.getExtension(KILO_EXT_ID);
+  if (kilo) roots.push(path.dirname(kilo.extensionUri.fsPath));
+  if (extensionContext) {
+    roots.push(path.dirname(extensionContext.extensionUri.fsPath));
+  }
+  for (const rel of KNOWN_EXT_DIRS) {
+    roots.push(path.join(os.homedir(), rel));
+  }
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const root of roots) {
+    const resolved = path.resolve(root);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (fs.existsSync(resolved)) out.push(resolved);
+  }
+  return out;
+}
+
+// The first candidate root containing a Kilo Code install wins, so the running
+// editor's own install always beats another fork's leftover copy. Within that
+// root, the newest version is chosen (numeric compare; see
+// compareKiloVersions). An unreadable root falls through instead of failing
+// the whole search.
 function findLatestKiloExt(): string | undefined {
-  if (!fs.existsSync(EXT_DIR)) return undefined;
-  const dirs = fs
-    .readdirSync(EXT_DIR)
-    .filter((d) => d.startsWith("kilocode.kilo-code-"));
-  if (dirs.length === 0) return undefined;
-  dirs.sort((a, b) =>
-    compareKiloVersions(parseKiloVersion(a), parseKiloVersion(b))
-  );
-  return path.join(EXT_DIR, dirs[dirs.length - 1]);
+  for (const root of candidateExtensionRoots()) {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(root);
+    } catch {
+      continue;
+    }
+    const dirs = entries.filter((d) => d.startsWith("kilocode.kilo-code-"));
+    if (dirs.length === 0) continue;
+    dirs.sort((a, b) =>
+      compareKiloVersions(parseKiloVersion(a), parseKiloVersion(b))
+    );
+    return path.join(root, dirs[dirs.length - 1]);
+  }
+  return undefined;
 }
 
 function extractVersion(extPath: string): string {
@@ -954,8 +1015,14 @@ function restorePatches(filePath: string, patches: PatchDef[]): PatchResult {
 async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
   const extPath = findLatestKiloExt();
   if (!extPath) {
+    const home = os.homedir();
+    const searched = candidateExtensionRoots()
+      .map((r) => (r.startsWith(home) ? `~${r.slice(home.length)}` : r))
+      .join(", ");
     vscode.window.showErrorMessage(
-      "Kilo Code KB Patch: Could not find kilocode.kilo-code-* in ~/.vscode/extensions/"
+      `Kilo Code KB Patch: Could not find a kilocode.kilo-code-* install. Searched: ${
+        searched || "(no extensions folder found)"
+      }`
     );
     return;
   }
@@ -1036,6 +1103,8 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  extensionContext = context;
+
   context.subscriptions.push(
     vscode.commands.registerCommand("kiloCodeKbPatch.apply", () =>
       runPatch("apply")
@@ -1115,6 +1184,8 @@ export const __test = {
   computeBonusStatus,
   parseKiloVersion,
   compareKiloVersions,
+  candidateExtensionRoots,
+  KNOWN_EXT_DIRS,
   findLatestKiloExt,
   extractVersion,
 };

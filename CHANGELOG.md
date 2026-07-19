@@ -13,6 +13,12 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## Unreleased
+
+- Locate the Kilo Code install through the running editor instead of the hardcoded `~/.vscode/extensions`, so patching works on VSCodium (`~/.vscode-oss/extensions`), Cursor, Windsurf, remote servers, and custom `--extensions-dir` setups
+- Discovery order: the folder the editor loaded Kilo Code from, then the folder KB Patch itself is installed in, then known per-fork defaults; the first folder containing a Kilo Code install wins, so another editor's copy is never patched by mistake
+- The "could not find" error now lists every folder that was searched
+
 ## 1.7.0
 
 - Retarget the document-level Escape pattern that 7.4.11 re-minified (event variable `re`→`ae`); every other `webview.js` and `kiloclaw.js` pattern still matches through the existing 7.4.9/7.4.8/7.4.7/7.3.63 blocks, so only this one needed a new pattern

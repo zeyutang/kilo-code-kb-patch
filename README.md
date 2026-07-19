@@ -49,11 +49,17 @@ To turn one off, set it to `false` (or run **Restore Originals**, which switches
 
 ## Install
 
+The extension locates Kilo Code by asking the running editor where it is installed, so native VS Code and its forks need no additional configuration: VSCodium, Cursor, Windsurf, remote servers, and custom `--extensions-dir` setups.
+
+### VS Code
+
 Install from the **VS Code Marketplace**: [Kilo Code KB Patch](https://marketplace.visualstudio.com/items?itemName=zeyutang.kilo-code-kb-patch)
 
 ### VSCodium, Cursor, Windsurf, and other forks
 
-The extension locates Kilo Code by asking the running editor where it is installed, so forks need no configuration: VSCodium (`~/.vscode-oss/extensions`), Cursor, Windsurf, remote servers, and custom `--extensions-dir` setups are all found.
+Install from the **Open VSX Registry**: [Kilo Code KB Patch](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
+
+### Get Kilo Code patched
 
 The extension detects an unpatched Kilo Code and offers to apply. Three commands are available from the Command Palette (`Cmd+Shift+P` → "Kilo Code KB Patch"):
 

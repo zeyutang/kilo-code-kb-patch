@@ -54,7 +54,6 @@ Install from the **VS Code Marketplace**: [Kilo Code KB Patch](https://marketpla
 ### VSCodium, Cursor, Windsurf, and other forks
 
 The extension locates Kilo Code by asking the running editor where it is installed, so forks need no configuration: VSCodium (`~/.vscode-oss/extensions`), Cursor, Windsurf, remote servers, and custom `--extensions-dir` setups are all found.
-On VSCodium, whose built-in gallery is Open VSX, sideload the extension if it is not available there: download the `.vsix` from the Marketplace page (**Download Extension**), then run **Extensions** → `⋯` → **Install from VSIX…**.
 
 The extension detects an unpatched Kilo Code and offers to apply. Three commands are available from the Command Palette (`Cmd+Shift+P` → "Kilo Code KB Patch"):
 

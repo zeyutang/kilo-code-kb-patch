@@ -13,7 +13,7 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
-## Unreleased
+## 1.7.1
 
 - Locate the Kilo Code install through the running editor instead of the hardcoded `~/.vscode/extensions`, so patching works on VSCodium (`~/.vscode-oss/extensions`), Cursor, Windsurf, remote servers, and custom `--extensions-dir` setups
 - Discovery order: the folder the editor loaded Kilo Code from, then the folder KB Patch itself is installed in, then known per-fork defaults; the first folder containing a Kilo Code install wins, so another editor's copy is never patched by mistake

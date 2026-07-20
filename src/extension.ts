@@ -36,6 +36,34 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.13+ patterns. 7.4.13 re-minified three scopes: the chat send
+      //     call (ua→pa; Enter-check Zm and event ze unchanged from 7.4.9), the
+      //     permission skip-predicate's element arg (Q(U)→Q(H); in-textarea guard
+      //     K, element helper Q, and event q unchanged), and the document-level
+      //     Escape event (ae→oe). Chat Escape (ze/ot), permission reject (j) and
+      //     approve (O/$) still match the v7.4.9+/v7.4.7+ blocks, and kiloclaw.js
+      //     matches v7.4.8+, so only these three needed new patterns. Re-derived
+      //     from the 7.4.13 bundle. ---
+      {
+        original: "Zm(ze)&&!ze.shiftKey&&(ze.preventDefault(),pa())",
+        patched: "Zm(ze)&&ze.metaKey&&(ze.preventDefault(),pa())",
+        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.13+)",
+      },
+      {
+        original: "K?!1:Q(H)",
+        patched:
+          'K?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:Q(H)',
+        description:
+          "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.13+)",
+      },
+      {
+        original:
+          'oe.key!=="Escape"||!t.submitting()&&t.status()==="idle"||oe.defaultPrevented||(oe.preventDefault(),t.abort())',
+        patched:
+          'oe.key!=="Escape"||!t.submitting()&&t.status()==="idle"||oe.defaultPrevented||!oe.shiftKey&&oe.target?.value?.trim()||(oe.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.4.13+)",
+      },
       // --- v7.4.11+ patterns. 7.4.11 re-minified only the document-level Escape
       //     handler's event variable (re→ae); every other webview keyboard scope kept
       //     symbols that still match the patterns below — chat input/Escape via the
@@ -795,25 +823,37 @@ function syncOpenInTabTitle(extPath: string): void {
 // before the indexing (database) button so it lands at the left edge of the icon
 // cluster.
 //
-// The button reuses Kilo's own tooltip (Gn), ghost button (_t), and sprite-icon
-// (tn, name:"plus") components, plus the already-localized
-// "prompt.action.attachFile" label (defined in every locale but otherwise
-// unused). onClick reaches four in-scope PromptInput locals: the textarea ref k,
-// the mention controller h, its value setter L, and the post-input sync an. It
-// inserts "@" at the caret (execCommand, so a real input event fires) then calls
-// h.selectMention({type:"file-picker"},k,L,an), the exact call the mention menu's
-// own "Browse files..." row makes; the host replies with filePickerResult and
-// the chosen path is spliced in over the "@".
+// The button reuses Kilo's own tooltip, ghost button (_t), and sprite-icon (tn)
+// components, plus the already-localized "prompt.action.attachFile" label
+// (defined in every locale but otherwise unused). onClick reaches four in-scope
+// PromptInput locals: the textarea ref k, the mention controller h, its value
+// setter, and the post-input sync an. It inserts "@" at the caret (execCommand,
+// so a real input event fires) then calls h.selectMention({type:"file-picker"},
+// k,<setter>,an), the exact call the mention menu's own "Browse files..." row
+// makes; the host replies with filePickerResult and the chosen path is spliced
+// in over the "@".
 //
 // Opt-in: off unless "kiloCodeKbPatch.addAttachFileButton" is true in
-// settings.json. The symbols are 7.4.11-specific (absent in 7.4.9) and, like
-// every webview.js pattern, may change when a future Kilo re-minifies the bundle.
-const ATTACH_FILE_BUTTON = {
-  original:
-    'R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
-  patched:
-    'R(Re,C(Gn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,an)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(tn,{name:"plus",size:"small"})}})}}),null),R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
-};
+// settings.json. Like every webview.js pattern these symbols are re-minified per
+// Kilo release, so each supported version keeps its own variant here (newest
+// first); exactly one matches a given build. A build matching none is a silent
+// no-op. Per-version symbols: 7.4.13 uses Pe/ce/Ue/On (container/when/tooltip),
+// value setter Q, icon name "plus-small"; 7.4.11 uses Re/de/He/Gn, setter L,
+// icon name "plus".
+const ATTACH_FILE_BUTTONS: { original: string; patched: string }[] = [
+  {
+    original:
+      'R(Pe,C(ce,{get when(){return Ue()},get children(){return C(On,{get value(){return r.status().message||r.label()}',
+    patched:
+      'R(Pe,C(On,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,Q,an)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(tn,{name:"plus-small",size:"small"})}})}}),null),R(Pe,C(ce,{get when(){return Ue()},get children(){return C(On,{get value(){return r.status().message||r.label()}',
+  },
+  {
+    original:
+      'R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
+    patched:
+      'R(Re,C(Gn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,an)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(tn,{name:"plus",size:"small"})}})}}),null),R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
+  },
+];
 
 function addAttachFileButtonEnabled(): boolean {
   return vscode.workspace
@@ -821,33 +861,37 @@ function addAttachFileButtonEnabled(): boolean {
     .get<boolean>("addAttachFileButton", false);
 }
 
+// Find the button variant that matches this build. Each patched string contains
+// its own original as a suffix, so a patched build makes both includes()-true for
+// its variant only; unmatched versions' symbols are absent. Returns undefined
+// when no known variant is present (a future Kilo re-minify), which callers treat
+// as a silent no-op.
+function matchingAttachFileButton(
+  content: string
+): { original: string; patched: string } | undefined {
+  return ATTACH_FILE_BUTTONS.find(
+    (b) => content.includes(b.patched) || content.includes(b.original)
+  );
+}
+
 // Apply or remove the attach-file button in Kilo's webview bundle to match the
 // setting. Returns true only when the file actually changed. The patched text
 // contains the original as a suffix, so "already patched" is tested before "is
 // pristine". Fails safe: a missing bundle, or a pattern a future Kilo has
-// re-minified (neither text present), is a silent no-op.
+// re-minified (no variant matches), is a silent no-op.
 function reconcileAttachFileButton(extPath: string): boolean {
   const webviewPath = path.join(extPath, "dist", "webview.js");
   if (!fs.existsSync(webviewPath)) return false;
   const content = fs.readFileSync(webviewPath, "utf8");
+  const variant = matchingAttachFileButton(content);
+  if (!variant) return false;
   const enabled = addAttachFileButtonEnabled();
-  const isPatched = content.includes(ATTACH_FILE_BUTTON.patched);
+  const isPatched = content.includes(variant.patched);
   if (enabled === isPatched) return false;
 
-  let updated = content;
-  if (enabled) {
-    if (content.includes(ATTACH_FILE_BUTTON.original)) {
-      updated = content.replace(
-        ATTACH_FILE_BUTTON.original,
-        ATTACH_FILE_BUTTON.patched
-      );
-    }
-  } else {
-    updated = content.replace(
-      ATTACH_FILE_BUTTON.patched,
-      ATTACH_FILE_BUTTON.original
-    );
-  }
+  const updated = enabled
+    ? content.replace(variant.original, variant.patched)
+    : content.replace(variant.patched, variant.original);
   if (updated === content) return false;
   fs.writeFileSync(webviewPath, updated, "utf8");
   return true;
@@ -905,11 +949,12 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   let attach: BonusState = "off";
   if (cfg.get<boolean>("addAttachFileButton", false)) {
     const content = read(path.join(extPath, "dist", "webview.js"));
-    attach = content.includes(ATTACH_FILE_BUTTON.patched)
+    const variant = matchingAttachFileButton(content);
+    attach = !variant
+      ? "unavailable"
+      : content.includes(variant.patched)
       ? "on"
-      : content.includes(ATTACH_FILE_BUTTON.original)
-      ? "pending"
-      : "unavailable";
+      : "pending";
   }
 
   let openInTab: BonusState = "off";
@@ -1179,7 +1224,8 @@ export const __test = {
   OPEN_IN_TAB_ORIGINAL,
   OPEN_IN_TAB_RENAMED,
   reconcileAttachFileButton,
-  ATTACH_FILE_BUTTON,
+  matchingAttachFileButton,
+  ATTACH_FILE_BUTTONS,
   forceSettingOff,
   computeBonusStatus,
   parseKiloVersion,

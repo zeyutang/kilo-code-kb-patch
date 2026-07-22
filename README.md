@@ -1,5 +1,10 @@
 # Kilo Code Keyboard Patch
 
+[![VS Marketplace Version](https://badgen.net/vs-marketplace/v/zeyutang.kilo-code-kb-patch?label=VS%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=zeyutang.kilo-code-kb-patch)
+[![VS Marketplace Downloads](https://badgen.net/vs-marketplace/d/zeyutang.kilo-code-kb-patch)](https://marketplace.visualstudio.com/items?itemName=zeyutang.kilo-code-kb-patch)
+[![Open VSX Version](https://img.shields.io/open-vsx/v/zeyutang/kilo-code-kb-patch?label=Open%20VSX)](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
+[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/zeyutang/kilo-code-kb-patch)](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
+
 Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd+Enter` sends, and permission prompts stop hijacking your keystrokes while you are typing.
 
 ## Supported versions (latest three)

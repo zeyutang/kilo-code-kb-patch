@@ -36,6 +36,30 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.15+ patterns. 7.4.15 re-minified two webview scopes: the chat
+      //     keydown handler's abort guard (ot→st; event ze, Enter-check Zm and
+      //     send pa unchanged from 7.4.13, so chat input still matches the
+      //     v7.4.13 block) and the document-level Escape event variable (oe→le).
+      //     Permission key routing (skip-predicate K?!1:L(H) via the v7.3.63+
+      //     block, reject j/approve O via the v7.4.7+ block) and kiloclaw.js
+      //     (v7.4.8+) still match, so only these two needed new patterns.
+      //     Re-derived from the 7.4.15 bundle. ---
+      {
+        original:
+          'if(ze.key==="Escape"&&st()){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
+        patched:
+          'if(ze.key==="Escape"&&st()&&(ze.shiftKey||!ze.target?.value?.trim())){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.15+)",
+      },
+      {
+        original:
+          'le.key!=="Escape"||!t.submitting()&&t.status()==="idle"||le.defaultPrevented||(le.preventDefault(),t.abort())',
+        patched:
+          'le.key!=="Escape"||!t.submitting()&&t.status()==="idle"||le.defaultPrevented||!le.shiftKey&&le.target?.value?.trim()||(le.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.4.15+)",
+      },
       // --- v7.4.13+ patterns. 7.4.13 re-minified three scopes: the chat send
       //     call (ua→pa; Enter-check Zm and event ze unchanged from 7.4.9), the
       //     permission skip-predicate's element arg (Q(U)→Q(H); in-textarea guard
@@ -837,10 +861,18 @@ function syncOpenInTabTitle(extPath: string): void {
 // settings.json. Like every webview.js pattern these symbols are re-minified per
 // Kilo release, so each supported version keeps its own variant here (newest
 // first); exactly one matches a given build. A build matching none is a silent
-// no-op. Per-version symbols: 7.4.13 uses Pe/ce/Ue/On (container/when/tooltip),
-// value setter Q, icon name "plus-small"; 7.4.11 uses Re/de/He/Gn, setter L,
-// icon name "plus".
+// no-op. Per-version symbols: 7.4.15 uses Pe/se/Ue/Gn (container/when/tooltip)
+// with insert P and createComponent _, value setter L, sync nn, icon name
+// "plus-small"; 7.4.13 uses Pe/ce/Ue/On (insert R, createComponent C), setter Q,
+// sync an, icon name "plus-small"; 7.4.11 uses Re/de/He/Gn, setter L, icon name
+// "plus".
 const ATTACH_FILE_BUTTONS: { original: string; patched: string }[] = [
+  {
+    original:
+      'P(Pe,_(se,{get when(){return Ue()},get children(){return _(Gn,{get value(){return r.status().message||r.label()}',
+    patched:
+      'P(Pe,_(Gn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return _(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,nn)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return _(tn,{name:"plus-small",size:"small"})}})}}),null),P(Pe,_(se,{get when(){return Ue()},get children(){return _(Gn,{get value(){return r.status().message||r.label()}',
+  },
   {
     original:
       'R(Pe,C(ce,{get when(){return Ue()},get children(){return C(On,{get value(){return r.status().message||r.label()}',

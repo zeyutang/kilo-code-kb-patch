@@ -36,6 +36,27 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.16+ patterns. 7.4.16 re-minified only the chat keydown scope:
+      //     event ze→$e and send pa→ua (Enter-check Zm and abort guard st are
+      //     unchanged from 7.4.15), so both chat behaviors needed new patterns.
+      //     Everything else matches an existing block: the permission scope is
+      //     byte-identical to v7.3.63+/v7.4.7+ (skip-predicate K?!1:L(H) with
+      //     event q, reject j, approve $/z) and the document-level Escape event
+      //     went back to ie, so it matches the v7.4.7+ block. kiloclaw.js still
+      //     matches v7.4.8+. Re-derived from the 7.4.16 bundle. ---
+      {
+        original: "Zm($e)&&!$e.shiftKey&&($e.preventDefault(),ua())",
+        patched: "Zm($e)&&$e.metaKey&&($e.preventDefault(),ua())",
+        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.16+)",
+      },
+      {
+        original:
+          'if($e.key==="Escape"&&st()){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
+        patched:
+          'if($e.key==="Escape"&&st()&&($e.shiftKey||!$e.target?.value?.trim())){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.16+)",
+      },
       // --- v7.4.15+ patterns. 7.4.15 re-minified two webview scopes: the chat
       //     keydown handler's abort guard (ot→st; event ze, Enter-check Zm and
       //     send pa unchanged from 7.4.13, so chat input still matches the
@@ -861,12 +882,20 @@ function syncOpenInTabTitle(extPath: string): void {
 // settings.json. Like every webview.js pattern these symbols are re-minified per
 // Kilo release, so each supported version keeps its own variant here (newest
 // first); exactly one matches a given build. A build matching none is a silent
-// no-op. Per-version symbols: 7.4.15 uses Pe/se/Ue/Gn (container/when/tooltip)
-// with insert P and createComponent _, value setter L, sync nn, icon name
-// "plus-small"; 7.4.13 uses Pe/ce/Ue/On (insert R, createComponent C), setter Q,
-// sync an, icon name "plus-small"; 7.4.11 uses Re/de/He/Gn, setter L, icon name
-// "plus".
+// no-op. Per-version symbols: 7.4.16 uses Pe/le/Ue/Pn (container/when/tooltip)
+// with insert R and createComponent C, icon component en, setter L, sync nn,
+// icon name "plus-small"; 7.4.15 uses Pe/se/Ue/Gn with insert P and
+// createComponent _, icon component tn, setter L, sync nn, icon name
+// "plus-small"; 7.4.13 uses Pe/ce/Ue/On (insert R, createComponent C, icon tn),
+// setter Q, sync an, icon name "plus-small"; 7.4.11 uses Re/de/He/Gn, setter L,
+// icon name "plus".
 const ATTACH_FILE_BUTTONS: { original: string; patched: string }[] = [
+  {
+    original:
+      'R(Pe,C(le,{get when(){return Ue()},get children(){return C(Pn,{get value(){return r.status().message||r.label()}',
+    patched:
+      'R(Pe,C(Pn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,nn)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(en,{name:"plus-small",size:"small"})}})}}),null),R(Pe,C(le,{get when(){return Ue()},get children(){return C(Pn,{get value(){return r.status().message||r.label()}',
+  },
   {
     original:
       'P(Pe,_(se,{get when(){return Ue()},get children(){return _(Gn,{get value(){return r.status().message||r.label()}',

@@ -3,9 +3,12 @@
 // anything, this release needs.
 //
 //   node tools/retarget.js [--ext <path to kilocode.kilo-code-*>]
+//   node tools/retarget.js --vsix <path to a Kilo Code .vsix>
 //
-// Reads only: the install is never written to. Any already-applied patch is
-// reversed in memory first, so patterns are derived from the bytes Kilo shipped.
+// Reads only: nothing is ever written. With --ext, any already-applied patch is
+// reversed in memory first to recover the bytes Kilo shipped. With --vsix the
+// bytes are pristine by construction, which also makes it the only way to target
+// a release that is not installed.
 //
 // Each rule lands in one of four states:
 //   covered     the derived pattern is already in src/extension.ts, nothing to do
@@ -17,37 +20,34 @@
 // which makes this usable as a post-update check.
 const path = require("path");
 const { loadExtension } = require("./lib/load");
-const {
-  resolveInstall,
-  readPristineBundles,
-  assertPristine,
-  countOccurrences,
-} = require("./lib/bundle");
+const { resolveBundleSource, assertPristine, countOccurrences } = require("./lib/bundle");
 const { RULES, ATTACH_RULE } = require("./lib/rules");
 
 function parseArgs(argv) {
-  const args = { ext: undefined };
+  const args = {};
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--ext") args.ext = argv[++i];
+    else if (argv[i] === "--vsix") args.vsix = argv[++i];
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
   }
+  if (args.ext && args.vsix) throw new Error("pass either --ext or --vsix, not both");
   return args;
 }
 
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
-    console.log("usage: node tools/retarget.js [--ext <path>]");
+    console.log("usage: node tools/retarget.js [--ext <path> | --vsix <path>]");
     return 0;
   }
 
   const test = loadExtension();
-  const install = resolveInstall(test, args.ext);
-  const bundles = readPristineBundles(install.extPath, test);
-  const version = install.version;
+  const source = resolveBundleSource(test, args);
+  const bundles = source.bundles;
+  const version = source.version;
 
   console.log(`Kilo Code v${version}`);
-  console.log(`  ${install.extPath}\n`);
+  console.log(`  ${source.label}${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`);
   assertPristine(bundles);
 
   // Every pattern currently shipped, keyed by original, so "already covered" is

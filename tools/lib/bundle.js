@@ -8,6 +8,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { openVsix } = require("./vsix");
 
 // Every candidate root, not just the first one that matches: the harness is a
 // maintenance tool, so being able to see (and target) an older build left behind
@@ -136,6 +137,51 @@ function readPristineBundles(extPath, test) {
   return bundles;
 }
 
+// Bundles straight out of a .vsix. No reversal happens because nothing has ever
+// patched these bytes, which is why this is the preferred source: pristine by
+// construction rather than by reconstruction.
+function readVsixBundles(vsixPath, test) {
+  const zip = openVsix(vsixPath);
+  const bundles = {};
+  for (const fp of test.PATCHES) {
+    const payload = zip.read(`extension/dist/${fp.filename}`);
+    if (payload) bundles[fp.filename] = payload.toString("utf8");
+  }
+  if (Object.keys(bundles).length === 0) {
+    throw new Error(
+      `${path.basename(vsixPath)} contains no extension/dist/ bundles this patch set covers.\n` +
+        "Is it a Kilo Code vsix?"
+    );
+  }
+
+  let version = "unknown";
+  const manifest = zip.read("extension/package.json");
+  if (manifest) {
+    try {
+      version = JSON.parse(manifest.toString("utf8")).version ?? "unknown";
+    } catch {
+      // A manifest we cannot parse only costs the version label, so carry on.
+    }
+  }
+  return { bundles, version };
+}
+
+// One entry point for both CLIs so a vsix and an install are interchangeable
+// everywhere downstream.
+function resolveBundleSource(test, args) {
+  if (args.vsix) {
+    const { bundles, version } = readVsixBundles(args.vsix, test);
+    return { kind: "vsix", label: path.resolve(args.vsix), version, bundles };
+  }
+  const install = resolveInstall(test, args.ext);
+  return {
+    kind: "install",
+    label: install.extPath,
+    version: install.version,
+    bundles: readPristineBundles(install.extPath, test),
+  };
+}
+
 function countOccurrences(haystack, needle) {
   if (!needle) return 0;
   let count = 0;
@@ -152,6 +198,8 @@ module.exports = {
   resolveInstall,
   unpatched,
   readPristineBundles,
+  readVsixBundles,
+  resolveBundleSource,
   assertPristine,
   residualPatchMarkers,
   countOccurrences,

@@ -2,11 +2,13 @@
 // Prove the shipped patch set against a real Kilo build, offline.
 //
 //   node tools/verify.js [--ext <path to kilocode.kilo-code-*>]
+//   node tools/verify.js --vsix <path to a Kilo Code .vsix>
 //
-// The user's install is only ever read. Pristine bytes are copied into a temp
-// sandbox and every assertion runs against the extension's own exported
-// functions, so a green run is evidence about what ships, not about a
-// reimplementation.
+// The install is only ever read. Pristine bytes are copied into a temp sandbox
+// and every assertion runs against the extension's own exported functions, so a
+// green run is evidence about what ships, not about a reimplementation. A vsix
+// source is stronger still: those bytes never passed through kb-patch, so they
+// need no reversal step to be trusted.
 //
 // What it proves, in the order the properties matter:
 //   uniqueness    each original identifies exactly one site (String.replace
@@ -22,12 +24,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { loadExtension, shim } = require("./lib/load");
-const {
-  resolveInstall,
-  readPristineBundles,
-  assertPristine,
-  countOccurrences,
-} = require("./lib/bundle");
+const { resolveBundleSource, assertPristine, countOccurrences } = require("./lib/bundle");
 const { RULES } = require("./lib/rules");
 
 let failures = 0;
@@ -45,22 +42,27 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--ext") args.ext = argv[++i];
+    else if (argv[i] === "--vsix") args.vsix = argv[++i];
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
   }
+  if (args.ext && args.vsix) throw new Error("pass either --ext or --vsix, not both");
   return args;
 }
 
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
-    console.log("usage: node tools/verify.js [--ext <path>]");
+    console.log("usage: node tools/verify.js [--ext <path> | --vsix <path>]");
     return 0;
   }
 
   const test = loadExtension();
-  const install = resolveInstall(test, args.ext);
-  const pristine = readPristineBundles(install.extPath, test);
-  console.log(`Kilo Code v${install.version}\n  ${install.extPath}\n`);
+  const source = resolveBundleSource(test, args);
+  const pristine = source.bundles;
+  console.log(
+    `Kilo Code v${source.version}\n  ${source.label}` +
+      `${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`
+  );
   assertPristine(pristine);
 
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "kb-patch-verify-"));

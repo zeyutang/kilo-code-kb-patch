@@ -36,6 +36,50 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.17+ patterns. 7.4.17 re-minified almost every keyboard scope.
+      //     Chat keydown: Enter-check Zm→ng, send ua→aa, abort guard st→ct (event
+      //     $e unchanged from 7.4.16). Permission scope: skip-predicate N=(q,G)
+      //     with in-textarea guard V and fall-through L(G) (was K?!1:L(H)), and the
+      //     dispatch fn z→O, so reject j and the document handler's approve branch
+      //     both now call O(q,…) (bare-Enter check $ unchanged). The document-level
+      //     Escape handler kept event oe, so it still matches the v7.4.13+ block
+      //     below and needs no new pattern. kiloclaw.js re-minified its Enter-check
+      //     helper NA→$A (see that file's block). Re-derived from the 7.4.17
+      //     bundle. ---
+      {
+        original: "ng($e)&&!$e.shiftKey&&($e.preventDefault(),aa())",
+        patched: "ng($e)&&$e.metaKey&&($e.preventDefault(),aa())",
+        description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.17+)",
+      },
+      {
+        original:
+          'if($e.key==="Escape"&&ct()){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
+        patched:
+          'if($e.key==="Escape"&&ct()&&($e.shiftKey||!$e.target?.value?.trim())){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.17+)",
+      },
+      {
+        original: "V?!1:L(G)",
+        patched:
+          'V?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:L(G)',
+        description:
+          "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.17+)",
+      },
+      {
+        original: 'j=q=>{if(q.key==="Escape"){O(q,"reject");return}}',
+        patched:
+          'j=q=>{if(q.key==="Escape"&&(q.shiftKey||!q.target?.value?.trim())){O(q,"reject");return}}',
+        description:
+          "Permission j: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.4.17+)",
+      },
+      {
+        original: 'if($(q)){O(q,"once");return}}};',
+        patched:
+          'if($(q)||q.key===" "&&!q.metaKey&&!q.ctrlKey&&!q.target?.value?.trim()||q.key==="Enter"&&q.metaKey){O(q,"once");return}}};',
+        description:
+          "Permission O: Cmd+Enter approves always; Space approves when empty/whitespace-only (v7.4.17+)",
+      },
       // --- v7.4.16+ patterns. 7.4.16 re-minified only the chat keydown scope:
       //     event ze→$e and send pa→ua (Enter-check Zm and abort guard st are
       //     unchanged from 7.4.15), so both chat behaviors needed new patterns.
@@ -361,6 +405,21 @@ const PATCHES: FilePatches[] = [
   {
     filename: "kiloclaw.js",
     patches: [
+      // --- v7.4.17+ patterns. 7.4.17 re-minified only the Enter-check helper
+      //     NA→$A; the event variables (Q, D) and the save/send/abort calls (y/w,
+      //     v) are unchanged from v7.4.8+. Re-derived from the 7.4.17 bundle. ---
+      {
+        original:
+          '$A(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+        patched:
+          '$A(Q)&&Q.metaKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+        description: "KiloClaw edit: Enter→newline, Cmd+Enter→save (v7.4.17+)",
+      },
+      {
+        original: '$A(D)&&!D.shiftKey&&(D.preventDefault(),v())',
+        patched: '$A(D)&&D.metaKey&&(D.preventDefault(),v())',
+        description: "KiloClaw chat: Enter→newline, Cmd+Enter→send (v7.4.17+)",
+      },
       // --- v7.4.8+ patterns. 7.4.8 renamed only the Enter-check helper LA→NA; the event
       //     variables and the save/send/abort calls are unchanged. ---
       {
@@ -868,13 +927,13 @@ function syncOpenInTabTitle(extPath: string): void {
 // before the indexing (database) button so it lands at the left edge of the icon
 // cluster.
 //
-// The button reuses Kilo's own tooltip, ghost button (_t), and sprite-icon (tn)
+// The button reuses Kilo's own tooltip, ghost button, and sprite-icon
 // components, plus the already-localized "prompt.action.attachFile" label
 // (defined in every locale but otherwise unused). onClick reaches four in-scope
 // PromptInput locals: the textarea ref k, the mention controller h, its value
-// setter, and the post-input sync an. It inserts "@" at the caret (execCommand,
+// setter, and the post-input sync. It inserts "@" at the caret (execCommand,
 // so a real input event fires) then calls h.selectMention({type:"file-picker"},
-// k,<setter>,an), the exact call the mention menu's own "Browse files..." row
+// k,<setter>,<sync>), the exact call the mention menu's own "Browse files..." row
 // makes; the host replies with filePickerResult and the chosen path is spliced
 // in over the "@".
 //
@@ -882,7 +941,10 @@ function syncOpenInTabTitle(extPath: string): void {
 // settings.json. Like every webview.js pattern these symbols are re-minified per
 // Kilo release, so each supported version keeps its own variant here (newest
 // first); exactly one matches a given build. A build matching none is a silent
-// no-op. Per-version symbols: 7.4.16 uses Pe/le/Ue/Pn (container/when/tooltip)
+// no-op. Per-version symbols: 7.4.17 uses Pe/ce/Ke/Fn
+// (container/when-wrapper/when-pred/tooltip) with insert F and createComponent x,
+// ghost button St (was _t), icon component Hi, setter L, sync Ut, icon name
+// "plus-small"; 7.4.16 uses Pe/le/Ue/Pn (container/when/tooltip)
 // with insert R and createComponent C, icon component en, setter L, sync nn,
 // icon name "plus-small"; 7.4.15 uses Pe/se/Ue/Gn with insert P and
 // createComponent _, icon component tn, setter L, sync nn, icon name
@@ -890,6 +952,12 @@ function syncOpenInTabTitle(extPath: string): void {
 // setter Q, sync an, icon name "plus-small"; 7.4.11 uses Re/de/He/Gn, setter L,
 // icon name "plus".
 const ATTACH_FILE_BUTTONS: { original: string; patched: string }[] = [
+  {
+    original:
+      'F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
+    patched:
+      'F(Pe,x(Fn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return x(St,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,Ut)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return x(Hi,{name:"plus-small",size:"small"})}})}}),null),F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
+  },
   {
     original:
       'R(Pe,C(le,{get when(){return Ue()},get children(){return C(Pn,{get value(){return r.status().message||r.label()}',

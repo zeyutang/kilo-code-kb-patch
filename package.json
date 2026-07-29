@@ -64,6 +64,8 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "retarget": "npm run compile && node tools/retarget.js",
+    "verify": "npm run compile && node tools/verify.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {

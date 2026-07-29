@@ -178,6 +178,25 @@ const RULES = [
   }),
 ];
 
+// Sprite map keys are minified, so a key is quoted only when it has to be:
+// `"plus-small"` must be quoted because of the hyphen, while `plus` is a valid
+// identifier and is emitted bare. Grepping only the quoted form therefore
+// reports the larger glyph as missing when it is present, which is exactly the
+// false negative that pushed the 7.4.13+ buttons onto the small glyph.
+function hasSpriteGlyph(content, name) {
+  if (content.includes(`"${name}":`)) return true;
+  // A name that is not a bare identifier can only ever appear quoted.
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) return false;
+  return new RegExp(`[,{]${name}:["']`).test(content);
+}
+
+// Both glyphs exist in every build checked (7.3.54 through 7.4.17). `plus` draws
+// about 70% larger than `plus-small` in the same 20x20 viewBox, and is what the
+// shipped button uses. The order here decides which the generated button uses,
+// so it must match what src ships or retarget will report a MISMATCH; the
+// smaller glyph stays as a fallback in case a future build drops the large one.
+const GLYPH_PREFERENCE = ["plus", "plus-small"];
+
 // Kilo ships two icon components with the same `{name,size}` call shape, and the
 // one we must not use is the more common of the two, so counting usages picks
 // wrong. Identify the sprite component by behavior instead: it is the function
@@ -246,12 +265,10 @@ const ATTACH_RULE = {
 
     // Icons are referenced dynamically, so a glyph only exists if the sprite map
     // declares it; check the map keys rather than a rendered reference.
-    const glyph = content.includes('"plus-small":')
-      ? "plus-small"
-      : content.includes('"plus":')
-      ? "plus"
-      : undefined;
-    if (!glyph) return { error: 'no "plus"/"plus-small" glyph in the sprite map' };
+    const glyph = GLYPH_PREFERENCE.find((name) => hasSpriteGlyph(content, name));
+    if (!glyph) {
+      return { error: `no ${GLYPH_PREFERENCE.join("/")} glyph in the sprite map` };
+    }
 
     const original = anchors[0][0];
     const button =

@@ -944,19 +944,35 @@ function syncOpenInTabTitle(extPath: string): void {
 // no-op. Per-version symbols: 7.4.17 uses Pe/ce/Ke/Fn
 // (container/when-wrapper/when-pred/tooltip) with insert F and createComponent x,
 // ghost button St (was _t), icon component Hi, setter L, sync Ut, icon name
-// "plus-small"; 7.4.16 uses Pe/le/Ue/Pn (container/when/tooltip)
+// "plus"; 7.4.16 uses Pe/le/Ue/Pn (container/when/tooltip)
 // with insert R and createComponent C, icon component en, setter L, sync nn,
 // icon name "plus-small"; 7.4.15 uses Pe/se/Ue/Gn with insert P and
 // createComponent _, icon component tn, setter L, sync nn, icon name
 // "plus-small"; 7.4.13 uses Pe/ce/Ue/On (insert R, createComponent C, icon tn),
 // setter Q, sync an, icon name "plus-small"; 7.4.11 uses Re/de/He/Gn, setter L,
 // icon name "plus".
-const ATTACH_FILE_BUTTONS: { original: string; patched: string }[] = [
+interface AttachButtonDef {
+  original: string;
+  patched: string;
+  // Earlier patched forms of this same variant, newest first. A patched string
+  // ends with its own original, so applying original→patched on top of an older
+  // form would leave the old button in place and inject a second one. Listing
+  // the old forms lets an upgrade rewrite the existing button instead.
+  previous?: string[];
+}
+
+const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   {
     original:
       'F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
     patched:
+      'F(Pe,x(Fn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return x(St,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,Ut)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return x(Hi,{name:"plus",size:"small"})}})}}),null),F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
+    // 1.11.0 and earlier drew the small glyph here. The larger "plus" was always
+    // in the sprite map; it only looked absent because minified object keys are
+    // quoted just when they must be, so "plus-small" is quoted and plus is bare.
+    previous: [
       'F(Pe,x(Fn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return x(St,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,Ut)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return x(Hi,{name:"plus-small",size:"small"})}})}}),null),F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
+    ],
   },
   {
     original:
@@ -995,12 +1011,22 @@ function addAttachFileButtonEnabled(): boolean {
 // its variant only; unmatched versions' symbols are absent. Returns undefined
 // when no known variant is present (a future Kilo re-minify), which callers treat
 // as a silent no-op.
-function matchingAttachFileButton(
-  content: string
-): { original: string; patched: string } | undefined {
+function matchingAttachFileButton(content: string): AttachButtonDef | undefined {
   return ATTACH_FILE_BUTTONS.find(
-    (b) => content.includes(b.patched) || content.includes(b.original)
+    (b) =>
+      content.includes(b.patched) ||
+      content.includes(b.original) ||
+      b.previous?.some((p) => content.includes(p))
   );
+}
+
+// The button this bundle currently carries, when it is an older form of the
+// matched variant rather than the current one.
+function stalePatchedForm(
+  content: string,
+  variant: AttachButtonDef
+): string | undefined {
+  return variant.previous?.find((p) => content.includes(p));
 }
 
 // Apply or remove the attach-file button in Kilo's webview bundle to match the
@@ -1016,11 +1042,22 @@ function reconcileAttachFileButton(extPath: string): boolean {
   if (!variant) return false;
   const enabled = addAttachFileButtonEnabled();
   const isPatched = content.includes(variant.patched);
-  if (enabled === isPatched) return false;
+  // An older form of this variant is a button that is present but out of date.
+  // It must be rewritten in place, never treated as pristine, or enabling would
+  // add a second button alongside it.
+  const stale = isPatched ? undefined : stalePatchedForm(content, variant);
+  if (enabled === isPatched && !stale) return false;
 
-  const updated = enabled
-    ? content.replace(variant.original, variant.patched)
-    : content.replace(variant.patched, variant.original);
+  let updated: string;
+  if (enabled) {
+    updated = stale
+      ? content.replace(stale, variant.patched)
+      : content.replace(variant.original, variant.patched);
+  } else {
+    updated = stale
+      ? content.replace(stale, variant.original)
+      : content.replace(variant.patched, variant.original);
+  }
   if (updated === content) return false;
   fs.writeFileSync(webviewPath, updated, "utf8");
   return true;

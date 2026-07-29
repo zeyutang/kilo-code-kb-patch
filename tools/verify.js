@@ -120,11 +120,64 @@ function main() {
       check(again.noChanges, `${fp.filename}: re-apply is a no-op`);
     }
 
+    // The bonus only ships variants for the releases it was targeted at, and on
+    // any other build it is contractually a silent no-op reported as
+    // "unavailable". Both halves of that contract are worth asserting: on a
+    // build with no variant the setting must change nothing, which is what keeps
+    // an unsupported release from being half-patched.
     console.log("\nattach-file button (opt-in bonus)");
     shim.setConfig({ addAttachFileButton: true });
-    check(test.reconcileAttachFileButton(sandbox), "enabling adds the button");
-    const bonus = test.computeBonusStatus(sandbox);
-    check(bonus[0]?.state === "on", "bonus reports on", `got "${bonus[0]?.state}"`);
+    const webview = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
+    if (test.matchingAttachFileButton(webview)) {
+      check(test.reconcileAttachFileButton(sandbox), "enabling adds the button");
+      check(
+        test.computeBonusStatus(sandbox)[0]?.state === "on",
+        "bonus reports on",
+        `got "${test.computeBonusStatus(sandbox)[0]?.state}"`
+      );
+    } else {
+      check(
+        test.reconcileAttachFileButton(sandbox) === false,
+        "no variant for this build: enabling changes nothing"
+      );
+      const state = test.computeBonusStatus(sandbox)[0]?.state;
+      check(state === "unavailable", 'bonus reports "unavailable"', `got "${state}"`);
+    }
+
+    // Upgrading kb-patch can change a variant's patched text while the user's
+    // bundle still carries the previous form. Since every patched string ends
+    // with its own original, a naive apply would leave the old button in place
+    // and inject a second one, so the old form has to be rewritten instead.
+    const attachVariant = test.matchingAttachFileButton(webview);
+    if (attachVariant?.previous?.length) {
+      console.log("\nattach-file button upgrade (older form already installed)");
+      const migrate = fs.mkdtempSync(path.join(os.tmpdir(), "kb-patch-migrate-"));
+      try {
+        fs.mkdirSync(path.join(migrate, "dist"));
+        const target = path.join(migrate, "dist", "webview.js");
+        const clean = pristine["webview.js"];
+        const fresh = clean.replace(attachVariant.original, attachVariant.patched);
+        for (const old of attachVariant.previous) {
+          fs.writeFileSync(target, clean.replace(attachVariant.original, old), "utf8");
+          shim.setConfig({ addAttachFileButton: true });
+          test.reconcileAttachFileButton(migrate);
+          const after = fs.readFileSync(target, "utf8");
+          const buttons = countOccurrences(after, 't("prompt.action.attachFile")') / 2;
+          check(buttons === 1, "older form yields exactly one button", `got ${buttons}`);
+          check(after === fresh, "older form upgrades to exactly a fresh apply");
+
+          fs.writeFileSync(target, clean.replace(attachVariant.original, old), "utf8");
+          shim.setConfig({ addAttachFileButton: false });
+          test.reconcileAttachFileButton(migrate);
+          check(
+            fs.readFileSync(target, "utf8") === clean,
+            "older form can be removed back to pristine"
+          );
+        }
+      } finally {
+        fs.rmSync(migrate, { recursive: true, force: true });
+      }
+    }
 
     console.log("\nvalidity (fully patched bundles still parse)");
     for (const filename of Object.keys(pristine)) {

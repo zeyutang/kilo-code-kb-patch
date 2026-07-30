@@ -17,6 +17,10 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.11.1
+
+- Draw the opt-in attach-file `+` button with the larger plus icon
+
 ## 1.11.0
 
 - Support Kilo Code 7.4.17, re-targeting the chat input, chat Escape, and permission prompt key patches to its re-minified scopes

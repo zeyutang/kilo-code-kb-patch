@@ -102,14 +102,28 @@ function main() {
       for (const feature of file.features) {
         check(feature.state === "patched", `${file.filename}: ${feature.label}`, `state "${feature.state}"`);
       }
-      // A description the status view cannot classify is dropped from the rows
-      // entirely rather than shown as missing, so compare against the rule set
-      // to catch that silent loss.
-      const expected = new Set(RULES.filter((r) => r.file === file.filename).map((r) => r.key)).size;
+      // Every behavior the patch set declares must reach the status view, since
+      // a feature that never renders is also absent from the verdict and would
+      // read as "nothing wrong" while being unpatched.
+      const declared = new Set(
+        (test.PATCHES.find((f) => f.filename === file.filename)?.patches ?? []).map(
+          (p) => p.feature
+        )
+      );
       check(
-        file.features.length === expected,
-        `${file.filename}: ${expected} feature row(s) in the status view`,
-        `got ${file.features.length}; a patch description may be unclassifiable`
+        file.features.length === declared.size,
+        `${file.filename}: all ${declared.size} declared feature(s) appear in the status view`,
+        `got ${file.features.length} row(s) for ${declared.size} declared feature(s)`
+      );
+
+      // The harness models the same behaviors as the extension; drift between
+      // the two means a rule was added or renamed on only one side.
+      const ruled = new Set(RULES.filter((r) => r.file === file.filename).map((r) => r.key));
+      const missing = [...declared].filter((k) => !ruled.has(k));
+      check(
+        missing.length === 0,
+        `${file.filename}: every declared feature has a shape rule`,
+        `no rule for: ${missing.join(", ")}`
       );
     }
 

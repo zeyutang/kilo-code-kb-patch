@@ -132,8 +132,11 @@ function main() {
         .map((p) => `${p.rule.key} ${JSON.stringify(p.result.symbols)}`)
         .join("\n//     ");
       console.log(`// v${version}+ derived symbols:\n//     ${symbols}`);
+      // A rule's key is also the PatchDef feature key, and PatchDef requires it,
+      // so emitting it keeps the pasted block compiling.
       for (const { rule, result } of forFile) {
         console.log("      {");
+        console.log(`        feature: ${JSON.stringify(rule.key)},`);
         console.log(`        original: ${JSON.stringify(result.original)},`);
         console.log(`        patched: ${JSON.stringify(result.patched)},`);
         console.log(`        description: ${JSON.stringify(rule.description(version))},`);

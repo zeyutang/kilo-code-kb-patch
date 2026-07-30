@@ -21,9 +21,18 @@ const KNOWN_EXT_DIRS = [
 ];
 
 interface PatchDef {
+  // Which logical behavior this pattern implements. Declared rather than
+  // inferred from `description`: the status view groups every version's variant
+  // of a behavior under one row, and a variant it cannot place is dropped from
+  // the view and from the verdict, which would report a feature as fine (or as
+  // absent) when it is neither. Typing it against FEATURE_ORDER turns that into
+  // a compile error instead.
+  feature: FeatureKey;
   original: string;
   patched: string;
   previous?: string;
+  // Free-form, for humans and for the apply/restore logs only. Naming the
+  // release's minified symbol here is useful documentation, not a classifier.
   description: string;
 }
 
@@ -47,11 +56,13 @@ const PATCHES: FilePatches[] = [
       //     helper NA→$A (see that file's block). Re-derived from the 7.4.17
       //     bundle. ---
       {
+        feature: "chat-input",
         original: "ng($e)&&!$e.shiftKey&&($e.preventDefault(),aa())",
         patched: "ng($e)&&$e.metaKey&&($e.preventDefault(),aa())",
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.17+)",
       },
       {
+        feature: "chat-escape",
         original:
           'if($e.key==="Escape"&&ct()){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
         patched:
@@ -60,6 +71,7 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.17+)",
       },
       {
+        feature: "perm-keys",
         original: "V?!1:L(G)",
         patched:
           'V?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:L(G)',
@@ -67,6 +79,7 @@ const PATCHES: FilePatches[] = [
           "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.17+)",
       },
       {
+        feature: "perm-escape",
         original: 'j=q=>{if(q.key==="Escape"){O(q,"reject");return}}',
         patched:
           'j=q=>{if(q.key==="Escape"&&(q.shiftKey||!q.target?.value?.trim())){O(q,"reject");return}}',
@@ -74,6 +87,7 @@ const PATCHES: FilePatches[] = [
           "Permission j: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.4.17+)",
       },
       {
+        feature: "perm-approve",
         original: 'if($(q)){O(q,"once");return}}};',
         patched:
           'if($(q)||q.key===" "&&!q.metaKey&&!q.ctrlKey&&!q.target?.value?.trim()||q.key==="Enter"&&q.metaKey){O(q,"once");return}}};',
@@ -89,11 +103,13 @@ const PATCHES: FilePatches[] = [
       //     went back to ie, so it matches the v7.4.7+ block. kiloclaw.js still
       //     matches v7.4.8+. Re-derived from the 7.4.16 bundle. ---
       {
+        feature: "chat-input",
         original: "Zm($e)&&!$e.shiftKey&&($e.preventDefault(),ua())",
         patched: "Zm($e)&&$e.metaKey&&($e.preventDefault(),ua())",
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.16+)",
       },
       {
+        feature: "chat-escape",
         original:
           'if($e.key==="Escape"&&st()){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
         patched:
@@ -110,6 +126,7 @@ const PATCHES: FilePatches[] = [
       //     (v7.4.8+) still match, so only these two needed new patterns.
       //     Re-derived from the 7.4.15 bundle. ---
       {
+        feature: "chat-escape",
         original:
           'if(ze.key==="Escape"&&st()){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
         patched:
@@ -118,6 +135,7 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.15+)",
       },
       {
+        feature: "doc-escape",
         original:
           'le.key!=="Escape"||!t.submitting()&&t.status()==="idle"||le.defaultPrevented||(le.preventDefault(),t.abort())',
         patched:
@@ -134,11 +152,13 @@ const PATCHES: FilePatches[] = [
       //     matches v7.4.8+, so only these three needed new patterns. Re-derived
       //     from the 7.4.13 bundle. ---
       {
+        feature: "chat-input",
         original: "Zm(ze)&&!ze.shiftKey&&(ze.preventDefault(),pa())",
         patched: "Zm(ze)&&ze.metaKey&&(ze.preventDefault(),pa())",
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.13+)",
       },
       {
+        feature: "perm-keys",
         original: "K?!1:Q(H)",
         patched:
           'K?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:Q(H)',
@@ -146,6 +166,7 @@ const PATCHES: FilePatches[] = [
           "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.13+)",
       },
       {
+        feature: "doc-escape",
         original:
           'oe.key!=="Escape"||!t.submitting()&&t.status()==="idle"||oe.defaultPrevented||(oe.preventDefault(),t.abort())',
         patched:
@@ -160,6 +181,7 @@ const PATCHES: FilePatches[] = [
       //     block (K?!1:L(H), event q), and the permission reject/approve handlers via
       //     the v7.4.7+ block (j/O, z-dispatch, $). Re-derived from the 7.4.11 bundle. ---
       {
+        feature: "doc-escape",
         original:
           'ae.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ae.defaultPrevented||(ae.preventDefault(),t.abort())',
         patched:
@@ -175,11 +197,13 @@ const PATCHES: FilePatches[] = [
       //     the $-dispatch v7.3.63+ patterns below, so only the skip-predicate is repeated
       //     here. Document-level Escape event ie/Z→re. Re-derived from the 7.4.9 bundle. ---
       {
+        feature: "chat-input",
         original: "Zm(ze)&&!ze.shiftKey&&(ze.preventDefault(),ua())",
         patched: "Zm(ze)&&ze.metaKey&&(ze.preventDefault(),ua())",
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.9+)",
       },
       {
+        feature: "chat-escape",
         original:
           'if(ze.key==="Escape"&&ot()){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
         patched:
@@ -188,6 +212,7 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.9+)",
       },
       {
+        feature: "perm-keys",
         original: "K?!1:Q(U)",
         patched:
           'K?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:Q(U)',
@@ -195,6 +220,7 @@ const PATCHES: FilePatches[] = [
           "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.9+)",
       },
       {
+        feature: "doc-escape",
         original:
           're.key!=="Escape"||!t.submitting()&&t.status()==="idle"||re.defaultPrevented||(re.preventDefault(),t.abort())',
         patched:
@@ -209,11 +235,13 @@ const PATCHES: FilePatches[] = [
       //     send da→ua, chat abort-guard ot→it; permission skip-predicate argument H→G.
       //     Re-derived from the 7.4.8 bundle. ---
       {
+        feature: "chat-input",
         original: "Wm(ze)&&!ze.shiftKey&&(ze.preventDefault(),ua())",
         patched: "Wm(ze)&&ze.metaKey&&(ze.preventDefault(),ua())",
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.8+)",
       },
       {
+        feature: "chat-escape",
         original:
           'if(ze.key==="Escape"&&it()){ze.preventDefault(),ze.stopPropagation(),t.abort();return}',
         patched:
@@ -222,6 +250,7 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.8+)",
       },
       {
+        feature: "perm-keys",
         original: "U?!1:L(G)",
         patched:
           'U?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:L(G)',
@@ -234,11 +263,13 @@ const PATCHES: FilePatches[] = [
       //     j/O (handlers), z (dispatch), $ (bare-Enter check), ie (document event).
       //     Re-derived from the 7.4.7 bundle. ---
       {
+        feature: "chat-input",
         original: 'Vm($e)&&!$e.shiftKey&&($e.preventDefault(),da())',
         patched: 'Vm($e)&&$e.metaKey&&($e.preventDefault(),da())',
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.7+)",
       },
       {
+        feature: "chat-escape",
         original:
           'if($e.key==="Escape"&&ot()){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
         patched:
@@ -247,6 +278,7 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.7+)",
       },
       {
+        feature: "perm-keys",
         original: "U?!1:L(H)",
         patched:
           'U?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:L(H)',
@@ -254,6 +286,7 @@ const PATCHES: FilePatches[] = [
           "Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.7+)",
       },
       {
+        feature: "perm-escape",
         original: 'j=q=>{if(q.key==="Escape"){z(q,"reject");return}}',
         patched:
           'j=q=>{if(q.key==="Escape"&&(q.shiftKey||!q.target?.value?.trim())){z(q,"reject");return}}',
@@ -261,6 +294,7 @@ const PATCHES: FilePatches[] = [
           "Permission j: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.4.7+)",
       },
       {
+        feature: "perm-approve",
         original: 'if($(q)){z(q,"once");return}}};',
         patched:
           'if($(q)||q.key===" "&&!q.metaKey&&!q.ctrlKey&&!q.target?.value?.trim()||q.key==="Enter"&&q.metaKey){z(q,"once");return}}};',
@@ -268,6 +302,7 @@ const PATCHES: FilePatches[] = [
           "Permission O: Cmd+Enter approves always; Space approves when empty/whitespace-only (v7.4.7+)",
       },
       {
+        feature: "doc-escape",
         original:
           'ie.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ie.defaultPrevented||(ie.preventDefault(),t.abort())',
         patched:
@@ -280,6 +315,7 @@ const PATCHES: FilePatches[] = [
       //     re-minified this scope's symbols; the permission and document-level patterns
       //     below are unchanged from 7.3.63 and match both releases. ---
       {
+        feature: "chat-input",
         original:
           'Om(Ge)&&!Ge.shiftKey&&(Ge.preventDefault(),Ea())',
         patched:
@@ -287,6 +323,7 @@ const PATCHES: FilePatches[] = [
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.4.0+)",
       },
       {
+        feature: "chat-escape",
         original:
           'if(Ge.key==="Escape"&&Fe()){Ge.preventDefault(),Ge.stopPropagation(),t.abort();return}',
         patched:
@@ -296,6 +333,7 @@ const PATCHES: FilePatches[] = [
       },
       // --- v7.3.63 chat patterns (Ne event, $m Enter-check, Oa send) ---
       {
+        feature: "chat-input",
         original:
           '$m(Ne)&&!Ne.shiftKey&&(Ne.preventDefault(),Oa())',
         patched:
@@ -303,6 +341,7 @@ const PATCHES: FilePatches[] = [
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.3.63)",
       },
       {
+        feature: "chat-escape",
         original:
           'if(Ne.key==="Escape"&&Fe()){Ne.preventDefault(),Ne.stopPropagation(),t.abort();return}',
         patched:
@@ -313,6 +352,7 @@ const PATCHES: FilePatches[] = [
       // --- v7.3.63+ permission and document-level patterns (z, q, H, j, O, Z).
       //     These symbols are unchanged in 7.4.0, so one pattern covers both. ---
       {
+        feature: "perm-keys",
         original: "K?!1:L(H)",
         patched:
           'K?q.target?.value?.trim()?(q.key==="Enter"&&!q.metaKey||q.key===" "||q.key==="Escape"&&!q.shiftKey&&!q.ctrlKey):!1:L(H)',
@@ -320,6 +360,7 @@ const PATCHES: FilePatches[] = [
           "Permission P(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.3.63+)",
       },
       {
+        feature: "perm-escape",
         original:
           'j=q=>{if(q.key==="Escape"){$(q,"reject");return}}',
         patched:
@@ -328,6 +369,7 @@ const PATCHES: FilePatches[] = [
           "Permission j: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.3.63+)",
       },
       {
+        feature: "perm-approve",
         original:
           'if(z(q)){$(q,"once");return}}};',
         patched:
@@ -336,6 +378,7 @@ const PATCHES: FilePatches[] = [
           "Permission O: Cmd+Enter approves always; Space approves when empty/whitespace-only (v7.3.63+)",
       },
       {
+        feature: "doc-escape",
         original:
           'Z.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Z.defaultPrevented||(Z.preventDefault(),t.abort())',
         patched:
@@ -345,6 +388,7 @@ const PATCHES: FilePatches[] = [
       },
       // --- v7.3.50-7.3.54 patterns (legacy minified symbols: Fm, je, Ce, ge, G, S, P, M, N, ee) ---
       {
+        feature: "chat-input",
         original:
           'Fm(je)&&!je.shiftKey&&(je.preventDefault(),Ce())',
         patched:
@@ -352,6 +396,7 @@ const PATCHES: FilePatches[] = [
         description: "Chat input: Enter→newline, Cmd+Enter→send (v7.3.50-54)",
       },
       {
+        feature: "chat-escape",
         original:
           'if(je.key==="Escape"&&ge()){je.preventDefault(),je.stopPropagation(),t.abort();return}',
         previous:
@@ -362,6 +407,7 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.3.50-54)",
       },
       {
+        feature: "perm-keys",
         original: "G?!1:S(j)",
         previous:
           'z.target?.value?(z.key==="Enter"&&!z.metaKey||z.key===" "||z.key==="Escape"&&!z.shiftKey&&!z.ctrlKey):!1',
@@ -371,6 +417,7 @@ const PATCHES: FilePatches[] = [
           "Permission L(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.3.50-54)",
       },
       {
+        feature: "perm-escape",
         original:
           'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
         previous:
@@ -381,6 +428,7 @@ const PATCHES: FilePatches[] = [
           "Permission P: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.3.50-54)",
       },
       {
+        feature: "perm-approve",
         original:
           'if(M(z)){N(z,"once");return}}};',
         previous:
@@ -391,6 +439,7 @@ const PATCHES: FilePatches[] = [
           "Permission O: Cmd+Enter approves always; Space approves when empty/whitespace-only; Shift+Escape rejects always (v7.3.50-54)",
       },
       {
+        feature: "doc-escape",
         original:
           'ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||ee.defaultPrevented||(ee.preventDefault(),t.abort())',
         previous:
@@ -409,6 +458,7 @@ const PATCHES: FilePatches[] = [
       //     NA→$A; the event variables (Q, D) and the save/send/abort calls (y/w,
       //     v) are unchanged from v7.4.8+. Re-derived from the 7.4.17 bundle. ---
       {
+        feature: "kiloclaw-edit",
         original:
           '$A(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
         patched:
@@ -416,6 +466,7 @@ const PATCHES: FilePatches[] = [
         description: "KiloClaw edit: Enter→newline, Cmd+Enter→save (v7.4.17+)",
       },
       {
+        feature: "kiloclaw-chat",
         original: '$A(D)&&!D.shiftKey&&(D.preventDefault(),v())',
         patched: '$A(D)&&D.metaKey&&(D.preventDefault(),v())',
         description: "KiloClaw chat: Enter→newline, Cmd+Enter→send (v7.4.17+)",
@@ -423,6 +474,7 @@ const PATCHES: FilePatches[] = [
       // --- v7.4.8+ patterns. 7.4.8 renamed only the Enter-check helper LA→NA; the event
       //     variables and the save/send/abort calls are unchanged. ---
       {
+        feature: "kiloclaw-edit",
         original:
           'NA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
         patched:
@@ -430,12 +482,14 @@ const PATCHES: FilePatches[] = [
         description: "KiloClaw edit: Enter→newline, Cmd+Enter→save (v7.4.8+)",
       },
       {
+        feature: "kiloclaw-chat",
         original: 'NA(D)&&!D.shiftKey&&(D.preventDefault(),v())',
         patched: 'NA(D)&&D.metaKey&&(D.preventDefault(),v())',
         description: "KiloClaw chat: Enter→newline, Cmd+Enter→send (v7.4.8+)",
       },
       // --- pre-7.4.8 patterns (Enter-check helper LA) ---
       {
+        feature: "kiloclaw-edit",
         original:
           'LA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
         patched:
@@ -443,6 +497,7 @@ const PATCHES: FilePatches[] = [
         description: "KiloClaw edit: Enter→newline, Cmd+Enter→save",
       },
       {
+        feature: "kiloclaw-chat",
         original:
           'LA(D)&&!D.shiftKey&&(D.preventDefault(),v())',
         patched: 'LA(D)&&D.metaKey&&(D.preventDefault(),v())',
@@ -466,7 +521,12 @@ const FEATURE_ORDER = [
   "kiloclaw-chat",
 ] as const;
 
-const FEATURE_LABELS: Record<string, string> = {
+// The set of behaviors the status view knows how to display. Every PatchDef must
+// name one of these, so adding a patch for a new behavior without registering it
+// here fails to compile rather than vanishing from the status view at runtime.
+type FeatureKey = (typeof FEATURE_ORDER)[number];
+
+const FEATURE_LABELS: Record<FeatureKey, string> = {
   "chat-input": "Chat input: Enter adds a newline, Cmd+Enter sends",
   "chat-escape": "Chat Escape: aborts only when the input is empty",
   "perm-keys": "Permission prompt: typing keys stay in the input",
@@ -476,23 +536,6 @@ const FEATURE_LABELS: Record<string, string> = {
   "kiloclaw-edit": "KiloClaw edit: Cmd+Enter saves",
   "kiloclaw-chat": "KiloClaw chat: Cmd+Enter sends",
 };
-
-function featureKey(description: string): string {
-  if (description.startsWith("Chat input")) return "chat-input";
-  if (description.startsWith("Chat Escape")) return "chat-escape";
-  if (description.startsWith("Document Escape")) return "doc-escape";
-  if (description.startsWith("KiloClaw edit")) return "kiloclaw-edit";
-  if (description.startsWith("KiloClaw chat")) return "kiloclaw-chat";
-  if (
-    description.includes("P()") ||
-    description.includes("L()") ||
-    description.includes("N()")
-  )
-    return "perm-keys";
-  if (description.includes("approves")) return "perm-approve";
-  if (description.includes("rejects")) return "perm-escape";
-  return "other";
-}
 
 // "patched": the patched text is present. "unpatched": the original text is
 // present (Apply will fix it). "missing": no known variant of this feature was
@@ -531,11 +574,11 @@ function statusForFile(
   content: string,
   patches: PatchDef[]
 ): { label: string; state: FeatureState }[] {
-  const byFeature = new Map<string, FeatureState>();
-  const intended = new Set<string>();
+  const byFeature = new Map<FeatureKey, FeatureState>();
+  const intended = new Set<FeatureKey>();
 
   for (const p of patches) {
-    const key = featureKey(p.description);
+    const key = p.feature;
     intended.add(key);
     if (
       content.includes(p.patched) ||

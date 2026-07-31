@@ -17,6 +17,10 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.12.0
+
+- Send, save, and approve accept `Ctrl+Enter` as well as `Cmd+Enter`, fixing the shortcut on Windows and Linux
+
 ## 1.11.1
 
 - Draw the opt-in attach-file `+` button with the larger plus icon

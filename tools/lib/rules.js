@@ -60,7 +60,7 @@ function shapeRule({ key, file, shape, names, build, description }) {
 // send call, suppressed by Shift. The edit swaps "not Shift" for "Meta".
 const ENTER_SEND_SHAPE = `(${ID})\\((${ID})\\)&&!\\2\\.shiftKey&&\\(\\2\\.preventDefault\\(\\),(${ID})\\(\\)\\)`;
 const enterSendBuild = (m) =>
-  `${m[1]}(${m[2]})&&${m[2]}.metaKey&&(${m[2]}.preventDefault(),${m[3]}())`;
+  `${m[1]}(${m[2]})&&(${m[2]}.metaKey||${m[2]}.ctrlKey)&&(${m[2]}.preventDefault(),${m[3]}())`;
 
 const RULES = [
   shapeRule({
@@ -69,7 +69,7 @@ const RULES = [
     shape: ENTER_SEND_SHAPE,
     names: ["enterCheck", "event", "send"],
     build: enterSendBuild,
-    description: (v) => `Chat input: Enter→newline, Cmd+Enter→send (v${v}+)`,
+    description: (v) => `Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v${v}+)`,
   }),
 
   shapeRule({
@@ -118,7 +118,7 @@ const RULES = [
       return {
         original: tails[0][0],
         patched:
-          `${guard}?${event}.target?.value?.trim()?(${event}.key==="Enter"&&!${event}.metaKey||` +
+          `${guard}?${event}.target?.value?.trim()?(${event}.key==="Enter"&&!${event}.metaKey&&!${event}.ctrlKey||` +
           `${event}.key===" "||${event}.key==="Escape"&&!${event}.shiftKey&&!${event}.ctrlKey):!1:${helper}(${arg})`,
         symbols: { guard, arg, helper, event },
       };
@@ -142,9 +142,9 @@ const RULES = [
     shape: `if\\((${ID})\\((${ID})\\)\\)\\{(${ID})\\(\\2,"once"\\);return\\}\\}\\};`,
     names: ["enterCheck", "event", "dispatch"],
     build: (m) =>
-      `if(${m[1]}(${m[2]})||${m[2]}.key===" "&&!${m[2]}.metaKey&&!${m[2]}.ctrlKey&&!${m[2]}.target?.value?.trim()||${m[2]}.key==="Enter"&&${m[2]}.metaKey){${m[3]}(${m[2]},"once");return}}};`,
+      `if(${m[1]}(${m[2]})||${m[2]}.key===" "&&!${m[2]}.metaKey&&!${m[2]}.ctrlKey&&!${m[2]}.target?.value?.trim()||${m[2]}.key==="Enter"&&(${m[2]}.metaKey||${m[2]}.ctrlKey)){${m[3]}(${m[2]},"once");return}}};`,
     description: (v) =>
-      `Permission O: Cmd+Enter approves always; Space approves when empty/whitespace-only (v${v}+)`,
+      `Permission O: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v${v}+)`,
   }),
 
   shapeRule({
@@ -164,8 +164,8 @@ const RULES = [
     shape: `(${ID})\\((${ID})\\)&&!\\2\\.shiftKey\\?\\(\\2\\.preventDefault\\(\\),(${ID})\\(\\)\\):\\2\\.key==="Escape"&&(${ID})\\(\\)`,
     names: ["enterCheck", "event", "save", "cancel"],
     build: (m) =>
-      `${m[1]}(${m[2]})&&${m[2]}.metaKey?(${m[2]}.preventDefault(),${m[3]}()):${m[2]}.key==="Escape"&&${m[4]}()`,
-    description: (v) => `KiloClaw edit: Enter→newline, Cmd+Enter→save (v${v}+)`,
+      `${m[1]}(${m[2]})&&(${m[2]}.metaKey||${m[2]}.ctrlKey)?(${m[2]}.preventDefault(),${m[3]}()):${m[2]}.key==="Escape"&&${m[4]}()`,
+    description: (v) => `KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v${v}+)`,
   }),
 
   shapeRule({
@@ -174,7 +174,7 @@ const RULES = [
     shape: ENTER_SEND_SHAPE,
     names: ["enterCheck", "event", "send"],
     build: enterSendBuild,
-    description: (v) => `KiloClaw chat: Enter→newline, Cmd+Enter→send (v${v}+)`,
+    description: (v) => `KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v${v}+)`,
   }),
 ];
 

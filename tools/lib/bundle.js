@@ -91,8 +91,8 @@ function unpatched(content, filename, test) {
 // refuses to proceed instead of guessing.
 const PATCH_MARKERS = [
   "target?.value?.trim()",
-  ".metaKey&&(",
-  ".metaKey?(",
+  ".ctrlKey)&&(",
+  ".ctrlKey)?(",
   't("prompt.action.attachFile")',
 ];
 

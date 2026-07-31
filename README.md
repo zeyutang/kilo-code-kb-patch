@@ -5,7 +5,7 @@
 [![Open VSX Version](https://img.shields.io/open-vsx/v/zeyutang/kilo-code-kb-patch?label=Open%20VSX)](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/zeyutang/kilo-code-kb-patch)](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
 
-Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd+Enter` sends, and permission prompts stop hijacking your keystrokes while you are typing.
+Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd/Ctrl+Enter` sends, and permission prompts stop hijacking your keystrokes while you are typing.
 
 ## Supported versions (latest three)
 
@@ -25,7 +25,7 @@ Each patch release keeps the earlier versions' patterns, so a newer patch still 
 | Key            | Before Patched (native Kilo Code) | After Patched                                      |
 | -------------- | --------------------------------- | -------------------------------------------------- |
 | `Enter`        | Send / Approve                    | **New line** (approves when the chat box is empty) |
-| `Cmd+Enter`    | Send / Save                       | **Send / Approve / Save**                          |
+| `Cmd/Ctrl+Enter`    | Send / Save                       | **Send / Approve / Save**                          |
 | `Shift+Enter`  | New line                          | New line (unchanged)                               |
 | `Escape`       | Reject / Abort                    | Reject / Abort **only when the chat box is empty** |
 | `Shift+Escape` | Reject / Abort                    | **Reject / Abort** (always)                        |
@@ -92,7 +92,7 @@ The chat box content decides where each key goes:
 | -------------- | -------------- | ------------------------- |
 | `Enter`        | Approve        | New line                  |
 | `Space`        | Approve        | Space                     |
-| `Cmd+Enter`    | Approve        | Approve                   |
+| `Cmd/Ctrl+Enter`    | Approve        | Approve                   |
 | `Escape`       | Reject         | Dismiss autocomplete only |
 | `Shift+Escape` | Reject         | Reject                    |
 
@@ -103,7 +103,7 @@ Reject and abort use `Shift+Escape` (not `Cmd+Escape`, which is Claude Code's qu
 Pick a suggested answer or type your own. The patch leaves these alone.
 
 - Kilo Code **auto-focuses the first option** when the prompt appears, so keys act on the highlighted choice regardless of what is in the chat box.
-- Arrow keys move between choices, `Enter` selects, and `Cmd+Enter` send the choice.
+- Arrow keys move between choices, `Enter` selects, and `Cmd/Ctrl+Enter` send the choice.
 
 ### Menus and dialogs
 

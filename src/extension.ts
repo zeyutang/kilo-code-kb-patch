@@ -45,6 +45,67 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.20+ patterns. 7.4.20 re-minified every webview keyboard scope,
+      //     so all six behaviors needed new patterns. Chat keydown: Enter-check
+      //     ng→mg, event $e→Le, send aa→Vt, abort guard ct→We. Permission scope:
+      //     in-textarea guard V→W and the interactive-element fall-through L→N,
+      //     so V?!1:L(G) became W?!1:N(V); event q→G and dispatch O→z, so reject
+      //     (handler j→q) and the document handler's approve branch both call
+      //     z(G,…) (bare-Enter check $ unchanged). Note the names rotated rather
+      //     than moved: 7.4.17's skip-predicate N, fall-through L, reject j and
+      //     dispatch O are 7.4.20's j, N, q and z, so the two blocks look alike
+      //     while naming different things. The document-level Escape event went
+      //     oe→me, so unlike 7.4.17 it no longer matches the v7.4.13+ block.
+      //     kiloclaw.js is untouched; both of its sites still match v7.4.17+.
+      //     Re-derived from the 7.4.20 vsix. ---
+      {
+        feature: "chat-input",
+        original: "mg(Le)&&!Le.shiftKey&&(Le.preventDefault(),Vt())",
+        patched: "mg(Le)&&(Le.metaKey||Le.ctrlKey)&&(Le.preventDefault(),Vt())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.20+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(Le.key==="Escape"&&We()){Le.preventDefault(),Le.stopPropagation(),t.abort();return}',
+        patched:
+          'if(Le.key==="Escape"&&We()&&(Le.shiftKey||!Le.target?.value?.trim())){Le.preventDefault(),Le.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.20+)",
+      },
+      {
+        feature: "perm-keys",
+        original: "W?!1:N(V)",
+        patched:
+          'W?G.target?.value?.trim()?(G.key==="Enter"&&!G.metaKey&&!G.ctrlKey||G.key===" "||G.key==="Escape"&&!G.shiftKey&&!G.ctrlKey):!1:N(V)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.20+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'q=G=>{if(G.key==="Escape"){z(G,"reject");return}}',
+        patched:
+          'q=G=>{if(G.key==="Escape"&&(G.shiftKey||!G.target?.value?.trim())){z(G,"reject");return}}',
+        description:
+          "Permission reject: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.4.20+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if($(G)){z(G,"once");return}}};',
+        patched:
+          'if($(G)||G.key===" "&&!G.metaKey&&!G.ctrlKey&&!G.target?.value?.trim()||G.key==="Enter"&&(G.metaKey||G.ctrlKey)){z(G,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.4.20+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'me.key!=="Escape"||!t.submitting()&&t.status()==="idle"||me.defaultPrevented||(me.preventDefault(),t.abort())',
+        patched:
+          'me.key!=="Escape"||!t.submitting()&&t.status()==="idle"||me.defaultPrevented||!me.shiftKey&&me.target?.value?.trim()||(me.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.4.20+)",
+      },
       // --- v7.4.17+ patterns. 7.4.17 re-minified almost every keyboard scope.
       //     Chat keydown: Enter-check Zm→ng, send ua→aa, abort guard st→ct (event
       //     $e unchanged from 7.4.16). Permission scope: skip-predicate N=(q,G)
@@ -1012,18 +1073,21 @@ function syncOpenInTabTitle(extPath: string): void {
 // The button reuses Kilo's own tooltip, ghost button, and sprite-icon
 // components, plus the already-localized "prompt.action.attachFile" label
 // (defined in every locale but otherwise unused). onClick reaches four in-scope
-// PromptInput locals: the textarea ref k, the mention controller h, its value
-// setter, and the post-input sync. It inserts "@" at the caret (execCommand,
-// so a real input event fires) then calls h.selectMention({type:"file-picker"},
-// k,<setter>,<sync>), the exact call the mention menu's own "Browse files..." row
-// makes; the host replies with filePickerResult and the chosen path is spliced
-// in over the "@".
+// PromptInput locals: the textarea ref, the mention controller, its value setter,
+// and the post-input sync. It inserts "@" at the caret (execCommand, so a real
+// input event fires) then calls <controller>.selectMention({type:"file-picker"},
+// <textarea>,<setter>,<sync>), the exact call the mention menu's own "Browse
+// files..." row makes; the host replies with filePickerResult and the chosen path
+// is spliced in over the "@".
 //
 // Opt-in: off unless "kiloCodeKbPatch.addAttachFileButton" is true in
 // settings.json. Like every webview.js pattern these symbols are re-minified per
 // Kilo release, so each supported version keeps its own variant here (newest
 // first); exactly one matches a given build. A build matching none is a silent
-// no-op. Per-version symbols: 7.4.17 uses Pe/ce/Ke/Fn
+// no-op. Per-version symbols: 7.4.20 uses ai/oe/gt/Mn
+// (container/when-wrapper/when-pred/tooltip) with insert R and createComponent _,
+// ghost button _t, icon component Wi, textarea w (was k in every earlier build),
+// setter L, sync bt, icon name "plus"; 7.4.17 uses Pe/ce/Ke/Fn
 // (container/when-wrapper/when-pred/tooltip) with insert F and createComponent x,
 // ghost button St (was _t), icon component Hi, setter L, sync Ut, icon name
 // "plus"; 7.4.16 uses Pe/le/Ue/Pn (container/when/tooltip)
@@ -1044,6 +1108,12 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  {
+    original:
+      'R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}',
+    patched:
+      'R(ai,_(Mn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return _(_t,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,L,bt)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return _(Wi,{name:"plus",size:"small"})}})}}),null),R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}',
+  },
   {
     original:
       'F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',

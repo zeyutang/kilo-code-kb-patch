@@ -11,9 +11,9 @@ Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `
 
 | Kilo Code | KB Patch |
 | --------- | -------- |
-| 7.4.17+   | 1.11.x   |
+| 7.4.20+   | 1.13.x   |
+| 7.4.17    | 1.11.x   |
 | 7.4.16    | 1.10.x   |
-| 7.4.15    | 1.9.x    |
 | (prev.)   | (prev.)  |
 
 Each patch release keeps the earlier versions' patterns, so a newer patch still works on an older Kilo Code.
@@ -22,13 +22,13 @@ Each patch release keeps the earlier versions' patterns, so a newer patch still 
 
 ### Keyboard patches
 
-| Key            | Before Patched (native Kilo Code) | After Patched                                      |
-| -------------- | --------------------------------- | -------------------------------------------------- |
-| `Enter`        | Send / Approve                    | **New line** (approves when the chat box is empty) |
-| `Cmd/Ctrl+Enter`    | Send / Save                       | **Send / Approve / Save**                          |
-| `Shift+Enter`  | New line                          | New line (unchanged)                               |
-| `Escape`       | Reject / Abort                    | Reject / Abort **only when the chat box is empty** |
-| `Shift+Escape` | Reject / Abort                    | **Reject / Abort** (always)                        |
+| Key              | Before Patched (native Kilo Code) | After Patched                                      |
+| ---------------- | --------------------------------- | -------------------------------------------------- |
+| `Enter`          | Send / Approve                    | **New line** (approves when the chat box is empty) |
+| `Cmd/Ctrl+Enter` | Send / Save                       | **Send / Approve / Save**                          |
+| `Shift+Enter`    | New line                          | New line (unchanged)                               |
+| `Escape`         | Reject / Abort                    | Reject / Abort **only when the chat box is empty** |
+| `Shift+Escape`   | Reject / Abort                    | **Reject / Abort** (always)                        |
 
 Applies to the chat input, the permission prompt, and the KiloClaw edit/chat panels.
 
@@ -88,13 +88,13 @@ Approve or reject a tool or command. The only surface the patch rewires.
 
 The chat box content decides where each key goes:
 
-| Key            | Chat box empty | Chat box has text         |
-| -------------- | -------------- | ------------------------- |
-| `Enter`        | Approve        | New line                  |
-| `Space`        | Approve        | Space                     |
-| `Cmd/Ctrl+Enter`    | Approve        | Approve                   |
-| `Escape`       | Reject         | Dismiss autocomplete only |
-| `Shift+Escape` | Reject         | Reject                    |
+| Key              | Chat box empty | Chat box has text         |
+| ---------------- | -------------- | ------------------------- |
+| `Enter`          | Approve        | New line                  |
+| `Space`          | Approve        | Space                     |
+| `Cmd/Ctrl+Enter` | Approve        | Approve                   |
+| `Escape`         | Reject         | Dismiss autocomplete only |
+| `Shift+Escape`   | Reject         | Reject                    |
 
 Reject and abort use `Shift+Escape` (not `Cmd+Escape`, which is Claude Code's quick-launch shortcut).
 

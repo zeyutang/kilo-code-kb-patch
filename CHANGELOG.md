@@ -4,7 +4,8 @@
 
 | Kilo Code Release | KB Patch Version |
 | ----------------- | ---------------- |
-| 7.4.17+           | 1.11.x           |
+| 7.4.20+           | 1.13.x           |
+| 7.4.17            | 1.11.x           |
 | 7.4.16            | 1.10.x           |
 | 7.4.15            | 1.9.x            |
 | 7.4.13            | 1.8.x            |
@@ -16,6 +17,12 @@
 | 7.3.63            | 1.2.x            |
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
+
+## 1.13.0
+
+- Support Kilo Code 7.4.20, re-targeting the chat input, chat Escape, permission prompt key, and document-level Escape patches to its re-minified scopes
+- Re-target the opt-in attach-file `+` button to 7.4.20 so it appears in the prompt toolbar when enabled
+- Keep all earlier versions' patterns, so 1.13.x still applies on older Kilo Code releases
 
 ## 1.12.0
 

@@ -89,8 +89,13 @@ const RULES = [
   {
     key: "perm-keys",
     file: "webview.js",
+    // Descriptions name the role, never the release's minified symbol: 7.4.20
+    // rotated the permission scope's names (7.4.17's skip-predicate N,
+    // fall-through L, reject j and dispatch O became j, N, q and z), so prose
+    // like "Permission N()" would not just go stale, it would name a different
+    // function in the very next build.
     description: (v) =>
-      `Permission N(): when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v${v}+)`,
+      `Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v${v}+)`,
     derive(content) {
       const guards = findAll(
         content,
@@ -133,7 +138,7 @@ const RULES = [
     build: (m) =>
       `${m[1]}=${m[2]}=>{if(${m[2]}.key==="Escape"&&(${m[2]}.shiftKey||!${m[2]}.target?.value?.trim())){${m[3]}(${m[2]},"reject");return}}`,
     description: (v) =>
-      `Permission j: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v${v}+)`,
+      `Permission reject: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v${v}+)`,
   }),
 
   shapeRule({
@@ -144,7 +149,7 @@ const RULES = [
     build: (m) =>
       `if(${m[1]}(${m[2]})||${m[2]}.key===" "&&!${m[2]}.metaKey&&!${m[2]}.ctrlKey&&!${m[2]}.target?.value?.trim()||${m[2]}.key==="Enter"&&(${m[2]}.metaKey||${m[2]}.ctrlKey)){${m[3]}(${m[2]},"once");return}}};`,
     description: (v) =>
-      `Permission O: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v${v}+)`,
+      `Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v${v}+)`,
   }),
 
   shapeRule({

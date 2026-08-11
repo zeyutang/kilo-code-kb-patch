@@ -29,6 +29,7 @@ function parseArgs(argv) {
     if (argv[i] === "--ext") args.ext = argv[++i];
     else if (argv[i] === "--vsix") args.vsix = argv[++i];
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
+    else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
   }
   if (args.ext && args.vsix) throw new Error("pass either --ext or --vsix, not both");
   return args;

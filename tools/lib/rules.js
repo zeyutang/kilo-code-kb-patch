@@ -8,9 +8,12 @@
 // `patched` (the same expression with our edit) from the captured symbols.
 //
 // Rules are also anchored on strings the minifier cannot touch: DOM selectors
-// ("textarea.prompt-input"), i18n keys, and Kilo's own API surface (t.abort(),
-// t.status(), selectMention). Those literals are what makes the derivation
-// stable; identifier names never appear in a rule.
+// ("textarea.prompt-input"), i18n keys, and Kilo's own API surface (.abort(),
+// .status(), selectMention — property names survive minification). Those
+// literals are what makes the derivation stable; identifier names never appear
+// in a rule, and that includes receivers: the store local `t` and the
+// indexing-status accessor `r` each looked permanent until a release renamed
+// one of them (`r`→`a` in 7.4.21), so every identifier is a captured group.
 //
 // A rule reports one of three outcomes, and the harness treats anything but a
 // unique match as "needs a human", never as a silent guess:
@@ -75,10 +78,10 @@ const RULES = [
   shapeRule({
     key: "chat-escape",
     file: "webview.js",
-    shape: `if\\((${ID})\\.key==="Escape"&&(${ID})\\(\\)\\)\\{\\1\\.preventDefault\\(\\),\\1\\.stopPropagation\\(\\),t\\.abort\\(\\);return\\}`,
-    names: ["event", "guard"],
+    shape: `if\\((${ID})\\.key==="Escape"&&(${ID})\\(\\)\\)\\{\\1\\.preventDefault\\(\\),\\1\\.stopPropagation\\(\\),(${ID})\\.abort\\(\\);return\\}`,
+    names: ["event", "guard", "store"],
     build: (m) =>
-      `if(${m[1]}.key==="Escape"&&${m[2]}()&&(${m[1]}.shiftKey||!${m[1]}.target?.value?.trim())){${m[1]}.preventDefault(),${m[1]}.stopPropagation(),t.abort();return}`,
+      `if(${m[1]}.key==="Escape"&&${m[2]}()&&(${m[1]}.shiftKey||!${m[1]}.target?.value?.trim())){${m[1]}.preventDefault(),${m[1]}.stopPropagation(),${m[3]}.abort();return}`,
     description: (v) =>
       `Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v${v}+)`,
   }),
@@ -155,10 +158,10 @@ const RULES = [
   shapeRule({
     key: "doc-escape",
     file: "webview.js",
-    shape: `(${ID})\\.key!=="Escape"\\|\\|!t\\.submitting\\(\\)&&t\\.status\\(\\)==="idle"\\|\\|\\1\\.defaultPrevented\\|\\|\\(\\1\\.preventDefault\\(\\),t\\.abort\\(\\)\\)`,
-    names: ["event"],
+    shape: `(${ID})\\.key!=="Escape"\\|\\|!(${ID})\\.submitting\\(\\)&&\\2\\.status\\(\\)==="idle"\\|\\|\\1\\.defaultPrevented\\|\\|\\(\\1\\.preventDefault\\(\\),\\2\\.abort\\(\\)\\)`,
+    names: ["event", "store"],
     build: (m) =>
-      `${m[1]}.key!=="Escape"||!t.submitting()&&t.status()==="idle"||${m[1]}.defaultPrevented||!${m[1]}.shiftKey&&${m[1]}.target?.value?.trim()||(${m[1]}.preventDefault(),t.abort())`,
+      `${m[1]}.key!=="Escape"||!${m[2]}.submitting()&&${m[2]}.status()==="idle"||${m[1]}.defaultPrevented||!${m[1]}.shiftKey&&${m[1]}.target?.value?.trim()||(${m[1]}.preventDefault(),${m[2]}.abort())`,
     description: (v) =>
       `Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v${v}+)`,
   }),
@@ -233,10 +236,12 @@ const ATTACH_RULE = {
   key: "attach-button",
   file: "webview.js",
   derive(content) {
+    // The indexing-status accessor is a minified local (`r` through 7.4.20,
+    // `a` in 7.4.21), so capture it with a backreference rather than naming it.
     const anchors = findAll(
       content,
       `(${ID})\\((${ID}),(${ID})\\((${ID}),\\{get when\\(\\)\\{return (${ID})\\(\\)\\},` +
-        `get children\\(\\)\\{return \\3\\((${ID}),\\{get value\\(\\)\\{return r\\.status\\(\\)\\.message\\|\\|r\\.label\\(\\)\\}`
+        `get children\\(\\)\\{return \\3\\((${ID}),\\{get value\\(\\)\\{return (${ID})\\.status\\(\\)\\.message\\|\\|\\7\\.label\\(\\)\\}`
     );
     if (anchors.length !== 1) return { matches: anchors.length };
     const [, insert, container, create, , , tooltip] = anchors[0];

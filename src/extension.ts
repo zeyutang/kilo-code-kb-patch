@@ -45,6 +45,54 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.21+ patterns. 7.4.21 re-minified every webview keyboard scope
+      //     except the document-level Escape (event me unchanged, so it still
+      //     matches the v7.4.20+ block). Chat keydown: event Le→Me and send
+      //     Vt→zt (Enter-check mg unchanged). Permission scope: event G→U,
+      //     dispatch z→O, in-textarea guard W→K (helper N, arg V, and reject
+      //     handler q unchanged), and the bare-Enter check $→z, so z now names
+      //     the check that 7.4.20 used for the dispatch. kiloclaw.js re-minified
+      //     its Enter-check helper $A→RA (see that file's block). Re-derived
+      //     from the 7.4.21 vsix. ---
+      {
+        feature: "chat-input",
+        original: "mg(Me)&&!Me.shiftKey&&(Me.preventDefault(),zt())",
+        patched: "mg(Me)&&(Me.metaKey||Me.ctrlKey)&&(Me.preventDefault(),zt())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.21+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(Me.key==="Escape"&&Ve()){Me.preventDefault(),Me.stopPropagation(),t.abort();return}',
+        patched:
+          'if(Me.key==="Escape"&&Ve()&&(Me.shiftKey||!Me.target?.value?.trim())){Me.preventDefault(),Me.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.21+)",
+      },
+      {
+        feature: "perm-keys",
+        original: "K?!1:N(V)",
+        patched:
+          'K?U.target?.value?.trim()?(U.key==="Enter"&&!U.metaKey&&!U.ctrlKey||U.key===" "||U.key==="Escape"&&!U.shiftKey&&!U.ctrlKey):!1:N(V)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.21+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'q=U=>{if(U.key==="Escape"){O(U,"reject");return}}',
+        patched:
+          'q=U=>{if(U.key==="Escape"&&(U.shiftKey||!U.target?.value?.trim())){O(U,"reject");return}}',
+        description:
+          "Permission reject: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.4.21+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(z(U)){O(U,"once");return}}};',
+        patched:
+          'if(z(U)||U.key===" "&&!U.metaKey&&!U.ctrlKey&&!U.target?.value?.trim()||U.key==="Enter"&&(U.metaKey||U.ctrlKey)){O(U,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.4.21+)",
+      },
       // --- v7.4.20+ patterns. 7.4.20 re-minified every webview keyboard scope,
       //     so all six behaviors needed new patterns. Chat keydown: Enter-check
       //     ng→mg, event $e→Le, send aa→Vt, abort guard ct→We. Permission scope:
@@ -545,6 +593,24 @@ const PATCHES: FilePatches[] = [
   {
     filename: "kiloclaw.js",
     patches: [
+      // --- v7.4.21+ patterns. 7.4.21 re-minified only the Enter-check helper
+      //     $A→RA; the event variables (Q, D) and the save/send/cancel calls
+      //     (y/w, v) are unchanged. First kiloclaw re-minify since 7.4.17.
+      //     Re-derived from the 7.4.21 vsix. ---
+      {
+        feature: "kiloclaw-edit",
+        original:
+          'RA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+        patched:
+          'RA(Q)&&(Q.metaKey||Q.ctrlKey)?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
+        description: "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.4.21+)",
+      },
+      {
+        feature: "kiloclaw-chat",
+        original: 'RA(D)&&!D.shiftKey&&(D.preventDefault(),v())',
+        patched: 'RA(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())',
+        description: "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.21+)",
+      },
       // --- v7.4.17+ patterns. 7.4.17 re-minified only the Enter-check helper
       //     NA→$A; the event variables (Q, D) and the save/send/abort calls (y/w,
       //     v) are unchanged from v7.4.8+. Re-derived from the 7.4.17 bundle. ---
@@ -1108,6 +1174,16 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.4.21: the indexing-status accessor changed for the first time (r→a),
+  // alongside the usual churn (container Ta, tooltip Sn, ghost Et, icon Vi,
+  // sync yt); Kilo's own tooltips gained openDelay:0, which sits outside the
+  // anchor and is not copied into the injected button.
+  {
+    original:
+      'R(Ta,_(oe,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+    patched:
+      'R(Ta,_(Sn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return _(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,L,yt)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return _(Vi,{name:"plus",size:"small"})}})}}),null),R(Ta,_(oe,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+  },
   {
     original:
       'R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}',

@@ -95,14 +95,24 @@ function main() {
       return;
     }
 
-    const shipped = isAttach
+    let shipped = isAttach
       ? knownAttach.get(result.original)
       : known.get(rule.file)?.get(result.original);
+    let derivedPatched = result.patched;
+    // A rule that widened its anchor still recognizes entries shipped with the
+    // narrower pre-widening one; those are compared on the legacy form.
+    if (shipped === undefined && result.legacy && !isAttach) {
+      const older = known.get(rule.file)?.get(result.legacy.original);
+      if (older !== undefined) {
+        shipped = older;
+        derivedPatched = result.legacy.patched;
+      }
+    }
     if (shipped !== undefined) {
-      if (shipped !== result.patched) {
+      if (shipped !== derivedPatched) {
         console.log(
           `  MISMATCH   ${rule.key}: this site already ships, but the rule rebuilds ` +
-            `the edit differently\n             shipped: ${shipped}\n             derived: ${result.patched}`
+            `the edit differently\n             shipped: ${shipped}\n             derived: ${derivedPatched}`
         );
         unclear++;
         return;

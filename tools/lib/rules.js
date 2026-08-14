@@ -121,13 +121,29 @@ const RULES = [
       if (events.length === 0) {
         return { error: "event parameter not found near the skip-predicate" };
       }
-      const event = events[events.length - 1][1];
+      const last = events[events.length - 1];
+      const event = last[1];
+
+      // The anchor spans from that event test through the tail, as raw bytes so
+      // whatever sits between them per release is carried verbatim. A tail-only
+      // anchor is not version-unambiguous: 7.4.22 renamed just the permission
+      // event (U→H) and kept the tail's bytes, so 7.4.21's tail-only anchor
+      // still matched while its splice referenced a symbol the build no longer
+      // bound there. Starting at the event test pins every identifier the
+      // splice references. The tail-only form is kept as `legacy` so entries
+      // shipped before the widening still read as covered.
+      const prefix = before.slice(last.index);
+      const splice =
+        `${event}.target?.value?.trim()?(${event}.key==="Enter"&&!${event}.metaKey&&!${event}.ctrlKey||` +
+        `${event}.key===" "||${event}.key==="Escape"&&!${event}.shiftKey&&!${event}.ctrlKey):!1:${helper}(${arg})`;
 
       return {
-        original: tails[0][0],
-        patched:
-          `${guard}?${event}.target?.value?.trim()?(${event}.key==="Enter"&&!${event}.metaKey&&!${event}.ctrlKey||` +
-          `${event}.key===" "||${event}.key==="Escape"&&!${event}.shiftKey&&!${event}.ctrlKey):!1:${helper}(${arg})`,
+        original: prefix + tails[0][0],
+        patched: `${prefix}${guard}?${splice}`,
+        legacy: {
+          original: tails[0][0],
+          patched: `${guard}?${splice}`,
+        },
         symbols: { guard, arg, helper, event },
       };
     },

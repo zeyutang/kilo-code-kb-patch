@@ -45,6 +45,59 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.22+ patterns. 7.4.22 re-minified the chat scope (Enter-check
+      //     mg→Ag, event Me→De, send zt unchanged) and renamed the permission
+      //     scope's event U→H while keeping every other name there (guard K,
+      //     helper N, arg V, reject q, bare-Enter z, dispatch O). That left the
+      //     old tail-only perm-keys anchor K?!1:N(V) matching 7.4.22 while its
+      //     splice references U, which 7.4.22 no longer binds there: the first
+      //     observed cross-version aliasing. Both the 7.4.21 and 7.4.22
+      //     perm-keys anchors therefore start at the event test, pinning the
+      //     one symbol the splice references, and this entry's previous carries
+      //     the stale-U splice so a 1.14.0-on-7.4.22 install repairs in place.
+      //     Document-level Escape still matches the v7.4.20+ block, and
+      //     kiloclaw.js is untouched. Re-derived from the 7.4.22 vsix. ---
+      {
+        feature: "chat-input",
+        original: "Ag(De)&&!De.shiftKey&&(De.preventDefault(),zt())",
+        patched: "Ag(De)&&(De.metaKey||De.ctrlKey)&&(De.preventDefault(),zt())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.22+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(De.key==="Escape"&&Ve()){De.preventDefault(),De.stopPropagation(),t.abort();return}',
+        patched:
+          'if(De.key==="Escape"&&Ve()&&(De.shiftKey||!De.target?.value?.trim())){De.preventDefault(),De.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.22+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'H.key==="Enter":te?!0:K?!1:N(V)',
+        patched:
+          'H.key==="Enter":te?!0:K?H.target?.value?.trim()?(H.key==="Enter"&&!H.metaKey&&!H.ctrlKey||H.key===" "||H.key==="Escape"&&!H.shiftKey&&!H.ctrlKey):!1:N(V)',
+        previous:
+          'H.key==="Enter":te?!0:K?U.target?.value?.trim()?(U.key==="Enter"&&!U.metaKey&&!U.ctrlKey||U.key===" "||U.key==="Escape"&&!U.shiftKey&&!U.ctrlKey):!1:N(V)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.22+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'q=H=>{if(H.key==="Escape"){O(H,"reject");return}}',
+        patched:
+          'q=H=>{if(H.key==="Escape"&&(H.shiftKey||!H.target?.value?.trim())){O(H,"reject");return}}',
+        description:
+          "Permission reject: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.4.22+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(z(H)){O(H,"once");return}}};',
+        patched:
+          'if(z(H)||H.key===" "&&!H.metaKey&&!H.ctrlKey&&!H.target?.value?.trim()||H.key==="Enter"&&(H.metaKey||H.ctrlKey)){O(H,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.4.22+)",
+      },
       // --- v7.4.21+ patterns. 7.4.21 re-minified every webview keyboard scope
       //     except the document-level Escape (event me unchanged, so it still
       //     matches the v7.4.20+ block). Chat keydown: event Le→Me and send
@@ -71,9 +124,14 @@ const PATCHES: FilePatches[] = [
       },
       {
         feature: "perm-keys",
-        original: "K?!1:N(V)",
+        // Widened from the tail-only K?!1:N(V) in 1.15.0: 7.4.22 kept those
+        // bytes but renamed the event U→H, so the anchor must include the event
+        // test to stay version-unambiguous. Installs patched with the narrow
+        // form need no migration: the widened patched text is the narrow one
+        // plus untouched surrounding bytes, so it is already present there.
+        original: 'U.key==="Enter":te?!0:K?!1:N(V)',
         patched:
-          'K?U.target?.value?.trim()?(U.key==="Enter"&&!U.metaKey&&!U.ctrlKey||U.key===" "||U.key==="Escape"&&!U.shiftKey&&!U.ctrlKey):!1:N(V)',
+          'U.key==="Enter":te?!0:K?U.target?.value?.trim()?(U.key==="Enter"&&!U.metaKey&&!U.ctrlKey||U.key===" "||U.key==="Escape"&&!U.shiftKey&&!U.ctrlKey):!1:N(V)',
         description:
           "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.21+)",
       },
@@ -1174,6 +1232,15 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.4.22: insert R→P, container Ta→Qa, guard oe→se, icon Vi→Ji, setter
+  // L→Q (create _, tooltip Sn, ghost Et, i18n u, controller h, textarea w,
+  // sync yt, and the indexing accessor a unchanged).
+  {
+    original:
+      'P(Qa,_(se,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+    patched:
+      'P(Qa,_(Sn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return _(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,yt)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return _(Ji,{name:"plus",size:"small"})}})}}),null),P(Qa,_(se,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+  },
   // v7.4.21: the indexing-status accessor changed for the first time (r→a),
   // alongside the usual churn (container Ta, tooltip Sn, ghost Et, icon Vi,
   // sync yt); Kilo's own tooltips gained openDelay:0, which sits outside the

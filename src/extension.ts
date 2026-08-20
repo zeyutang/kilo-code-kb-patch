@@ -45,6 +45,70 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.4.23+ patterns. 7.4.23 re-minified every webview keyboard
+      //     scope at once, including the document-level Escape that had held
+      //     since 7.4.20 (event me→J, store t unchanged). Chat keydown:
+      //     Enter-check Ag→bg, event De→Te, send zt→tn; chat Escape guard
+      //     Ve→Ze. The permission scope rotated five names without retiring
+      //     any of them: 7.4.22's event H now names the element-level reject
+      //     handler, its dispatch O now names the interactive-element helper,
+      //     its reject handler q now names the dispatch, its dialog-branch
+      //     predicate te now names the in-textarea guard, and its bare-Enter
+      //     check z now names the skip-predicate itself (event U, element arg
+      //     Y, dialog branch X, bare-Enter check j). Every anchor below
+      //     therefore pins each symbol its splice references, which is what
+      //     keeps a rotation on this scale from matching a build that binds
+      //     those letters to other roles. kiloclaw.js is untouched, so it
+      //     still matches the v7.4.21+ block. Re-derived from the 7.4.23
+      //     vsix. ---
+      {
+        feature: "chat-input",
+        original: "bg(Te)&&!Te.shiftKey&&(Te.preventDefault(),tn())",
+        patched: "bg(Te)&&(Te.metaKey||Te.ctrlKey)&&(Te.preventDefault(),tn())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.23+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(Te.key==="Escape"&&Ze()){Te.preventDefault(),Te.stopPropagation(),t.abort();return}',
+        patched:
+          'if(Te.key==="Escape"&&Ze()&&(Te.shiftKey||!Te.target?.value?.trim())){Te.preventDefault(),Te.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.23+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'U.key==="Enter":X?!0:te?!1:O(Y)',
+        patched:
+          'U.key==="Enter":X?!0:te?U.target?.value?.trim()?(U.key==="Enter"&&!U.metaKey&&!U.ctrlKey||U.key===" "||U.key==="Escape"&&!U.shiftKey&&!U.ctrlKey):!1:O(Y)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.4.23+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'H=U=>{if(U.key==="Escape"){q(U,"reject");return}}',
+        patched:
+          'H=U=>{if(U.key==="Escape"&&(U.shiftKey||!U.target?.value?.trim())){q(U,"reject");return}}',
+        description:
+          "Permission reject: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.4.23+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(j(U)){q(U,"once");return}}};',
+        patched:
+          'if(j(U)||U.key===" "&&!U.metaKey&&!U.ctrlKey&&!U.target?.value?.trim()||U.key==="Enter"&&(U.metaKey||U.ctrlKey)){q(U,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.4.23+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'J.key!=="Escape"||!t.submitting()&&t.status()==="idle"||J.defaultPrevented||(J.preventDefault(),t.abort())',
+        patched:
+          'J.key!=="Escape"||!t.submitting()&&t.status()==="idle"||J.defaultPrevented||!J.shiftKey&&J.target?.value?.trim()||(J.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.4.23+)",
+      },
       // --- v7.4.22+ patterns. 7.4.22 re-minified the chat scope (Enter-check
       //     mg→Ag, event Me→De, send zt unchanged) and renamed the permission
       //     scope's event U→H while keeping every other name there (guard K,
@@ -1232,6 +1296,15 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.4.23: insert P→N, create _→E, when-wrapper se→ce, when-pred mt→pt,
+  // tooltip Sn→Qn, icon Ji→to, sync yt→ht (container Qa, ghost Et, setter Q,
+  // i18n u, controller h, textarea w, and the indexing accessor a unchanged).
+  {
+    original:
+      "N(Qa,E(ce,{get when(){return pt()},get children(){return E(Qn,{get value(){return a.status().message||a.label()}",
+    patched:
+      'N(Qa,E(Qn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return E(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,ht)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return E(to,{name:"plus",size:"small"})}})}}),null),N(Qa,E(ce,{get when(){return pt()},get children(){return E(Qn,{get value(){return a.status().message||a.label()}',
+  },
   // v7.4.22: insert R→P, container Ta→Qa, guard oe→se, icon Vi→Ji, setter
   // L→Q (create _, tooltip Sn, ghost Et, i18n u, controller h, textarea w,
   // sync yt, and the indexing accessor a unchanged).

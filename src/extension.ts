@@ -45,6 +45,56 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.5.0+ patterns. 7.5.0 re-minified the chat keydown scope
+      //     (Enter-check bg→yg, send tn→an, event Te unchanged), the chat
+      //     Escape guard (Ze→We), the document-level Escape event (J→Y, store
+      //     t unchanged), and part of the permission scope. That scope kept
+      //     every role name except two, which traded letters outright: the
+      //     skip-predicate is now O and the interactive-element helper is now
+      //     z, exactly reversing 7.4.23's assignment, and the element argument
+      //     went Y→J. So the 7.4.23 perm-keys anchor ends ...te?!1:O(Y) while
+      //     7.5.0's ends ...te?!1:z(J), naming the same two symbols for the
+      //     other role. Nothing else there moved (event U, shortcuts branch W,
+      //     in-textarea guard te, dialog branch X, dispatch q, element-level
+      //     reject handler H, document handler V, bare-Enter check j), which is
+      //     why perm-escape and perm-approve below still match the v7.4.23+
+      //     block rather than needing entries here. The exchange also spans
+      //     scopes: 7.4.23's document-Escape event J is 7.5.0's permission
+      //     element argument, and 7.4.23's permission element argument Y is
+      //     7.5.0's document-Escape event. kiloclaw.js is untouched, so it
+      //     still matches the v7.4.21+ block. Re-derived from the 7.5.0 vsix. ---
+      {
+        feature: "chat-input",
+        original: "yg(Te)&&!Te.shiftKey&&(Te.preventDefault(),an())",
+        patched: "yg(Te)&&(Te.metaKey||Te.ctrlKey)&&(Te.preventDefault(),an())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.0+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(Te.key==="Escape"&&We()){Te.preventDefault(),Te.stopPropagation(),t.abort();return}',
+        patched:
+          'if(Te.key==="Escape"&&We()&&(Te.shiftKey||!Te.target?.value?.trim())){Te.preventDefault(),Te.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.0+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'U.key==="Enter":X?!0:te?!1:z(J)',
+        patched:
+          'U.key==="Enter":X?!0:te?U.target?.value?.trim()?(U.key==="Enter"&&!U.metaKey&&!U.ctrlKey||U.key===" "||U.key==="Escape"&&!U.shiftKey&&!U.ctrlKey):!1:z(J)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.5.0+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'Y.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Y.defaultPrevented||(Y.preventDefault(),t.abort())',
+        patched:
+          'Y.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Y.defaultPrevented||!Y.shiftKey&&Y.target?.value?.trim()||(Y.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.5.0+)",
+      },
       // --- v7.4.23+ patterns. 7.4.23 re-minified every webview keyboard
       //     scope at once, including the document-level Escape that had held
       //     since 7.4.20 (event me→J, store t unchanged). Chat keydown:
@@ -1296,6 +1346,24 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.5.0: insert N→R, container Qa→Nr, create E→C, when-wrapper ce→ne,
+  // tooltip Qn→Mn, ghost Et→_t, icon to→ro, sync ht→bt, and the indexing
+  // accessor a→r (when-pred pt, setter Q, i18n u, controller h, textarea w
+  // unchanged). Six of those spellings are ones 7.4.20/7.4.21 already used
+  // (R, C, Mn, _t, bt, r), a reminder that per-release symbols do not advance
+  // monotonically, so the older entries below still have to be swept for
+  // aliasing rather than assumed stale. Every closure local the injected
+  // button calls is pinned to ground truth by Kilo's own mention-menu row,
+  // h.selectMention(Va,w,Q,bt), and corroborated per symbol: w=je is the
+  // textarea.prompt-input node from template ovr, Q is the text signal setter
+  // from [M,Q]=le(""), and bt is the auto-resize. The sprite icon component is
+  // function ro(e), reached from the href builder sje=e=>`opencode-icon-${e}`.
+  {
+    original:
+      "R(Nr,C(ne,{get when(){return pt()},get children(){return C(Mn,{get value(){return r.status().message||r.label()}",
+    patched:
+      'R(Nr,C(Mn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,bt)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(ro,{name:"plus",size:"small"})}})}}),null),R(Nr,C(ne,{get when(){return pt()},get children(){return C(Mn,{get value(){return r.status().message||r.label()}',
+  },
   // v7.4.23: insert P→N, create _→E, when-wrapper se→ce, when-pred mt→pt,
   // tooltip Sn→Qn, icon Ji→to, sync yt→ht (container Qa, ghost Et, setter Q,
   // i18n u, controller h, textarea w, and the indexing accessor a unchanged).

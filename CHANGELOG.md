@@ -22,6 +22,13 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.17.1
+
+- Show the apply-patches prompt alone after a Kilo Code update: the bonus "Reload Window" notification waits until that prompt is answered, so an early reload no longer skips the keyboard patches
+- Merge the editor title and attach-file reload notifications into one when both change
+- Re-running Apply Patches on a patched install now reports "already fully patched" instead of the "No patches applied (74 skipped)" warning
+- When nothing applies because patterns do not match, the message counts this build's missing features instead of every supported version's patterns
+
 ## 1.17.0
 
 - Support Kilo Code 7.5.0, re-targeting the chat input, chat Escape, permission prompt key, and document-level Escape patches to its re-minified scopes

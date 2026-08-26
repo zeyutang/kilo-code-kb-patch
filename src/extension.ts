@@ -1239,8 +1239,8 @@ let suspendReconcile = false;
 //
 // This is an opt-in bonus setting, declared in the extension's package.json (the
 // contributes.configuration block) so VS Code lists it in the Settings UI and
-// allows config.update to write it. It never appears in the status webview,
-// which stays keyboard-only.
+// allows config.update to write it. The status webview lists it only in the
+// bonus section, which never feeds the verdict.
 const OPEN_IN_TAB_ORIGINAL = "Open in Tab";
 const OPEN_IN_TAB_RENAMED = "Kilo Code: Open";
 
@@ -1276,29 +1276,6 @@ function reconcileOpenInTabTitle(extPath: string): boolean {
   if (updated === content) return false;
   fs.writeFileSync(pkgPath, updated, "utf8");
   return true;
-}
-
-// Reconcile, and only when the manifest actually changed offer a reload so the
-// manifest re-scan picks up the new title. That change plus this transient
-// prompt are the only surfaces; the status webview never lists this knob.
-function syncOpenInTabTitle(extPath: string): void {
-  let changed = false;
-  try {
-    changed = reconcileOpenInTabTitle(extPath);
-  } catch {
-    return;
-  }
-  if (!changed) return;
-  vscode.window
-    .showInformationMessage(
-      "Kilo Code KB Patch: editor title icon updated. Reload window to apply.",
-      "Reload Window"
-    )
-    .then((choice) => {
-      if (choice === "Reload Window") {
-        vscode.commands.executeCommand("workbench.action.reloadWindow");
-      }
-    });
 }
 
 // --- Bonus: attach-file "+" button ------------------------------------------
@@ -1499,19 +1476,43 @@ function reconcileAttachFileButton(extPath: string): boolean {
   return true;
 }
 
-// Reconcile, and only when the bundle actually changed offer a reload so Kilo's
-// webview re-loads with (or without) the button.
-function syncAttachFileButton(extPath: string): void {
-  let changed = false;
+// Which bonus files a reconcile pass actually rewrote. Anything true here is a
+// change the running session does not reflect until the window reloads.
+interface BonusChanges {
+  title: boolean;
+  attach: boolean;
+}
+
+// One reconcile pass over both bonus knobs. Each reconciler fails safe on its
+// own (an unreadable file reads as "unchanged"), so a broken manifest cannot
+// stop the webview bundle from reconciling or vice versa.
+function reconcileBonuses(extPath: string): BonusChanges {
+  let title = false;
+  let attach = false;
   try {
-    changed = reconcileAttachFileButton(extPath);
-  } catch {
-    return;
-  }
-  if (!changed) return;
+    title = reconcileOpenInTabTitle(extPath);
+  } catch {}
+  try {
+    attach = reconcileAttachFileButton(extPath);
+  } catch {}
+  return { title, attach };
+}
+
+// Offer the reload that pending bonus changes still need, as one notification
+// however many items changed. Callers decide when: right away on a settings
+// change, but at activation only after the apply-patches prompt (if any) is
+// settled. A bare "Reload Window" button shown next to that prompt invites
+// reloading first, which restarts the extension host before the keyboard
+// patches were ever applied.
+function notifyBonusReload(changed: BonusChanges): void {
+  const items = [
+    ...(changed.title ? ["editor title icon"] : []),
+    ...(changed.attach ? ["attach-file button"] : []),
+  ];
+  if (items.length === 0) return;
   vscode.window
     .showInformationMessage(
-      "Kilo Code KB Patch: attach-file button updated. Reload window to apply.",
+      `Kilo Code KB Patch: ${items.join(" and ")} updated. Reload window to apply.`,
       "Reload Window"
     )
     .then((choice) => {
@@ -1659,7 +1660,12 @@ function restorePatches(filePath: string, patches: PatchDef[]): PatchResult {
   };
 }
 
-async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
+// Resolves to whether a Reload Window offer was shown (something was applied
+// or restored), so activation's Apply path knows if the held bonus-reload
+// notification is already covered by this one or must still be surfaced.
+async function runPatch(
+  mode: "apply" | "restore" | "status"
+): Promise<boolean> {
   const extPath = findLatestKiloExt();
   if (!extPath) {
     const home = os.homedir();
@@ -1671,7 +1677,7 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
         searched || "(no extensions folder found)"
       }`
     );
-    return;
+    return false;
   }
 
   const version = extractVersion(extPath);
@@ -1680,7 +1686,7 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
   if (mode === "status") {
     const { files, verdict } = computeStatus(distDir);
     showStatusPanel(version, verdict, files, computeBonusStatus(extPath));
-    return;
+    return false;
   }
 
   const results: PatchResult[] = [];
@@ -1726,9 +1732,7 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
   const totalApplied =
     results.reduce((s, r) => s + r.applied.length + r.reverted.length, 0) +
     bonusReverted;
-  const totalSkipped = results.reduce((s, r) => s + r.skipped.length, 0);
 
-  const action = mode === "apply" ? "applied" : "restored";
   const verb = mode === "apply" ? "Patched" : "Restored";
 
   if (totalApplied > 0) {
@@ -1742,11 +1746,42 @@ async function runPatch(mode: "apply" | "restore" | "status"): Promise<void> {
           vscode.commands.executeCommand("workbench.action.reloadWindow");
         }
       });
-  } else {
-    vscode.window.showWarningMessage(
-      `Kilo Code KB Patch: No patches ${action} (${totalSkipped} skipped). v${version}`
-    );
+    return true;
   }
+  // Nothing changed. Report it in terms of this build's features, not the raw
+  // pattern list: a skipped-pattern count sweeps in every other version's
+  // variants (dozens per feature), and on an already patched install it reads
+  // as a failure ("No patches applied (74 skipped)") when the true state is
+  // that there is nothing left to do.
+  const { files, verdict } = computeStatus(distDir);
+  if (mode === "restore") {
+    vscode.window.showInformationMessage(
+      `Kilo Code KB Patch: Nothing to restore on v${version}. Files are already original.`
+    );
+    return false;
+  }
+  if (verdict === "fully patched") {
+    vscode.window.showInformationMessage(
+      `Kilo Code KB Patch: v${version} is already fully patched. Nothing to apply.`
+    );
+    return false;
+  }
+  if (verdict === "version not recognized") {
+    vscode.window.showWarningMessage(
+      `Kilo Code KB Patch: No known patterns match v${version}. Update KB Patch to support it.`
+    );
+    return false;
+  }
+  // Apply changed nothing yet the build is not fully patched: the remaining
+  // features' patterns do not match this Kilo version.
+  const missing = files
+    .filter((f) => f.found)
+    .flatMap((f) => f.features)
+    .filter((ft) => ft.state === "missing").length;
+  vscode.window.showWarningMessage(
+    `Kilo Code KB Patch: ${missing} feature(s) on v${version} have no matching pattern. Update KB Patch to cover them.`
+  );
+  return false;
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -1772,22 +1807,23 @@ export function activate(context: vscode.ExtensionContext): void {
   // the files) and whenever one of our settings changes. The settings are
   // registered in package.json, so affectsConfiguration reports them reliably and
   // limits the reconcile (which reads the webview bundle) to relevant changes.
-  syncOpenInTabTitle(extPath);
-  syncAttachFileButton(extPath);
+  // On the settings path the reload offer shows right away; the startup result
+  // is held until the apply-patches decision below is settled.
+  const startupBonuses = reconcileBonuses(extPath);
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (suspendReconcile) return;
       if (!e.affectsConfiguration("kiloCodeKbPatch")) return;
-      syncOpenInTabTitle(extPath);
-      syncAttachFileButton(extPath);
+      notifyBonusReload(reconcileBonuses(extPath));
     })
   );
 
-  const distDir = path.join(extPath, "dist");
-  const webviewPath = path.join(distDir, "webview.js");
-  if (!fs.existsSync(webviewPath)) return;
-
-  const content = fs.readFileSync(webviewPath, "utf8");
+  // Read after the bonus reconcile, which may itself rewrite webview.js, so the
+  // needs-patching check sees the reconciled bundle.
+  const webviewPath = path.join(extPath, "dist", "webview.js");
+  const content = fs.existsSync(webviewPath)
+    ? fs.readFileSync(webviewPath, "utf8")
+    : "";
   const needsPatching = PATCHES[0].patches.some(
     (p) =>
       !content.includes(p.patched) &&
@@ -1795,20 +1831,34 @@ export function activate(context: vscode.ExtensionContext): void {
         (p.previous && content.includes(p.previous)))
   );
 
-  if (needsPatching) {
-    const version = extractVersion(extPath);
-    vscode.window
-      .showInformationMessage(
-        `Kilo Code KB Patch: v${version} detected, apply keyboard patches?`,
-        "Apply",
-        "Ignore"
-      )
-      .then((choice) => {
-        if (choice === "Apply") {
-          runPatch("apply");
-        }
-      });
+  if (!needsPatching) {
+    notifyBonusReload(startupBonuses);
+    return;
   }
+
+  // A Kilo update resets every patched file at once, so the apply prompt and
+  // the bonus reload offer would land together, and the bonus "Reload Window"
+  // button clicked first reloads a window whose keyboard patches were never
+  // applied. Show only the Apply/Ignore prompt now. Apply's completion
+  // notification carries the reload, which picks up the bonus changes too; on
+  // Ignore or dismissal those changes still need their reload, so the held
+  // offer surfaces then.
+  const version = extractVersion(extPath);
+  vscode.window
+    .showInformationMessage(
+      `Kilo Code KB Patch: v${version} detected, apply keyboard patches?`,
+      "Apply",
+      "Ignore"
+    )
+    .then((choice) => {
+      if (choice === "Apply") {
+        runPatch("apply").then((offeredReload) => {
+          if (!offeredReload) notifyBonusReload(startupBonuses);
+        });
+      } else {
+        notifyBonusReload(startupBonuses);
+      }
+    });
 }
 
 export function deactivate(): void {}

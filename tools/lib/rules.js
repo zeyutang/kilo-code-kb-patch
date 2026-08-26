@@ -221,6 +221,23 @@ function hasSpriteGlyph(content, name) {
 // smaller glyph stays as a fallback in case a future build drops the large one.
 const GLYPH_PREFERENCE = ["plus", "plus-small"];
 
+// The button originally captioned itself with Kilo's localized
+// "prompt.action.attachFile" ("Attach file"), a key the 7.4.11-era recon found
+// defined per locale but otherwise unused. Kilo has since dropped it: the key
+// is absent from every build re-checked (7.4.17 through 7.5.4, whole-vsix
+// searches), and the webview's t() falls back to String(key) for a missing
+// key, so a u.t() caption renders the raw key string there. The caption is
+// therefore decided per build: the localized call while the catalog ships the
+// key, else an English literal, which matches Kilo's own current practice of
+// hardcoding this row's label. The catalog form is the quoted key with a
+// colon, which the injected t() call does not contain, so the test cannot be
+// confused by a patched bundle.
+function attachLabelExpression(content, i18n) {
+  return content.includes('"prompt.action.attachFile":')
+    ? `${i18n}.t("prompt.action.attachFile")`
+    : '"Attach file"';
+}
+
 // Kilo ships two icon components with the same `{name,size}` call shape, and the
 // one we must not use is the more common of the two, so counting usages picks
 // wrong. Identify the sprite component by behavior instead: it is the function
@@ -296,15 +313,17 @@ const ATTACH_RULE = {
       return { error: `no ${GLYPH_PREFERENCE.join("/")} glyph in the sprite map` };
     }
 
+    const label = attachLabelExpression(content, i18n);
+
     const original = anchors[0][0];
     const button =
-      `${insert}(${container},${create}(${tooltip},{get value(){return ${i18n}.t("prompt.action.attachFile")},` +
+      `${insert}(${container},${create}(${tooltip},{get value(){return ${label}},` +
       `placement:"top",get children(){return ${create}(${ghost},{variant:"ghost",size:"small",` +
       `onClick:()=>{if(!${textarea})return;${textarea}.focus();let _v=${textarea}.value,` +
       `_s=${textarea}.selectionStart??_v.length,_b=_v.substring(0,_s);` +
       `document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");` +
       `${controller}.selectMention({type:"file-picker"},${textarea},${setter},${sync})},` +
-      `get"aria-label"(){return ${i18n}.t("prompt.action.attachFile")},` +
+      `get"aria-label"(){return ${label}},` +
       `get children(){return ${create}(${icon},{name:"${glyph}",size:"small"})}})}}),null),`;
 
     return {

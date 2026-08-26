@@ -177,7 +177,10 @@ function main() {
           shim.setConfig({ addAttachFileButton: true });
           test.reconcileAttachFileButton(migrate);
           const after = fs.readFileSync(target, "utf8");
-          const buttons = countOccurrences(after, 't("prompt.action.attachFile")') / 2;
+          // Count buttons by the injected onClick's selectMention call, which
+          // every variant contains exactly once regardless of how it captions
+          // itself (7.5.4+ variants no longer call t("prompt.action.attachFile")).
+          const buttons = countOccurrences(after, 'selectMention({type:"file-picker"}');
           check(buttons === 1, "older form yields exactly one button", `got ${buttons}`);
           check(after === fresh, "older form upgrades to exactly a fresh apply");
 

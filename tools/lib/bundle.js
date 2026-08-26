@@ -73,6 +73,10 @@ function unpatched(content, filename, test) {
   if (filename === "webview.js") {
     for (const b of test.ATTACH_FILE_BUTTONS) {
       if (out.includes(b.patched)) out = out.replace(b.patched, b.original);
+      else {
+        const prev = b.previous?.find((p) => out.includes(p));
+        if (prev) out = out.replace(prev, b.original);
+      }
     }
   }
   return out;
@@ -93,7 +97,14 @@ const PATCH_MARKERS = [
   "target?.value?.trim()",
   ".ctrlKey)&&(",
   ".ctrlKey)?(",
+  // Two attach-button fingerprints: forms shipped before 1.18.0 (now carried
+  // in previous[]) and the pre-7.4.17 entries caption via Kilo's
+  // t("prompt.action.attachFile"), while 1.18.0 recaptioned the 7.4.17+
+  // variants with a literal because Kilo dropped that key. The selectMention
+  // form covers every variant, old and new: each onClick passes the mention
+  // item as an object literal, where Kilo's own call sites pass a variable.
   't("prompt.action.attachFile")',
+  'selectMention({type:"file-picker"}',
 ];
 
 function residualPatchMarkers(content) {

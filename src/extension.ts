@@ -45,6 +45,73 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.5.4+ patterns. 7.5.4 re-minified every webview keyboard scope,
+      //     and kiloclaw.js for the first time since 7.4.21 (see that file's
+      //     block). Chat keydown: Enter-check yg→FA, event Te→Oe, send an→on;
+      //     chat Escape guard We→He. Document-level Escape: event Y→te (store
+      //     t unchanged); te was 7.5.0's permission in-textarea guard, so
+      //     minified names keep crossing scopes between releases. The
+      //     permission scope rotated three letters in a cycle rather than
+      //     trading two: the skip-predicate went O→j, the bare-Enter check
+      //     j→q, and the dispatch q→O, each role taking the next letter of
+      //     the same three. The event went U→W (W was the shortcuts branch,
+      //     which is now Z), the in-textarea guard te→ce, the element
+      //     argument J→Y (reviving 7.4.23's spelling), and the decide
+      //     function $→N, while the interactive-element helper z, the
+      //     element-level reject handler H, and the document handler V held.
+      //     Every anchor pins each symbol its splice references, which is
+      //     what keeps a rotation like this from matching an entry with stale
+      //     bindings. The Enter-check helper FA is still shared between the
+      //     chat keydown and the permission bare-Enter check. Re-derived from
+      //     the 7.5.4 vsix. ---
+      {
+        feature: "chat-input",
+        original: "FA(Oe)&&!Oe.shiftKey&&(Oe.preventDefault(),on())",
+        patched: "FA(Oe)&&(Oe.metaKey||Oe.ctrlKey)&&(Oe.preventDefault(),on())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.4+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(Oe.key==="Escape"&&He()){Oe.preventDefault(),Oe.stopPropagation(),t.abort();return}',
+        patched:
+          'if(Oe.key==="Escape"&&He()&&(Oe.shiftKey||!Oe.target?.value?.trim())){Oe.preventDefault(),Oe.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.4+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'W.key==="Enter":X?!0:ce?!1:z(Y)',
+        patched:
+          'W.key==="Enter":X?!0:ce?W.target?.value?.trim()?(W.key==="Enter"&&!W.metaKey&&!W.ctrlKey||W.key===" "||W.key==="Escape"&&!W.shiftKey&&!W.ctrlKey):!1:z(Y)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.5.4+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'H=W=>{if(W.key==="Escape"){O(W,"reject");return}}',
+        patched:
+          'H=W=>{if(W.key==="Escape"&&(W.shiftKey||!W.target?.value?.trim())){O(W,"reject");return}}',
+        description:
+          "Permission reject: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.5.4+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(q(W)){O(W,"once");return}}};',
+        patched:
+          'if(q(W)||W.key===" "&&!W.metaKey&&!W.ctrlKey&&!W.target?.value?.trim()||W.key==="Enter"&&(W.metaKey||W.ctrlKey)){O(W,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.5.4+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'te.key!=="Escape"||!t.submitting()&&t.status()==="idle"||te.defaultPrevented||(te.preventDefault(),t.abort())',
+        patched:
+          'te.key!=="Escape"||!t.submitting()&&t.status()==="idle"||te.defaultPrevented||!te.shiftKey&&te.target?.value?.trim()||(te.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.5.4+)",
+      },
       // --- v7.5.0+ patterns. 7.5.0 re-minified the chat keydown scope
       //     (Enter-check bg→yg, send tn→an, event Te unchanged), the chat
       //     Escape guard (Ze→We), the document-level Escape event (J→Y, store
@@ -765,6 +832,25 @@ const PATCHES: FilePatches[] = [
   {
     filename: "kiloclaw.js",
     patches: [
+      // --- v7.5.4+ patterns. 7.5.4 re-minified kiloclaw.js for the first
+      //     time since 7.4.21, and more broadly than that release's
+      //     single-symbol churn: Enter-check helper RA→kf, edit-box event Q→T
+      //     and cancel call w→k, chat event D→I (save y and send v
+      //     unchanged). Re-derived from the 7.5.4 vsix. ---
+      {
+        feature: "kiloclaw-edit",
+        original:
+          'kf(T)&&!T.shiftKey?(T.preventDefault(),y()):T.key==="Escape"&&k()',
+        patched:
+          'kf(T)&&(T.metaKey||T.ctrlKey)?(T.preventDefault(),y()):T.key==="Escape"&&k()',
+        description: "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.5.4+)",
+      },
+      {
+        feature: "kiloclaw-chat",
+        original: "kf(I)&&!I.shiftKey&&(I.preventDefault(),v())",
+        patched: "kf(I)&&(I.metaKey||I.ctrlKey)&&(I.preventDefault(),v())",
+        description: "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.4+)",
+      },
       // --- v7.4.21+ patterns. 7.4.21 re-minified only the Enter-check helper
       //     $A→RA; the event variables (Q, D) and the save/send/cancel calls
       //     (y/w, v) are unchanged. First kiloclaw re-minify since 7.4.17.
@@ -1286,8 +1372,18 @@ function reconcileOpenInTabTitle(extPath: string): boolean {
 // cluster.
 //
 // The button reuses Kilo's own tooltip, ghost button, and sprite-icon
-// components, plus the already-localized "prompt.action.attachFile" label
-// (defined in every locale but otherwise unused). onClick reaches four in-scope
+// components. The caption has its own history: the original 7.4.11-era recon
+// found a localized "prompt.action.attachFile" key ("Attach file", defined
+// per locale but otherwise unused) and every variant reused it via u.t().
+// Kilo has since dropped the key. It is absent from every build re-checked
+// (7.4.17 through 7.5.4, whole-vsix searches), and the webview's t() falls
+// back to String(key) for a missing key, so those tooltips silently rendered
+// the raw key string. As of 1.18.0 the 7.4.17+ variants caption with a
+// literal English "Attach file" instead, matching Kilo's own current practice
+// of hardcoding this row's label in English, and each carries its former u.t
+// form in previous[] so an existing install recaptions in place. Entries
+// below 7.4.17 keep the u.t call: the key plausibly still existed there, and
+// no vsix was pulled to check. onClick reaches four in-scope
 // PromptInput locals: the textarea ref, the mention controller, its value setter,
 // and the post-input sync. It inserts "@" at the caret (execCommand, so a real
 // input event fires) then calls <controller>.selectMention({type:"file-picker"},
@@ -1323,6 +1419,24 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.5.4: insert R→P, container Nr→va, create C→B, tooltip Mn→Wn, ghost
+  // _t→Rt, icon ro→zo, sync bt→Et, when-wrapper ne→fe, when-pred pt→ut,
+  // setter Q→F, and the indexing accessor r→a (controller h, textarea w,
+  // glyph "plus" unchanged). Captioned by a literal "Attach file" like every
+  // 7.4.17+ variant as of 1.18.0; this retarget is where the missing
+  // prompt.action.attachFile key was noticed (see the header note).
+  // Every closure local the injected button calls is pinned to ground truth
+  // by Kilo's own mention-menu row, h.selectMention(Xr,w,F,Et), and
+  // corroborated per symbol: w=We is the textarea.prompt-input node from
+  // template l_a, F is the text signal setter from [T,F]=we(""), and Et is
+  // the auto-resize. The sprite icon component is function zo(e), reached
+  // from the href builder KVe=e=>`opencode-icon-${e}`.
+  {
+    original:
+      "P(va,B(fe,{get when(){return ut()},get children(){return B(Wn,{get value(){return a.status().message||a.label()}",
+    patched:
+      'P(va,B(Wn,{get value(){return "Attach file"},placement:"top",get children(){return B(Rt,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,F,Et)},get"aria-label"(){return "Attach file"},get children(){return B(zo,{name:"plus",size:"small"})}})}}),null),P(va,B(fe,{get when(){return ut()},get children(){return B(Wn,{get value(){return a.status().message||a.label()}',
+  },
   // v7.5.0: insert N→R, container Qa→Nr, create E→C, when-wrapper ce→ne,
   // tooltip Qn→Mn, ghost Et→_t, icon to→ro, sync ht→bt, and the indexing
   // accessor a→r (when-pred pt, setter Q, i18n u, controller h, textarea w
@@ -1339,7 +1453,12 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
     original:
       "R(Nr,C(ne,{get when(){return pt()},get children(){return C(Mn,{get value(){return r.status().message||r.label()}",
     patched:
+      'R(Nr,C(Mn,{get value(){return "Attach file"},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,bt)},get"aria-label"(){return "Attach file"},get children(){return C(ro,{name:"plus",size:"small"})}})}}),null),R(Nr,C(ne,{get when(){return pt()},get children(){return C(Mn,{get value(){return r.status().message||r.label()}',
+    previous: [
+      // Captioned via u.t("prompt.action.attachFile") until 1.18.0; see the
+      // header note on the dropped catalog key.
       'R(Nr,C(Mn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,bt)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(ro,{name:"plus",size:"small"})}})}}),null),R(Nr,C(ne,{get when(){return pt()},get children(){return C(Mn,{get value(){return r.status().message||r.label()}',
+    ],
   },
   // v7.4.23: insert P→N, create _→E, when-wrapper se→ce, when-pred mt→pt,
   // tooltip Sn→Qn, icon Ji→to, sync yt→ht (container Qa, ghost Et, setter Q,
@@ -1348,7 +1467,12 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
     original:
       "N(Qa,E(ce,{get when(){return pt()},get children(){return E(Qn,{get value(){return a.status().message||a.label()}",
     patched:
+      'N(Qa,E(Qn,{get value(){return "Attach file"},placement:"top",get children(){return E(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,ht)},get"aria-label"(){return "Attach file"},get children(){return E(to,{name:"plus",size:"small"})}})}}),null),N(Qa,E(ce,{get when(){return pt()},get children(){return E(Qn,{get value(){return a.status().message||a.label()}',
+    previous: [
+      // Captioned via u.t("prompt.action.attachFile") until 1.18.0; see the
+      // header note on the dropped catalog key.
       'N(Qa,E(Qn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return E(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,ht)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return E(to,{name:"plus",size:"small"})}})}}),null),N(Qa,E(ce,{get when(){return pt()},get children(){return E(Qn,{get value(){return a.status().message||a.label()}',
+    ],
   },
   // v7.4.22: insert R→P, container Ta→Qa, guard oe→se, icon Vi→Ji, setter
   // L→Q (create _, tooltip Sn, ghost Et, i18n u, controller h, textarea w,
@@ -1357,7 +1481,12 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
     original:
       'P(Qa,_(se,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
     patched:
+      'P(Qa,_(Sn,{get value(){return "Attach file"},placement:"top",get children(){return _(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,yt)},get"aria-label"(){return "Attach file"},get children(){return _(Ji,{name:"plus",size:"small"})}})}}),null),P(Qa,_(se,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+    previous: [
+      // Captioned via u.t("prompt.action.attachFile") until 1.18.0; see the
+      // header note on the dropped catalog key.
       'P(Qa,_(Sn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return _(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,yt)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return _(Ji,{name:"plus",size:"small"})}})}}),null),P(Qa,_(se,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+    ],
   },
   // v7.4.21: the indexing-status accessor changed for the first time (r→a),
   // alongside the usual churn (container Ta, tooltip Sn, ghost Et, icon Vi,
@@ -1367,23 +1496,37 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
     original:
       'R(Ta,_(oe,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
     patched:
+      'R(Ta,_(Sn,{get value(){return "Attach file"},placement:"top",get children(){return _(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,L,yt)},get"aria-label"(){return "Attach file"},get children(){return _(Vi,{name:"plus",size:"small"})}})}}),null),R(Ta,_(oe,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+    previous: [
+      // Captioned via u.t("prompt.action.attachFile") until 1.18.0; see the
+      // header note on the dropped catalog key.
       'R(Ta,_(Sn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return _(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,L,yt)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return _(Vi,{name:"plus",size:"small"})}})}}),null),R(Ta,_(oe,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+    ],
   },
   {
     original:
       'R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}',
     patched:
+      'R(ai,_(Mn,{get value(){return "Attach file"},placement:"top",get children(){return _(_t,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,L,bt)},get"aria-label"(){return "Attach file"},get children(){return _(Wi,{name:"plus",size:"small"})}})}}),null),R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}',
+    previous: [
+      // Captioned via u.t("prompt.action.attachFile") until 1.18.0; see the
+      // header note on the dropped catalog key.
       'R(ai,_(Mn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return _(_t,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,L,bt)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return _(Wi,{name:"plus",size:"small"})}})}}),null),R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}',
+    ],
   },
   {
     original:
       'F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
     patched:
-      'F(Pe,x(Fn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return x(St,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,Ut)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return x(Hi,{name:"plus",size:"small"})}})}}),null),F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
-    // 1.11.0 and earlier drew the small glyph here. The larger "plus" was always
-    // in the sprite map; it only looked absent because minified object keys are
-    // quoted just when they must be, so "plus-small" is quoted and plus is bare.
+      'F(Pe,x(Fn,{get value(){return "Attach file"},placement:"top",get children(){return x(St,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,Ut)},get"aria-label"(){return "Attach file"},get children(){return x(Hi,{name:"plus",size:"small"})}})}}),null),F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
     previous: [
+      // Captioned via u.t("prompt.action.attachFile") until 1.18.0; see the
+      // header note on the dropped catalog key. The second form below is
+      // older still: 1.11.0 and earlier drew the small glyph. The larger
+      // "plus" was always in the sprite map; it only looked absent because
+      // minified object keys are quoted just when they must be, so
+      // "plus-small" is quoted and plus is bare.
+      'F(Pe,x(Fn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return x(St,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,Ut)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return x(Hi,{name:"plus",size:"small"})}})}}),null),F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
       'F(Pe,x(Fn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return x(St,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,Ut)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return x(Hi,{name:"plus-small",size:"small"})}})}}),null),F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
     ],
   },

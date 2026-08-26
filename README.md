@@ -11,9 +11,9 @@ Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `
 
 | Kilo Code | KB Patch |
 | --------- | -------- |
-| 7.5.0+    | 1.17.x   |
+| 7.5.4+    | 1.18.x   |
+| 7.5.0     | 1.17.x   |
 | 7.4.23    | 1.16.x   |
-| 7.4.22    | 1.15.x   |
 | (prev.)   | (prev.)  |
 
 Each patch release keeps the earlier versions' patterns, so a newer patch still works on an older Kilo Code.

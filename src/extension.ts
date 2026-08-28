@@ -45,6 +45,74 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.5.6+ patterns. 7.5.6 re-minified every webview keyboard scope
+      //     again, but only five of the six behaviors needed a new pattern.
+      //     Chat keydown: Enter-check FA→RA, event Oe→lt, send on→We (chat
+      //     Escape guard He unchanged). The document-level Escape moved too,
+      //     and this is where the non-monotonic churn noted for the attach
+      //     button turns up in a keyboard scope: its event went te→ee, and ee
+      //     is the spelling the v7.3.50-54 block at the bottom of this array
+      //     already carries, so doc-escape ships no 7.5.6 entry and matches
+      //     that five-month-old pattern instead. Reviving an old pattern is
+      //     safe here for the same reason a new one is: that anchor pins
+      //     every symbol its splice references (the event ee and the store t,
+      //     via !t.submitting()&&t.status()==="idle"), so it cannot match a
+      //     build that binds them differently. Adding a duplicate 7.5.6 entry
+      //     would instead make two variants match at once, which is the one
+      //     thing the aliasing sweep forbids. Permission scope: the
+      //     skip-predicate and the bare-Enter check traded letters outright
+      //     (j→q and q→j), the event took the shortcuts-branch letter (W→Z,
+      //     shortcuts now K), the in-textarea guard went ce→ie, and the
+      //     document handler took the event's old letter (V→W), while the
+      //     dispatch O, element-level reject handler H, element argument Y,
+      //     dialog branch X, interactive-element helper z, decide N, element
+      //     extractor Q, and focusPrompt F all held. Only the event moving is
+      //     why perm-escape and perm-approve needed new entries despite their
+      //     own handlers keeping their names. The Enter-check helper RA is
+      //     still shared between the chat keydown and the permission
+      //     bare-Enter check. kiloclaw.js changed bytes in this release but
+      //     not at either patch site, so both its entries still match the
+      //     v7.5.4 patterns. v7.5.5 needed nothing at all: every shipped
+      //     pattern still matched it. Re-derived from the 7.5.6 vsix. ---
+      {
+        feature: "chat-input",
+        original: "RA(lt)&&!lt.shiftKey&&(lt.preventDefault(),We())",
+        patched: "RA(lt)&&(lt.metaKey||lt.ctrlKey)&&(lt.preventDefault(),We())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.6+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(lt.key==="Escape"&&He()){lt.preventDefault(),lt.stopPropagation(),t.abort();return}',
+        patched:
+          'if(lt.key==="Escape"&&He()&&(lt.shiftKey||!lt.target?.value?.trim())){lt.preventDefault(),lt.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.6+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'Z.key==="Enter":X?!0:ie?!1:z(Y)',
+        patched:
+          'Z.key==="Enter":X?!0:ie?Z.target?.value?.trim()?(Z.key==="Enter"&&!Z.metaKey&&!Z.ctrlKey||Z.key===" "||Z.key==="Escape"&&!Z.shiftKey&&!Z.ctrlKey):!1:z(Y)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.5.6+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'H=Z=>{if(Z.key==="Escape"){O(Z,"reject");return}}',
+        patched:
+          'H=Z=>{if(Z.key==="Escape"&&(Z.shiftKey||!Z.target?.value?.trim())){O(Z,"reject");return}}',
+        description:
+          "Permission reject: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v7.5.6+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(j(Z)){O(Z,"once");return}}};',
+        patched:
+          'if(j(Z)||Z.key===" "&&!Z.metaKey&&!Z.ctrlKey&&!Z.target?.value?.trim()||Z.key==="Enter"&&(Z.metaKey||Z.ctrlKey)){O(Z,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.5.6+)",
+      },
       // --- v7.5.4+ patterns. 7.5.4 re-minified every webview keyboard scope,
       //     and kiloclaw.js for the first time since 7.4.21 (see that file's
       //     block). Chat keydown: Enter-check yg→FA, event Te→Oe, send an→on;
@@ -1419,6 +1487,26 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.5.6: container va→xr, ghost Rt→Tt, icon zo→jo, sync Et→At
+  // (insert P, create B, tooltip Wn, when-wrapper Ae, when-pred dt, setter F,
+  // controller h, textarea w, indexing accessor a, glyph "plus" unchanged).
+  // Kilo's own mention-menu row, h.selectMention(ii,w,F,At), pins all four
+  // closure locals the injected button calls, and each is corroborated
+  // separately: w=Tn is the textarea.prompt-input node from template cEa
+  // (chain lt→Oe→Yt→Vn/Tn, then gr→Ci/xr for hint-selectors/hint-actions), F
+  // is the text signal setter from [T,F]=ke(""), and At is the auto-resize.
+  // The sprite icon component is function jo(e), reached from the href builder
+  // oKe=e=>`opencode-icon-${e}`. Captioned by a literal because
+  // prompt.action.attachFile is still absent from this build's catalog, which
+  // now only ships prompt.action.{continue,enhance,enhanceDescription,
+  // indexing,send,stop}. Note lt names both the chat keydown event and the
+  // prompt-input container element here, as Te/Oe did in earlier builds.
+  {
+    original:
+      "P(xr,B(Ae,{get when(){return dt()},get children(){return B(Wn,{get value(){return a.status().message||a.label()}",
+    patched:
+      'P(xr,B(Wn,{get value(){return "Attach file"},placement:"top",get children(){return B(Tt,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,F,At)},get"aria-label"(){return "Attach file"},get children(){return B(jo,{name:"plus",size:"small"})}})}}),null),P(xr,B(Ae,{get when(){return dt()},get children(){return B(Wn,{get value(){return a.status().message||a.label()}',
+  },
   // v7.5.4: insert R→P, container Nr→va, create C→B, tooltip Mn→Wn, ghost
   // _t→Rt, icon ro→zo, sync bt→Et, when-wrapper ne→fe, when-pred pt→ut,
   // setter Q→F, and the indexing accessor r→a (controller h, textarea w,

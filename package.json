@@ -2,7 +2,7 @@
   "name": "kilo-code-kb-patch",
   "displayName": "Kilo Code KB Patch",
   "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, Cmd+Up/Down to recall earlier messages, smarter permission prompt key routing.",
-  "version": "1.19.0",
+  "version": "1.19.1",
   "publisher": "zeyutang",
   "license": "MIT",
   "icon": "icon.png",

@@ -86,6 +86,53 @@ const RULES = [
       `Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v${v}+)`,
   }),
 
+  // Prompt-history navigation. Kilo's own gate (q_a in 7.5.6) lets an arrow key
+  // reach the history only when the caret already sits at the boundary it is
+  // travelling towards, which is what makes a held Up walk to the top of the
+  // draft and then jump to the previous message. The edit moves the whole
+  // behavior onto Cmd/Ctrl and passes that boundary as the caret argument, so
+  // the chord recalls history from anywhere in the draft while a bare arrow is
+  // caret movement and nothing else. Kilo's own selection guard is left in
+  // place: with a range selected the chord falls through to the platform's
+  // caret gesture rather than replacing the draft.
+  //
+  // The anchor runs from the key test through the navigate() call because that
+  // is the first point at which the text accessor is bound, and the splice
+  // references it; stopping any earlier would leave a symbol unpinned, which is
+  // the 7.4.22 aliasing failure.
+  shapeRule({
+    key: "chat-history",
+    file: "webview.js",
+    shape:
+      `if\\(\\((${ID})\\.key==="ArrowUp"\\|\\|\\1\\.key==="ArrowDown"\\)` +
+      `&&!\\1\\.altKey&&!\\1\\.ctrlKey&&!\\1\\.metaKey&&!\\1\\.shiftKey\\)\\{` +
+      `let (${ID})=(${ID})\\?\\.selectionStart\\?\\?0,(${ID})=\\3\\?\\.selectionEnd\\?\\?0;` +
+      `if\\(\\2!==\\4\\)return;` +
+      `let (${ID})=\\2,(${ID})=\\1\\.key==="ArrowUp"\\?"up":"down",` +
+      `(${ID})=(${ID})\\.navigate\\(\\6,(${ID})\\(\\),\\5\\)`,
+    names: [
+      "event",
+      "selectionStart",
+      "textarea",
+      "selectionEnd",
+      "caret",
+      "direction",
+      "result",
+      "history",
+      "text",
+    ],
+    build: (m) =>
+      `if((${m[1]}.key==="ArrowUp"||${m[1]}.key==="ArrowDown")&&(${m[1]}.metaKey||${m[1]}.ctrlKey)` +
+      `&&!${m[1]}.altKey&&!${m[1]}.shiftKey){` +
+      `let ${m[2]}=${m[3]}?.selectionStart??0,${m[4]}=${m[3]}?.selectionEnd??0;` +
+      `if(${m[2]}!==${m[4]})return;` +
+      `let ${m[5]}=${m[1]}.key==="ArrowUp"?0:${m[9]}().length,` +
+      `${m[6]}=${m[1]}.key==="ArrowUp"?"up":"down",` +
+      `${m[7]}=${m[8]}.navigate(${m[6]},${m[9]}(),${m[5]})`,
+    description: (v) =>
+      `Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v${v}+)`,
+  }),
+
   // The skip-predicate's tail is only a few characters ("V?!1:L(G)"), far too
   // short to match safely on its own, so it is reached in two hops from the
   // selector literal that names the in-textarea guard.

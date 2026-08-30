@@ -5,7 +5,7 @@
 [![Open VSX Version](https://img.shields.io/open-vsx/v/zeyutang/kilo-code-kb-patch?label=Open%20VSX)](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/zeyutang/kilo-code-kb-patch)](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
 
-Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd/Ctrl+Enter` sends, and permission prompts stop hijacking your keystrokes while you are typing.
+Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd/Ctrl+Enter` sends, `Cmd/Ctrl+Up` and `Cmd/Ctrl+Down` recall earlier messages, and permission prompts stop hijacking your keystrokes while you are typing.
 
 ## Supported versions (latest three)
 
@@ -22,15 +22,20 @@ Each patch release keeps the earlier versions' patterns, so a newer patch still 
 
 ### Keyboard patches
 
-| Key              | Before Patched (native Kilo Code) | After Patched                                      |
-| ---------------- | --------------------------------- | -------------------------------------------------- |
-| `Enter`          | Send / Approve                    | **New line** (approves when the chat box is empty) |
-| `Cmd/Ctrl+Enter` | Send / Save                       | **Send / Approve / Save**                          |
-| `Shift+Enter`    | New line                          | New line (unchanged)                               |
-| `Escape`         | Reject / Abort                    | Reject / Abort **only when the chat box is empty** |
-| `Shift+Escape`   | Reject / Abort                    | **Reject / Abort** (always)                        |
+| Key                    | Before Patched (native Kilo Code)    | After Patched                                      |
+| ---------------------- | ------------------------------------ | -------------------------------------------------- |
+| `Enter`                | Send / Approve                       | **New line** (approves when the chat box is empty) |
+| `Cmd/Ctrl+Enter`       | Send / Save                          | **Send / Approve / Save**                          |
+| `Shift+Enter`          | New line                             | New line (unchanged)                               |
+| `Escape`               | Reject / Abort                       | Reject / Abort **only when the chat box is empty** |
+| `Shift+Escape`         | Reject / Abort                       | **Reject / Abort** (always)                        |
+| `Up` / `Down`          | Previous / next message at the edges | **Caret movement only**                            |
+| `Cmd/Ctrl+Up` / `Down` | Caret to start / end                 | **Previous / next message**                        |
 
 Applies to the chat input, the permission prompt, and the KiloClaw edit/chat panels.
+
+Native Kilo Code recalls a message when a bare `Up` or `Down` reaches the start or end of what you typed, which is why holding the key can jump away mid-edit.
+Patched, recall moves to `Cmd/Ctrl+Up` / `Down` and works from anywhere in the chat box, and stepping forward past the newest message brings your unsent draft back.
 
 ### Bonus
 

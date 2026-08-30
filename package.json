@@ -1,7 +1,7 @@
 {
   "name": "kilo-code-kb-patch",
   "displayName": "Kilo Code KB Patch",
-  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, smarter permission prompt key routing.",
+  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, Cmd+Up/Down to recall earlier messages, smarter permission prompt key routing.",
   "version": "1.19.0",
   "publisher": "zeyutang",
   "license": "MIT",
@@ -66,6 +66,7 @@
     "watch": "tsc -watch -p ./",
     "retarget": "npm run compile && node tools/retarget.js",
     "verify": "npm run compile && node tools/verify.js",
+    "behavior": "npm run compile && node tools/behavior.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {

@@ -89,6 +89,42 @@ const PATCHES: FilePatches[] = [
         description:
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.6+)",
       },
+      // chat-history, new in 1.20.0 and back-derived for every build down to
+      // 7.4.17 (each version block below carries its own variant, so a user on
+      // an older Kilo gets it too; nothing older than 7.4.17 was available to
+      // derive from, and the status view reports the row as missing there).
+      //
+      // Kilo routes both arrow keys through its prompt-history navigator, gated
+      // by a caret test of its own: an Up only recalls when the caret already
+      // sits at offset 0, a Down when it sits at the end. That is what makes a
+      // held Up walk to the top of a multi-line draft and then, still
+      // repeating, replace it with the previous message. The edit puts the
+      // whole behavior behind Cmd/Ctrl and hands the gate the boundary for the
+      // direction travelled (0 for up, the draft's length for down) instead of
+      // the real caret, so the chord recalls from anywhere in the draft while a
+      // bare arrow is caret movement and nothing else. Kilo's own selection
+      // guard is left alone: with a range selected the chord falls through to
+      // the platform's caret gesture rather than discarding the selection.
+      //
+      // Nothing is lost by recalling: Kilo stashes the draft on the way out and
+      // returns it when you step forward past the newest message. Shift and Alt
+      // combinations stay untouched, so native selection and word gestures
+      // still work.
+      //
+      // The anchor stops at the navigate() call because that is where the text
+      // accessor is bound and the splice references it; a shorter one would
+      // leave a symbol unpinned. `npm run behavior` runs this patch against
+      // Kilo's real navigator, which is the only check that can see the caret
+      // gate still reading its argument the way this edit assumes.
+      {
+        feature: "chat-history",
+        original:
+          'if((lt.key==="ArrowUp"||lt.key==="ArrowDown")&&!lt.altKey&&!lt.ctrlKey&&!lt.metaKey&&!lt.shiftKey){let Oe=w?.selectionStart??0,Yt=w?.selectionEnd??0;if(Oe!==Yt)return;let Vn=Oe,Tn=lt.key==="ArrowUp"?"up":"down",gr=x.navigate(Tn,T(),Vn)',
+        patched:
+          'if((lt.key==="ArrowUp"||lt.key==="ArrowDown")&&(lt.metaKey||lt.ctrlKey)&&!lt.altKey&&!lt.shiftKey){let Oe=w?.selectionStart??0,Yt=w?.selectionEnd??0;if(Oe!==Yt)return;let Vn=lt.key==="ArrowUp"?0:T().length,Tn=lt.key==="ArrowUp"?"up":"down",gr=x.navigate(Tn,T(),Vn)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.5.6+)",
+      },
       {
         feature: "perm-keys",
         original: 'Z.key==="Enter":X?!0:ie?!1:z(Y)',
@@ -146,6 +182,15 @@ const PATCHES: FilePatches[] = [
           'if(Oe.key==="Escape"&&He()&&(Oe.shiftKey||!Oe.target?.value?.trim())){Oe.preventDefault(),Oe.stopPropagation(),t.abort();return}',
         description:
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.4+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if((Oe.key==="ArrowUp"||Oe.key==="ArrowDown")&&!Oe.altKey&&!Oe.ctrlKey&&!Oe.metaKey&&!Oe.shiftKey){let _t=w?.selectionStart??0,ze=w?.selectionEnd??0;if(_t!==ze)return;let gn=_t,We=Oe.key==="ArrowUp"?"up":"down",mn=x.navigate(We,T(),gn)',
+        patched:
+          'if((Oe.key==="ArrowUp"||Oe.key==="ArrowDown")&&(Oe.metaKey||Oe.ctrlKey)&&!Oe.altKey&&!Oe.shiftKey){let _t=w?.selectionStart??0,ze=w?.selectionEnd??0;if(_t!==ze)return;let gn=Oe.key==="ArrowUp"?0:T().length,We=Oe.key==="ArrowUp"?"up":"down",mn=x.navigate(We,T(),gn)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.5.4+)",
       },
       {
         feature: "perm-keys",
@@ -214,6 +259,15 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.0+)",
       },
       {
+        feature: "chat-history",
+        original:
+          'if((Te.key==="ArrowUp"||Te.key==="ArrowDown")&&!Te.altKey&&!Te.ctrlKey&&!Te.metaKey&&!Te.shiftKey){let kt=w?.selectionStart??0,Le=w?.selectionEnd??0;if(kt!==Le)return;let bn=kt,je=Te.key==="ArrowUp"?"up":"down",fn=x.navigate(je,M(),bn)',
+        patched:
+          'if((Te.key==="ArrowUp"||Te.key==="ArrowDown")&&(Te.metaKey||Te.ctrlKey)&&!Te.altKey&&!Te.shiftKey){let kt=w?.selectionStart??0,Le=w?.selectionEnd??0;if(kt!==Le)return;let bn=Te.key==="ArrowUp"?0:M().length,je=Te.key==="ArrowUp"?"up":"down",fn=x.navigate(je,M(),bn)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.5.0+)",
+      },
+      {
         feature: "perm-keys",
         original: 'U.key==="Enter":X?!0:te?!1:z(J)',
         patched:
@@ -260,6 +314,15 @@ const PATCHES: FilePatches[] = [
           'if(Te.key==="Escape"&&Ze()&&(Te.shiftKey||!Te.target?.value?.trim())){Te.preventDefault(),Te.stopPropagation(),t.abort();return}',
         description:
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.23+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if((Te.key==="ArrowUp"||Te.key==="ArrowDown")&&!Te.altKey&&!Te.ctrlKey&&!Te.metaKey&&!Te.shiftKey){let xt=w?.selectionStart??0,Le=w?.selectionEnd??0;if(xt!==Le)return;let mn=xt,je=Te.key==="ArrowUp"?"up":"down",ln=C.navigate(je,T(),mn)',
+        patched:
+          'if((Te.key==="ArrowUp"||Te.key==="ArrowDown")&&(Te.metaKey||Te.ctrlKey)&&!Te.altKey&&!Te.shiftKey){let xt=w?.selectionStart??0,Le=w?.selectionEnd??0;if(xt!==Le)return;let mn=Te.key==="ArrowUp"?0:T().length,je=Te.key==="ArrowUp"?"up":"down",ln=C.navigate(je,T(),mn)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.4.23+)",
       },
       {
         feature: "perm-keys",
@@ -322,6 +385,15 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.22+)",
       },
       {
+        feature: "chat-history",
+        original:
+          'if((De.key==="ArrowUp"||De.key==="ArrowDown")&&!De.altKey&&!De.ctrlKey&&!De.metaKey&&!De.shiftKey){let pt=w?.selectionStart??0,Vt=w?.selectionEnd??0;if(pt!==Vt)return;let Le=pt,nn=De.key==="ArrowUp"?"up":"down",Ze=C.navigate(nn,T(),Le)',
+        patched:
+          'if((De.key==="ArrowUp"||De.key==="ArrowDown")&&(De.metaKey||De.ctrlKey)&&!De.altKey&&!De.shiftKey){let pt=w?.selectionStart??0,Vt=w?.selectionEnd??0;if(pt!==Vt)return;let Le=De.key==="ArrowUp"?0:T().length,nn=De.key==="ArrowUp"?"up":"down",Ze=C.navigate(nn,T(),Le)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.4.22+)",
+      },
+      {
         feature: "perm-keys",
         original: 'H.key==="Enter":te?!0:K?!1:N(V)',
         patched:
@@ -370,6 +442,15 @@ const PATCHES: FilePatches[] = [
           'if(Me.key==="Escape"&&Ve()&&(Me.shiftKey||!Me.target?.value?.trim())){Me.preventDefault(),Me.stopPropagation(),t.abort();return}',
         description:
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.21+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if((Me.key==="ArrowUp"||Me.key==="ArrowDown")&&!Me.altKey&&!Me.ctrlKey&&!Me.metaKey&&!Me.shiftKey){let pt=w?.selectionStart??0,Vt=w?.selectionEnd??0;if(pt!==Vt)return;let Le=pt,nn=Me.key==="ArrowUp"?"up":"down",Ze=C.navigate(nn,T(),Le)',
+        patched:
+          'if((Me.key==="ArrowUp"||Me.key==="ArrowDown")&&(Me.metaKey||Me.ctrlKey)&&!Me.altKey&&!Me.shiftKey){let pt=w?.selectionStart??0,Vt=w?.selectionEnd??0;if(pt!==Vt)return;let Le=Me.key==="ArrowUp"?0:T().length,nn=Me.key==="ArrowUp"?"up":"down",Ze=C.navigate(nn,T(),Le)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.4.21+)",
       },
       {
         feature: "perm-keys",
@@ -429,6 +510,15 @@ const PATCHES: FilePatches[] = [
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.20+)",
       },
       {
+        feature: "chat-history",
+        original:
+          'if((Le.key==="ArrowUp"||Le.key==="ArrowDown")&&!Le.altKey&&!Le.ctrlKey&&!Le.metaKey&&!Le.shiftKey){let mt=w?.selectionStart??0,Wt=w?.selectionEnd??0;if(mt!==Wt)return;let Fe=mt,an=Le.key==="ArrowUp"?"up":"down",Je=x.navigate(an,T(),Fe)',
+        patched:
+          'if((Le.key==="ArrowUp"||Le.key==="ArrowDown")&&(Le.metaKey||Le.ctrlKey)&&!Le.altKey&&!Le.shiftKey){let mt=w?.selectionStart??0,Wt=w?.selectionEnd??0;if(mt!==Wt)return;let Fe=Le.key==="ArrowUp"?0:T().length,an=Le.key==="ArrowUp"?"up":"down",Je=x.navigate(an,T(),Fe)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.4.20+)",
+      },
+      {
         feature: "perm-keys",
         original: "W?!1:N(V)",
         patched:
@@ -486,6 +576,15 @@ const PATCHES: FilePatches[] = [
           'if($e.key==="Escape"&&ct()&&($e.shiftKey||!$e.target?.value?.trim())){$e.preventDefault(),$e.stopPropagation(),t.abort();return}',
         description:
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.4.17+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if(($e.key==="ArrowUp"||$e.key==="ArrowDown")&&!$e.altKey&&!$e.ctrlKey&&!$e.metaKey&&!$e.shiftKey){let gt=k?.selectionStart??0,yt=k?.selectionEnd??0;if(gt!==yt)return;let Bt=gt,Lt=$e.key==="ArrowUp"?"up":"down",jt=C.navigate(Lt,M(),Bt)',
+        patched:
+          'if(($e.key==="ArrowUp"||$e.key==="ArrowDown")&&($e.metaKey||$e.ctrlKey)&&!$e.altKey&&!$e.shiftKey){let gt=k?.selectionStart??0,yt=k?.selectionEnd??0;if(gt!==yt)return;let Bt=$e.key==="ArrowUp"?0:M().length,Lt=$e.key==="ArrowUp"?"up":"down",jt=C.navigate(Lt,M(),Bt)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.4.17+)",
       },
       {
         feature: "perm-keys",
@@ -1005,6 +1104,7 @@ const PATCHES: FilePatches[] = [
 const FEATURE_ORDER = [
   "chat-input",
   "chat-escape",
+  "chat-history",
   "perm-keys",
   "perm-escape",
   "perm-approve",
@@ -1021,6 +1121,7 @@ type FeatureKey = (typeof FEATURE_ORDER)[number];
 const FEATURE_LABELS: Record<FeatureKey, string> = {
   "chat-input": "Chat input: Enter adds a newline, Cmd/Ctrl+Enter sends",
   "chat-escape": "Chat Escape: aborts only when the input is empty",
+  "chat-history": "Chat history: Cmd/Ctrl+Up/Down, not bare Up/Down",
   "perm-keys": "Permission prompt: typing keys stay in the input",
   "perm-escape": "Permission Escape: rejects only when the input is empty",
   "perm-approve": "Permission approve: Cmd/Ctrl+Enter always, Space when empty",

@@ -24,6 +24,12 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.19.1
+
+- `Up` and `Down` now only move the caret in the chat box, so holding either one no longer jumps to a message you sent earlier
+- Recall earlier messages with `Cmd/Ctrl+Up` and `Cmd/Ctrl+Down`, from anywhere in the chat box; stepping forward past the newest one brings your unsent draft back
+- This patch applies on Kilo Code 7.4.17 and later
+
 ## 1.19.0
 
 - Support Kilo Code 7.5.6, re-targeting the chat input, chat Escape, and permission prompt key patches to its re-minified scopes

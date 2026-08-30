@@ -97,6 +97,12 @@ const PATCH_MARKERS = [
   "target?.value?.trim()",
   ".ctrlKey)&&(",
   ".ctrlKey)?(",
+  // The chat-history splice's caret argument. Kilo passes the real caret there
+  // and its own direction test reads `?"up":"down"`, so the `?0:` form is ours
+  // alone: 0 in every pristine build checked, 7.4.17 through 7.5.6. The
+  // modifier half of that edit needs no marker of its own and could not serve
+  // as one anyway, since pristine webview.js already ships `.ctrlKey)&&!`.
+  '==="ArrowUp"?0:',
   // Two attach-button fingerprints: forms shipped before 1.18.0 (now carried
   // in previous[]) and the pre-7.4.17 entries caption via Kilo's
   // t("prompt.action.attachFile"), while 1.18.0 recaptioned the 7.4.17+

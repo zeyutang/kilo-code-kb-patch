@@ -45,6 +45,120 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.5.8+ patterns. The re-minify landed in 7.5.8, not in 7.5.9:
+      //     the two releases ship byte-identical bundles (all 1004 dist/
+      //     entries match, and the vsixes differ only in
+      //     extension/package.json), so 7.5.9 is a version-only republish and
+      //     these patterns are labelled from the earlier build, the way the
+      //     v7.5.4+ block covers 7.5.5. It follows that 1.19.x was already
+      //     partially degraded on 7.5.8 rather than only on 7.5.9.
+      //
+      //     Every webview keyboard scope moved, while kiloclaw.js has been
+      //     byte-identical since 7.5.6 and both of its entries still match
+      //     the v7.5.4 patterns. Chat keydown: Enter-check RA→VA, event
+      //     lt→mt, send We→gs, chat Escape guard He→cn, and in the history
+      //     scope the text accessor T→F with all five of its locals renamed
+      //     (Oe→on, Yt→Qt, Vn→We, Tn→yt, gr→Ht), while the textarea w and
+      //     the navigator x held. Document-level Escape: event ee→Ee, store t
+      //     unchanged, so the v7.3.50-54 entry that served 7.5.6 by revival
+      //     no longer applies and this behavior needs a fresh pattern again.
+      //
+      //     The permission scope is where this release earns its lesson. Its
+      //     event reverted Z→W, which is 7.5.4's spelling, and the
+      //     element-level reject handler H and the dispatch O both held, so
+      //     all three symbols perm-escape's splice references line up with
+      //     the v7.5.4+ entry and that entry reads covered here. This block
+      //     therefore ships no perm-escape entry, for the same reason 7.5.6
+      //     shipped no doc-escape one: two variants of one behavior matching
+      //     at once is what the aliasing sweep forbids, and applyPatches
+      //     would resolve it silently by array order. Reviving that entry is
+      //     safe because its anchor pins every symbol it splices (H, W and O
+      //     all appear in it). perm-keys and perm-approve still need new
+      //     entries despite sharing the event letter: the dialog branch went
+      //     X→ee, the in-textarea guard ie→oe, and the bare-Enter check kept
+      //     7.5.6's j rather than reverting to 7.5.4's q, so this permission
+      //     scope is a genuinely new mix of two earlier releases' spellings
+      //     rather than a revert. The interactive-element helper z and the
+      //     element argument Y held. The Enter-check helper VA is still
+      //     shared between the chat keydown and the permission bare-Enter
+      //     check. Re-derived from the 7.5.9 vsix and cross-checked against
+      //     the 7.5.8 one. ---
+      {
+        feature: "chat-input",
+        original: "VA(mt)&&!mt.shiftKey&&(mt.preventDefault(),gs())",
+        patched: "VA(mt)&&(mt.metaKey||mt.ctrlKey)&&(mt.preventDefault(),gs())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.8+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(mt.key==="Escape"&&cn()){mt.preventDefault(),mt.stopPropagation(),t.abort();return}',
+        patched:
+          'if(mt.key==="Escape"&&cn()&&(mt.shiftKey||!mt.target?.value?.trim())){mt.preventDefault(),mt.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.8+)",
+      },
+      // chat-history, new in 1.19.1 and back-derived for every build down to
+      // 7.4.17 (each version block below carries its own variant, so a user on
+      // an older Kilo gets it too; nothing older than 7.4.17 was available to
+      // derive from, and the status view reports the row as missing there).
+      //
+      // Kilo routes both arrow keys through its prompt-history navigator, gated
+      // by a caret test of its own: an Up only recalls when the caret already
+      // sits at offset 0, a Down when it sits at the end. That is what makes a
+      // held Up walk to the top of a multi-line draft and then, still
+      // repeating, replace it with the previous message. The edit puts the
+      // whole behavior behind Cmd/Ctrl and hands the gate the boundary for the
+      // direction travelled (0 for up, the draft's length for down) instead of
+      // the real caret, so the chord recalls from anywhere in the draft while a
+      // bare arrow is caret movement and nothing else. Kilo's own selection
+      // guard is left alone: with a range selected the chord falls through to
+      // the platform's caret gesture rather than discarding the selection.
+      //
+      // Nothing is lost by recalling: Kilo stashes the draft on the way out and
+      // returns it when you step forward past the newest message. Shift and Alt
+      // combinations stay untouched, so native selection and word gestures
+      // still work.
+      //
+      // The anchor stops at the navigate() call because that is where the text
+      // accessor is bound and the splice references it; a shorter one would
+      // leave a symbol unpinned. `npm run behavior` runs this patch against
+      // Kilo's real navigator, which is the only check that can see the caret
+      // gate still reading its argument the way this edit assumes.
+      {
+        feature: "chat-history",
+        original:
+          'if((mt.key==="ArrowUp"||mt.key==="ArrowDown")&&!mt.altKey&&!mt.ctrlKey&&!mt.metaKey&&!mt.shiftKey){let on=w?.selectionStart??0,Qt=w?.selectionEnd??0;if(on!==Qt)return;let We=on,yt=mt.key==="ArrowUp"?"up":"down",Ht=x.navigate(yt,F(),We)',
+        patched:
+          'if((mt.key==="ArrowUp"||mt.key==="ArrowDown")&&(mt.metaKey||mt.ctrlKey)&&!mt.altKey&&!mt.shiftKey){let on=w?.selectionStart??0,Qt=w?.selectionEnd??0;if(on!==Qt)return;let We=mt.key==="ArrowUp"?0:F().length,yt=mt.key==="ArrowUp"?"up":"down",Ht=x.navigate(yt,F(),We)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.5.8+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'W.key==="Enter":ee?!0:oe?!1:z(Y)',
+        patched:
+          'W.key==="Enter":ee?!0:oe?W.target?.value?.trim()?(W.key==="Enter"&&!W.metaKey&&!W.ctrlKey||W.key===" "||W.key==="Escape"&&!W.shiftKey&&!W.ctrlKey):!1:z(Y)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.5.8+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(j(W)){O(W,"once");return}}};',
+        patched:
+          'if(j(W)||W.key===" "&&!W.metaKey&&!W.ctrlKey&&!W.target?.value?.trim()||W.key==="Enter"&&(W.metaKey||W.ctrlKey)){O(W,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.5.8+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'Ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Ee.defaultPrevented||(Ee.preventDefault(),t.abort())',
+        patched:
+          'Ee.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Ee.defaultPrevented||!Ee.shiftKey&&Ee.target?.value?.trim()||(Ee.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.5.8+)",
+      },
       // --- v7.5.6+ patterns. 7.5.6 re-minified every webview keyboard scope
       //     again, but only five of the six behaviors needed a new pattern.
       //     Chat keydown: Enter-check FA→RA, event Oe→lt, send on→We (chat
@@ -89,33 +203,6 @@ const PATCHES: FilePatches[] = [
         description:
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.6+)",
       },
-      // chat-history, new in 1.20.0 and back-derived for every build down to
-      // 7.4.17 (each version block below carries its own variant, so a user on
-      // an older Kilo gets it too; nothing older than 7.4.17 was available to
-      // derive from, and the status view reports the row as missing there).
-      //
-      // Kilo routes both arrow keys through its prompt-history navigator, gated
-      // by a caret test of its own: an Up only recalls when the caret already
-      // sits at offset 0, a Down when it sits at the end. That is what makes a
-      // held Up walk to the top of a multi-line draft and then, still
-      // repeating, replace it with the previous message. The edit puts the
-      // whole behavior behind Cmd/Ctrl and hands the gate the boundary for the
-      // direction travelled (0 for up, the draft's length for down) instead of
-      // the real caret, so the chord recalls from anywhere in the draft while a
-      // bare arrow is caret movement and nothing else. Kilo's own selection
-      // guard is left alone: with a range selected the chord falls through to
-      // the platform's caret gesture rather than discarding the selection.
-      //
-      // Nothing is lost by recalling: Kilo stashes the draft on the way out and
-      // returns it when you step forward past the newest message. Shift and Alt
-      // combinations stay untouched, so native selection and word gestures
-      // still work.
-      //
-      // The anchor stops at the navigate() call because that is where the text
-      // accessor is bound and the splice references it; a shorter one would
-      // leave a symbol unpinned. `npm run behavior` runs this patch against
-      // Kilo's real navigator, which is the only check that can see the caret
-      // gate still reading its argument the way this edit assumes.
       {
         feature: "chat-history",
         original:
@@ -1588,6 +1675,33 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.5.8: insert P→N, container xr→or, tooltip Wn→jn, ghost Tt→St, icon
+  // jo→qo, when-wrapper Ae→ge, when-pred dt→vn, setter F→P, sync At→Jt
+  // (create B, controller h, textarea w, indexing accessor a, glyph "plus"
+  // unchanged). Kilo's own mention-menu row, h.selectMention(ci,w,P,Jt),
+  // occurs exactly once and pins all four closure locals the injected button
+  // calls; each is corroborated separately too. w=yt is the
+  // textarea.prompt-input node from template sBa, whose chain reads
+  // mt→on→Qt→We/yt for the container, wrapper, ghost-wrapper,
+  // highlight-overlay and textarea, then Ht→Dn/or for hint-selectors and
+  // hint-actions, so or is the toolbar the button joins. P is the text signal
+  // setter from [F,P]=ke(""), and Jt is the auto-resize,
+  // ()=>{w&&(w.style.height="auto",...)}. The sprite icon component is
+  // function qo(e), reached from the href builder MKe=e=>`opencode-icon-${e}`.
+  // Captioned by a literal because attachFile appears nowhere in this build's
+  // vsix (0 hits across every js and json entry), so u.t() would still render
+  // the raw key; the catalog ships only prompt.action.{continue,enhance,
+  // enhanceDescription,indexing,send,stop}, unchanged from 7.5.6. Note that
+  // this template scope's letters collide wholesale with the chat-history
+  // handler's locals: mt, on, Qt, We, yt and Ht name elements here and name
+  // the keydown event and its caret, direction and result locals there. That
+  // is the sharpest reminder yet that an anchor keys on shape, never on a name.
+  {
+    original:
+      "N(or,B(ge,{get when(){return vn()},get children(){return B(jn,{get value(){return a.status().message||a.label()}",
+    patched:
+      'N(or,B(jn,{get value(){return "Attach file"},placement:"top",get children(){return B(St,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,P,Jt)},get"aria-label"(){return "Attach file"},get children(){return B(qo,{name:"plus",size:"small"})}})}}),null),N(or,B(ge,{get when(){return vn()},get children(){return B(jn,{get value(){return a.status().message||a.label()}',
+  },
   // v7.5.6: container va→xr, ghost Rt→Tt, icon zo→jo, sync Et→At
   // (insert P, create B, tooltip Wn, when-wrapper Ae, when-pred dt, setter F,
   // controller h, textarea w, indexing accessor a, glyph "plus" unchanged).

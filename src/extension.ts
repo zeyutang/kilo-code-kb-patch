@@ -45,6 +45,91 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.5.11+ patterns. The re-minify landed in 7.5.11, three releases
+      //     before the 7.5.14 this retarget was asked for. Every build in
+      //     that range derives byte-identical patterns at every site: 7.5.11,
+      //     7.5.12 and 7.5.13/7.5.14 ship three distinct webview.js bundles,
+      //     but the differences all fall outside the patch sites, and 7.5.13
+      //     and 7.5.14 are byte-identical in both bundles. So this block is
+      //     labelled from the build that actually moved, the way v7.5.8+
+      //     covers 7.5.9 and v7.5.4+ covers 7.5.5, and it follows that 1.20.x
+      //     was already degraded from 7.5.11 on rather than only on 7.5.14.
+      //     The two gaps in that range are not oversights: 7.5.10 was never
+      //     published, and 7.5.13 was published only for the linux and alpine
+      //     targets, so darwin and win32 users went from 7.5.12 straight to
+      //     7.5.14.
+      //
+      //     kiloclaw.js changed bytes for the first time since 7.5.6, yet
+      //     both of its patch sites still match the v7.5.4 patterns. Chat
+      //     keydown: Enter-check VA→jg, event mt→ut, send gs→Wc, chat Escape
+      //     guard cn→vn, and in the history scope the text accessor F→N with
+      //     all five of its locals renamed (on→Et, Qt→He, We→Ct, yt→$t,
+      //     Ht→mn), while the textarea w and the navigator x held.
+      //     Document-level Escape: event Ee→Ce, store t unchanged.
+      //
+      //     The permission scope moved only two letters, and neither is one
+      //     that perm-escape or perm-approve reference: the shortcuts branch
+      //     went K→Z and the dialog branch ee→X, so the tail now reads
+      //     Z?W.key==="Enter":X?!0:oe?!1:z(Y). Everything else there held,
+      //     namely the event W, the in-textarea guard oe, the
+      //     interactive-element helper z, the element argument Y, the
+      //     bare-Enter check j, the dispatch O and the element-level reject
+      //     H. perm-keys anchors on the dialog branch, so it needs a fresh
+      //     entry; perm-escape reads covered off the v7.5.4+ entry and
+      //     perm-approve off the v7.5.8+ one, and both of those anchors pin
+      //     every symbol they splice, so this block ships neither. Adding
+      //     them would put two variants of one behavior in the array at once,
+      //     which is what the aliasing sweep forbids and what applyPatches
+      //     would otherwise resolve silently by array order.
+      //
+      //     Both moved letters are revivals rather than fresh spellings: Z
+      //     was 7.5.6's event and X was 7.5.6's dialog branch, so this
+      //     permission scope is another mix of earlier releases rather than a
+      //     churn. The Enter-check helper jg is still shared between the chat
+      //     keydown and the permission bare-Enter check. Derived from the
+      //     7.5.14 vsix and cross-checked against 7.5.12 and 7.5.11, all
+      //     three of which emit an identical block. ---
+      {
+        feature: "chat-input",
+        original: "jg(ut)&&!ut.shiftKey&&(ut.preventDefault(),Wc())",
+        patched: "jg(ut)&&(ut.metaKey||ut.ctrlKey)&&(ut.preventDefault(),Wc())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.11+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(ut.key==="Escape"&&vn()){ut.preventDefault(),ut.stopPropagation(),t.abort();return}',
+        patched:
+          'if(ut.key==="Escape"&&vn()&&(ut.shiftKey||!ut.target?.value?.trim())){ut.preventDefault(),ut.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.11+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if((ut.key==="ArrowUp"||ut.key==="ArrowDown")&&!ut.altKey&&!ut.ctrlKey&&!ut.metaKey&&!ut.shiftKey){let Et=w?.selectionStart??0,He=w?.selectionEnd??0;if(Et!==He)return;let Ct=Et,$t=ut.key==="ArrowUp"?"up":"down",mn=x.navigate($t,N(),Ct)',
+        patched:
+          'if((ut.key==="ArrowUp"||ut.key==="ArrowDown")&&(ut.metaKey||ut.ctrlKey)&&!ut.altKey&&!ut.shiftKey){let Et=w?.selectionStart??0,He=w?.selectionEnd??0;if(Et!==He)return;let Ct=ut.key==="ArrowUp"?0:N().length,$t=ut.key==="ArrowUp"?"up":"down",mn=x.navigate($t,N(),Ct)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.5.11+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'W.key==="Enter":X?!0:oe?!1:z(Y)',
+        patched:
+          'W.key==="Enter":X?!0:oe?W.target?.value?.trim()?(W.key==="Enter"&&!W.metaKey&&!W.ctrlKey||W.key===" "||W.key==="Escape"&&!W.shiftKey&&!W.ctrlKey):!1:z(Y)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.5.11+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'Ce.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Ce.defaultPrevented||(Ce.preventDefault(),t.abort())',
+        patched:
+          'Ce.key!=="Escape"||!t.submitting()&&t.status()==="idle"||Ce.defaultPrevented||!Ce.shiftKey&&Ce.target?.value?.trim()||(Ce.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.5.11+)",
+      },
       // --- v7.5.8+ patterns. The re-minify landed in 7.5.8, not in 7.5.9:
       //     the two releases ship byte-identical bundles (all 1004 dist/
       //     entries match, and the vsixes differ only in
@@ -1675,6 +1760,35 @@ interface AttachButtonDef {
 }
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.5.11: insert N→P, container or→Ar, tooltip jn→$n, ghost St→Qt, icon
+  // qo→Go, when-pred vn→cn, setter P→Q, sync Jt→ln (create B, when-wrapper
+  // ge, controller h, textarea w, indexing accessor a, glyph "plus"
+  // unchanged). vn and cn traded roles outright across scopes: 7.5.8's chat
+  // Escape guard cn is this build's when-predicate, and its when-predicate vn
+  // is this build's chat Escape guard. Kilo's own mention-menu row,
+  // h.selectMention(So,w,Q,ln), occurs exactly once and pins all four closure
+  // locals the injected button calls; each is corroborated separately too.
+  // w=$t is the textarea.prompt-input node from template LBa, whose chain
+  // reads ut→Et→He→Ct/$t for the container, wrapper, ghost-wrapper,
+  // highlight-overlay and textarea, then mn→er/Ar for hint-selectors and
+  // hint-actions, so Ar is the toolbar the button joins. Q is the text signal
+  // setter from [N,Q]=ke(""), and ln is the auto-resize,
+  // ()=>{w&&(w.style.height="auto",...)}. The sprite icon component is
+  // function Go(e), reached from the href builder KKe=e=>`opencode-icon-${e}`.
+  // Captioned by a literal because attachFile appears nowhere in this build's
+  // vsix (0 hits across all 509 js and json entries), so u.t() would still
+  // render the raw key; the catalog ships only prompt.action.{continue,
+  // enhance,enhanceDescription,indexing,send,stop}, unchanged since 7.5.6.
+  // The wholesale letter collision first seen on 7.5.8 recurs here and is now
+  // exact: ut, Et, He, Ct, $t and mn name the six template elements above
+  // and, in that same order, the chat-history handler's event,
+  // selectionStart, selectionEnd, caret, direction and result locals.
+  {
+    original:
+      'P(Ar,B(ge,{get when(){return cn()},get children(){return B($n,{get value(){return a.status().message||a.label()}',
+    patched:
+      'P(Ar,B($n,{get value(){return "Attach file"},placement:"top",get children(){return B(Qt,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,ln)},get"aria-label"(){return "Attach file"},get children(){return B(Go,{name:"plus",size:"small"})}})}}),null),P(Ar,B(ge,{get when(){return cn()},get children(){return B($n,{get value(){return a.status().message||a.label()}',
+  },
   // v7.5.8: insert P→N, container xr→or, tooltip Wn→jn, ghost Tt→St, icon
   // jo→qo, when-wrapper Ae→ge, when-pred dt→vn, setter F→P, sync At→Jt
   // (create B, controller h, textarea w, indexing accessor a, glyph "plus"

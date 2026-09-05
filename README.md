@@ -39,9 +39,9 @@ Patched, recall moves to `Cmd/Ctrl+Up` / `Down` and works from anywhere in the c
 
 ### Bonus
 
-Two optional extras, off by default.
-Enable either one from the Settings UI (search "Kilo Code KB Patch") or in your `settings.json`, then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`).
-To turn one off, set it to `false` (or run **Restore Originals**, which switches both off) and reload.
+Optional extras, all off by default.
+Enable them from the Settings UI (search "Kilo Code KB Patch") or in your `settings.json`, then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`).
+To turn one off, put it back to its default (or run **Restore Originals**, which switches every extra off) and reload.
 
 - **Attach-file button.**
   Adds a `+` button to the prompt toolbar that opens Kilo Code's file picker directly, instead of typing `@` and choosing "Browse files...".
@@ -55,6 +55,26 @@ To turn one off, set it to `false` (or run **Restore Originals**, which switches
 
   ```json
   "kiloCodeKbPatch.renameOpenInTab": true
+  ```
+
+- **Math rendering.**
+  Renders `$...$` inline math and `\[...\]` display math in chat.
+  Kilo Code already renders `$$...$$` and `\(...\)`.
+  The second setting sizes rendered math in `em` relative to the text around it, where `1.21` is KaTeX's own size.
+
+  ```json
+  "kiloCodeKbPatch.chatMathRendering": true,
+  "kiloCodeKbPatch.chatMathFontSizeEm": 1.0
+  ```
+
+- **Size and font of the agent's replies.**
+  Scales the agent's rendered response text in chat history, and picks a different font for it.
+  The size is a multiplier on Kilo Code's own **Display** font-size setting, so that setting keeps working as before.
+  Code blocks, reasoning blocks, tool output, and your own messages are left alone, and code, file paths, and math keep their own fonts.
+
+  ```json
+  "kiloCodeKbPatch.chatHistoryFontSizeEm": 1.25,
+  "kiloCodeKbPatch.chatHistoryFontFamily": "Times"
   ```
 
 ## Install

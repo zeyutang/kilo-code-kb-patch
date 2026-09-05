@@ -197,6 +197,173 @@ function main() {
       }
     }
 
+    // Math rendering has the same "no variant for this build is a silent no-op"
+    // contract as the attach button, and one property of its own worth pinning:
+    // the splice must not disturb the two katex extensions Kilo already ships,
+    // so both are asserted still present afterwards. What the added extensions
+    // actually render is proved separately, in tools/behavior.js, against this
+    // build's own bundled marked.
+    console.log("\nmath rendering (opt-in bonus)");
+    shim.setConfig({ addAttachFileButton: true, chatMathRendering: true });
+    const beforeMath = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
+    const mathVariant = test.matchingMathExtension(beforeMath);
+    const mathRow = () =>
+      test.computeBonusStatus(sandbox).find((b) => b.label.includes("math"))?.state;
+    if (mathVariant) {
+      check(
+        countOccurrences(beforeMath, mathVariant.original) === 1,
+        "the matched pack tail occurs exactly once"
+      );
+      check(test.reconcileMathRendering(sandbox), "enabling adds the extensions");
+      const afterMath = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
+      check(
+        countOccurrences(afterMath, 'name:"kbpKatexInlineDollar"') === 1 &&
+          countOccurrences(afterMath, 'name:"kbpKatexBlockBracket"') === 1 &&
+          countOccurrences(afterMath, 'name:"kbpKatexInlineBracket"') === 1,
+        "exactly one copy of each added extension"
+      );
+      check(
+        afterMath.includes('{name:"doubleKatexBlock",level:"block"') &&
+          afterMath.includes('{name:"doubleKatexInline",level:"inline"') &&
+          afterMath.includes('{name:"inlineKatex",level:"inline"'),
+        "Kilo's own $$ and \\( extensions survive the splice"
+      );
+      check(mathRow() === "on", "bonus reports on", `got "${mathRow()}"`);
+      check(
+        test.reconcileMathRendering(sandbox) === false,
+        "re-enabling is a no-op"
+      );
+    } else {
+      check(
+        test.reconcileMathRendering(sandbox) === false,
+        "no variant for this build: enabling changes nothing"
+      );
+      check(mathRow() === "unavailable", 'bonus reports "unavailable"', `got "${mathRow()}"`);
+    }
+
+    // The stylesheet bonuses store no per-release text: the typography block
+    // reads Kilo's own declarations and re-declares them multiplied, and the
+    // math block states an absolute em. So what is asserted here is the shape
+    // of what they emit, not a stored pattern. Three of the assertions are the
+    // promises the settings make: nothing outside the agent's reply is
+    // restyled, code blocks keep their own size, and the math size is void
+    // without the math bonus.
+    console.log("\nchat stylesheet (opt-in bonuses)");
+    const pristineCss = pristine[test.CHAT_STYLE_FILE];
+    if (pristineCss === undefined) {
+      check(false, `${test.CHAT_STYLE_FILE} is present in dist/`);
+    } else {
+      const cssPath = path.join(dist, test.CHAT_STYLE_FILE);
+      const values = test.readChatStyleValues(pristineCss);
+      check(values !== undefined, "Kilo's own declarations are readable", JSON.stringify(values));
+
+      const ON = {
+        addAttachFileButton: true,
+        chatMathRendering: true,
+        chatHistoryFontSizeEm: 1.3,
+        chatHistoryFontFamily: "Charter, Georgia, serif",
+        chatMathFontSizeEm: 1.05,
+      };
+      shim.setConfig(ON);
+      const changed = test.reconcileChatStyle(sandbox);
+      check(
+        changed.typography && changed.math,
+        "enabling appends both blocks and attributes each to its bonus"
+      );
+      const styled = fs.readFileSync(cssPath, "utf8");
+      const typography = test.chatCssRules("typography", pristineCss);
+      const math = test.chatCssRules("math", pristineCss);
+
+      check(
+        [...typography, ...math].every((r) => styled.includes(r)),
+        "every rule the settings ask for is in the file"
+      );
+      check(
+        values !== undefined &&
+          styled.includes(`font-size: calc(${values.size} * 1.3)`) &&
+          styled.includes(`font-size: calc(${values.heading} * 1.3)`) &&
+          styled.includes(`font-size: calc(${values.table} * 1.3)`),
+        "container, headings and tables are each scaled by the multiplier"
+      );
+      check(
+        values !== undefined &&
+          styled.includes(`pre { font-size: ${values.code}; }`) &&
+          !styled.includes(`${values.code} * `),
+        "code blocks are pinned to Kilo's own size, not scaled"
+      );
+      check(
+        styled.includes("font-family: Charter, Georgia, serif"),
+        "the font-family value is emitted verbatim"
+      );
+      check(
+        math.length === 1 && math[0].includes(".katex { font-size: 1.05em; }"),
+        "the math size is emitted in em, in the math bonus's own block"
+      );
+      // The scoping promise: everything the typography block emits must be
+      // under the assistant's text-part, which is what keeps the reasoning
+      // block, tool output and the user's own messages out of it. And no rule
+      // may name .shiki, which is how code blocks keep Kilo's own size.
+      check(
+        typography.length > 0 &&
+          typography.every((r) => r.startsWith('[data-component="text-part"] ')),
+        "typography rules are scoped to the agent's reply"
+      );
+      check(
+        [...typography, ...math].every((r) => !r.includes(".shiki")),
+        "no rule touches code blocks"
+      );
+      for (const key of test.CHAT_CSS_BLOCKS) {
+        check(
+          countOccurrences(styled, `kilo-code-kb-patch:${key}:begin`) === 1 &&
+            countOccurrences(styled, `kilo-code-kb-patch:${key}:end`) === 1,
+          `exactly one ${key} block`
+        );
+        check(test.chatCssApplied(sandbox, key), `${key} block reads as applied`);
+      }
+      const reapplied = test.reconcileChatStyle(sandbox);
+      check(
+        !reapplied.typography && !reapplied.math,
+        "re-applying the same settings is a no-op"
+      );
+
+      // The math size belongs to the math bonus, so turning that bonus off has
+      // to take the size rule with it while leaving typography alone.
+      shim.setConfig({ ...ON, chatMathRendering: false });
+      const offMath = test.reconcileChatStyle(sandbox);
+      const withoutMath = fs.readFileSync(cssPath, "utf8");
+      check(
+        offMath.math && !offMath.typography,
+        "turning math rendering off is attributed to the math bonus alone"
+      );
+      check(
+        !withoutMath.includes(".katex { font-size:") &&
+          typography.every((r) => withoutMath.includes(r)),
+        "the math size is void without math rendering, typography is untouched"
+      );
+
+      // A value that could end the declaration or open a new rule would corrupt
+      // the whole stylesheet, so it is dropped rather than written.
+      shim.setConfig({
+        addAttachFileButton: true,
+        chatMathRendering: true,
+        chatHistoryFontFamily: "serif; } body { display: none",
+      });
+      test.reconcileChatStyle(sandbox);
+      check(
+        !fs.readFileSync(cssPath, "utf8").includes("display: none"),
+        "a font-family value with CSS syntax in it is ignored"
+      );
+
+      // Rewriting the blocks in place must converge on exactly what a fresh
+      // apply produces, so a settings change can never stack two copies.
+      shim.setConfig(ON);
+      test.reconcileChatStyle(sandbox);
+      check(
+        fs.readFileSync(cssPath, "utf8") === styled,
+        "re-editing the settings converges on a fresh apply"
+      );
+    }
+
     // A core patch's `previous` holds the text an older kb-patch wrote at the
     // same site, so upgrading migrates the install in place (previous→patched)
     // and Restore Originals still reaches pristine (previous→original).
@@ -250,7 +417,7 @@ function main() {
     }
 
     console.log("\nvalidity (fully patched bundles still parse)");
-    for (const filename of Object.keys(pristine)) {
+    for (const filename of Object.keys(pristine).filter((f) => f.endsWith(".js"))) {
       const target = path.join(dist, filename);
       try {
         execFileSync(process.execPath, ["--check", target], { stdio: "pipe" });
@@ -261,8 +428,11 @@ function main() {
     }
 
     console.log("\nzero leakage (restore returns the file to pristine)");
-    shim.setConfig({ addAttachFileButton: false });
+    // Every bonus at its off value, which is what Restore Originals writes.
+    shim.setConfig(Object.fromEntries(test.BONUS_SETTING_DEFAULTS));
     test.reconcileAttachFileButton(sandbox);
+    test.reconcileMathRendering(sandbox);
+    test.reconcileChatStyle(sandbox);
     for (const fp of test.PATCHES) {
       if (pristine[fp.filename] === undefined) continue;
       test.restorePatches(path.join(dist, fp.filename), fp.patches);

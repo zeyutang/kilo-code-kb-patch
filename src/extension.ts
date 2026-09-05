@@ -659,7 +659,7 @@ const PATCHES: FilePatches[] = [
       //     in-textarea guard V→W and the interactive-element fall-through L→N,
       //     so V?!1:L(G) became W?!1:N(V); event q→G and dispatch O→z, so reject
       //     (handler j→q) and the document handler's approve branch both call
-      //     z(G,…) (bare-Enter check $ unchanged). Note the names rotated rather
+      //     z(G,...) (bare-Enter check $ unchanged). Note the names rotated rather
       //     than moved: 7.4.17's skip-predicate N, fall-through L, reject j and
       //     dispatch O are 7.4.20's j, N, q and z, so the two blocks look alike
       //     while naming different things. The document-level Escape event went
@@ -728,7 +728,7 @@ const PATCHES: FilePatches[] = [
       //     $e unchanged from 7.4.16). Permission scope: skip-predicate N=(q,G)
       //     with in-textarea guard V and fall-through L(G) (was K?!1:L(H)), and the
       //     dispatch fn z→O, so reject j and the document handler's approve branch
-      //     both now call O(q,…) (bare-Enter check $ unchanged). The document-level
+      //     both now call O(q,...) (bare-Enter check $ unchanged). The document-level
       //     Escape handler kept event oe, so it still matches the v7.4.13+ block
       //     below and needs no new pattern. kiloclaw.js re-minified its Enter-check
       //     helper NA→$A (see that file's block). Re-derived from the 7.4.17
@@ -1749,15 +1749,21 @@ function reconcileOpenInTabTitle(extPath: string): boolean {
 // "plus-small"; 7.4.13 uses Pe/ce/Ue/On (insert R, createComponent C, icon tn),
 // setter Q, sync an, icon name "plus-small"; 7.4.11 uses Re/de/He/Gn, setter L,
 // icon name "plus".
-interface AttachButtonDef {
+// One release's form of an opt-in webview.js edit. Both bonuses that splice
+// that bundle (the attach button and the math extensions) are lists of these,
+// newest first, and share one reconciler below.
+interface WebviewVariant {
   original: string;
   patched: string;
-  // Earlier patched forms of this same variant, newest first. A patched string
-  // ends with its own original, so applying original→patched on top of an older
-  // form would leave the old button in place and inject a second one. Listing
-  // the old forms lets an upgrade rewrite the existing button instead.
+  // Earlier patched forms of this same variant, newest first. Applying
+  // original→patched on top of an older form would leave the old edit in place
+  // and inject a second one (the attach button's patched string even ends with
+  // its own original, so it would not be recognised as patched at all).
+  // Listing the old forms lets an upgrade rewrite the existing edit instead.
   previous?: string[];
 }
+
+type AttachButtonDef = WebviewVariant;
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   // v7.5.11: insert N→P, container or→Ar, tooltip jn→$n, ghost St→Qt, icon
@@ -1979,61 +1985,381 @@ function addAttachFileButtonEnabled(): boolean {
     .get<boolean>("addAttachFileButton", false);
 }
 
-// Find the button variant that matches this build. Each patched string contains
-// its own original as a suffix, so a patched build makes both includes()-true for
-// its variant only; unmatched versions' symbols are absent. Returns undefined
-// when no known variant is present (a future Kilo re-minify), which callers treat
-// as a silent no-op.
-function matchingAttachFileButton(content: string): AttachButtonDef | undefined {
-  return ATTACH_FILE_BUTTONS.find(
-    (b) =>
-      content.includes(b.patched) ||
-      content.includes(b.original) ||
-      b.previous?.some((p) => content.includes(p))
+// Find the variant that matches this build. For the attach button each patched
+// string contains its own original as a suffix, so a patched build makes both
+// includes()-true for its variant only; for the math extensions the two are
+// mutually exclusive. Either way exactly one variant matches, since unmatched
+// releases' symbols are absent. Returns undefined when none does (a future Kilo
+// re-minify), which callers treat as a silent no-op.
+function matchingVariant(
+  content: string,
+  variants: WebviewVariant[]
+): WebviewVariant | undefined {
+  return variants.find(
+    (v) =>
+      content.includes(v.patched) ||
+      content.includes(v.original) ||
+      v.previous?.some((p) => content.includes(p))
   );
 }
 
-// The button this bundle currently carries, when it is an older form of the
-// matched variant rather than the current one.
-function stalePatchedForm(
-  content: string,
-  variant: AttachButtonDef
-): string | undefined {
-  return variant.previous?.find((p) => content.includes(p));
-}
-
-// Apply or remove the attach-file button in Kilo's webview bundle to match the
-// setting. Returns true only when the file actually changed. The patched text
-// contains the original as a suffix, so "already patched" is tested before "is
-// pristine". Fails safe: a missing bundle, or a pattern a future Kilo has
-// re-minified (no variant matches), is a silent no-op.
-function reconcileAttachFileButton(extPath: string): boolean {
+// Apply or remove one opt-in edit in Kilo's webview bundle to match its
+// setting. Returns true only when the file actually changed. "Already patched"
+// is tested before "is pristine", because the attach button's patched text
+// contains its original as a suffix. Fails safe: a missing bundle, or a site a
+// future Kilo has re-minified past every known variant, is a silent no-op.
+function reconcileVariant(
+  extPath: string,
+  variants: WebviewVariant[],
+  enabled: boolean
+): boolean {
   const webviewPath = path.join(extPath, "dist", "webview.js");
   if (!fs.existsSync(webviewPath)) return false;
   const content = fs.readFileSync(webviewPath, "utf8");
-  const variant = matchingAttachFileButton(content);
+  const variant = matchingVariant(content, variants);
   if (!variant) return false;
-  const enabled = addAttachFileButtonEnabled();
   const isPatched = content.includes(variant.patched);
-  // An older form of this variant is a button that is present but out of date.
+  // An older form of this variant is an edit that is present but out of date.
   // It must be rewritten in place, never treated as pristine, or enabling would
-  // add a second button alongside it.
-  const stale = isPatched ? undefined : stalePatchedForm(content, variant);
+  // add a second copy alongside it.
+  const stale = isPatched
+    ? undefined
+    : variant.previous?.find((p) => content.includes(p));
   if (enabled === isPatched && !stale) return false;
 
-  let updated: string;
-  if (enabled) {
-    updated = stale
-      ? content.replace(stale, variant.patched)
-      : content.replace(variant.original, variant.patched);
-  } else {
-    updated = stale
-      ? content.replace(stale, variant.original)
-      : content.replace(variant.patched, variant.original);
-  }
+  const from = stale ?? (enabled ? variant.original : variant.patched);
+  const to = enabled ? variant.patched : variant.original;
+  const updated = content.replace(from, to);
   if (updated === content) return false;
   fs.writeFileSync(webviewPath, updated, "utf8");
   return true;
+}
+
+function matchingAttachFileButton(content: string): AttachButtonDef | undefined {
+  return matchingVariant(content, ATTACH_FILE_BUTTONS);
+}
+
+function reconcileAttachFileButton(extPath: string): boolean {
+  return reconcileVariant(
+    extPath,
+    ATTACH_FILE_BUTTONS,
+    addAttachFileButtonEnabled()
+  );
+}
+
+// --- Bonus math-rendering knob ----------------------------------------------
+// Kilo already renders math: its webview bundles KaTeX 0.16.x outright and
+// registers three `marked` extensions for it, `$$\n...\n$$` at block level,
+// `$$...$$` inline and `\(...\)` inline, all of which route through one helper that
+// wraps katex.renderToString in a `<span dir="auto">`. What it does not
+// register is single-dollar `$...$`, by far the most common way to write inline
+// math, nor `\[...\]`, the display counterpart of the `\(...\)` it does support.
+// This bonus adds those three extensions to the same pack, so the two shipped
+// forms keep working untouched and the two missing ones start rendering.
+//
+// Nothing else is needed for them to display: the KaTeX stylesheet and its
+// @font-face rules are already inlined in dist/webview.css with the woff2/woff/
+// ttf files alongside it, the webview's CSP allows `font-src` from the
+// extension, and Kilo's DOMPurify pass runs with both the `html` and `mathMl`
+// profiles (so `<span>`, `class` and `style`, plus MathML, all survive).
+//
+// Single-dollar math is off by default for a reason: `$5 and $10` is a real
+// sentence, and a naive `$...$` tokenizer eats it. The regex therefore refuses a
+// delimiter next to whitespace or another `$`, refuses a newline inside, and
+// refuses a closing `$` followed by a digit, which is the same guard set
+// markdown-it-katex uses. `tools/behavior.js` drives all of this through the
+// build's own bundled `marked`, so the currency cases are asserted rather than
+// assumed.
+//
+// The anchor is the tail of Kilo's own katex extension pack: the second
+// extension's renderer plus the `]});` that closes the array and the use()
+// call. Two properties make that the right span. It is the shortest one that
+// still pins the render helper, which is the only symbol the injected code
+// references, and it contains no other minified name (the parameter is `n` in
+// every build checked, and the two `$$` regex variables sit outside it), so a
+// release that renames only those regexes still matches. Splicing after the
+// last extension rather than before the first is deliberate too: marked's
+// use() *unshifts* each extension's tokenizer, so registering last means being
+// tried first, and the `$...$` regex is written to fail immediately on `$$` so
+// that Kilo's own `$$...$$` extension keeps priority anyway.
+// One entry per spelling of the render helper. It churns in webview.js (bR in
+// 7.5.6, MR in 7.5.8, RR in 7.5.11 through 7.5.14) while the rest of the span
+// is byte-stable, so these three entries cover every release from 7.5.6 on.
+// Note this is the first patch site where 7.5.11 and 7.5.14 could have
+// differed and did not, even though they ship distinct bundles.
+const MATH_EXTENSIONS: WebviewVariant[] = [
+  {
+    original:
+      "renderer(n){return RR(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      "renderer(n){return RR(n.text,{displayMode:!0,throwOnError:!1})}},{name:\"kbpKatexInlineDollar\",level:\"inline\",start(_e){let _i=_e.indexOf(\"$\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:\"kbpKatexInlineDollar\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:\"kbpKatexBlockBracket\",level:\"block\",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:\"kbpKatexBlockBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!0,throwOnError:!1})+\"\\n\"}},{name:\"kbpKatexInlineBracket\",level:\"inline\",start(_e){let _i=_e.indexOf(\"\\\\[\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:\"kbpKatexInlineBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!0,throwOnError:!1})}}]});",
+  },
+  {
+    original:
+      "renderer(n){return MR(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      "renderer(n){return MR(n.text,{displayMode:!0,throwOnError:!1})}},{name:\"kbpKatexInlineDollar\",level:\"inline\",start(_e){let _i=_e.indexOf(\"$\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:\"kbpKatexInlineDollar\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:\"kbpKatexBlockBracket\",level:\"block\",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:\"kbpKatexBlockBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!0,throwOnError:!1})+\"\\n\"}},{name:\"kbpKatexInlineBracket\",level:\"inline\",start(_e){let _i=_e.indexOf(\"\\\\[\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:\"kbpKatexInlineBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!0,throwOnError:!1})}}]});",
+  },
+  {
+    original:
+      "renderer(n){return bR(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      "renderer(n){return bR(n.text,{displayMode:!0,throwOnError:!1})}},{name:\"kbpKatexInlineDollar\",level:\"inline\",start(_e){let _i=_e.indexOf(\"$\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:\"kbpKatexInlineDollar\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:\"kbpKatexBlockBracket\",level:\"block\",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:\"kbpKatexBlockBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!0,throwOnError:!1})+\"\\n\"}},{name:\"kbpKatexInlineBracket\",level:\"inline\",start(_e){let _i=_e.indexOf(\"\\\\[\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:\"kbpKatexInlineBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!0,throwOnError:!1})}}]});",
+  },
+];
+
+function chatMathRenderingEnabled(): boolean {
+  return vscode.workspace
+    .getConfiguration("kiloCodeKbPatch")
+    .get<boolean>("chatMathRendering", false);
+}
+
+// Unlike the attach button, a patched string here does not contain its own
+// original: the splice lands between the last renderer and the `]});` that
+// closed it, and every injected local is `_`-prefixed, so nothing in the
+// injected text reproduces the original span. That is load-bearing rather than
+// incidental. Reusing the parameter name `n` would end the last extension with
+// exactly the original's bytes and make a patched bundle read as pristine.
+function matchingMathExtension(content: string): WebviewVariant | undefined {
+  return matchingVariant(content, MATH_EXTENSIONS);
+}
+
+function reconcileMathRendering(extPath: string): boolean {
+  return reconcileVariant(extPath, MATH_EXTENSIONS, chatMathRenderingEnabled());
+}
+
+// --- Bonus chat stylesheet ---------------------------------------------------
+// Two of the bonuses are presentational, and both are applied by appending a
+// delimited block to Kilo's own dist/webview.css instead of splicing a bundle.
+// That buys what a JS patch cannot: no minified identifier is involved, so
+// nothing here needs re-targeting on a re-minify, and removal is exact, since
+// an append is reversed by deleting the block.
+//
+//   typography  the agent's reply is scaled and optionally re-fonted
+//   math        rendered math is sized, which is part of the math-rendering
+//               bonus rather than a knob of its own: the size is meaningless
+//               when that bonus is off, so this block is written only while it
+//               is on
+//
+// Each bonus owns its own block, so a settings change can be attributed to the
+// bonus it belongs to without inferring anything from the rules themselves.
+//
+// The values the typography block multiplies are read out of Kilo's stylesheet
+// rather than hardcoded. Scaling only the markdown container would leave
+// headings and tables behind, because Kilo declares those with sizes of their
+// own (a literal 14px for headings, the base token again for tables), and a
+// heading that stays 14px while body text grows ends up *smaller* than the
+// paragraph around it. So each declaration Kilo makes is read and re-declared
+// multiplied. Code blocks are the one size deliberately not scaled, and they
+// get a rule for the opposite reason: Kilo's absolute size lives on `.shiki`,
+// which a block only gains once the highlighter has run, so `pre` is pinned to
+// that same value to keep a streaming block from resizing under the reader.
+//
+// A build that renamed or restructured those declarations reads as
+// "unavailable" in the status view rather than producing a wrong size.
+const CHAT_STYLE_FILE = "webview.css";
+
+// One block per bonus, in the order they are appended.
+const CHAT_CSS_BLOCKS = ["typography", "math"] as const;
+type ChatCssBlockKey = (typeof CHAT_CSS_BLOCKS)[number];
+
+const chatCssBegin = (key: ChatCssBlockKey) =>
+  `/* kilo-code-kb-patch:${key}:begin */`;
+const chatCssEnd = (key: ChatCssBlockKey) =>
+  `/* kilo-code-kb-patch:${key}:end */`;
+
+// One block, with the newlines around it, so extracting it and stripping it are
+// the same span. Built per key rather than shared, since the two blocks sit next
+// to each other and a key-agnostic pattern could pair one block's begin with
+// the other's end.
+function chatCssBlockRe(key: ChatCssBlockKey): RegExp {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `\\n?${esc(chatCssBegin(key))}[\\s\\S]*?${esc(chatCssEnd(key))}\\n?`
+  );
+}
+
+// Strip every block this extension has ever appended, which is what returns the
+// file to the bytes Kilo shipped.
+function stripChatCss(css: string): string {
+  let out = css;
+  for (const key of CHAT_CSS_BLOCKS) out = out.replace(chatCssBlockRe(key), "");
+  return out;
+}
+
+// The agent's rendered reply, and nothing else. Kilo puts a user message under
+// [data-component=user-message], its own thinking under
+// [data-component=reasoning-part] and tool results under
+// [data-component=tool-output], so a text-part scope reaches only the reply.
+const CHAT_ASSISTANT_MD =
+  '[data-component="text-part"] [data-component="markdown"]';
+// Math is sized in em relative to whatever text surrounds it, so that rule is
+// chat-wide rather than assistant-only.
+const CHAT_ANY_MD = '[data-component="markdown"]';
+
+// Kilo's own declarations, each matched only to read the value it sets. The
+// `min-width:0` prefix pins the base markdown rule (the file has 29 other
+// [data-component=markdown] selectors), and the heading rule is pinned by the
+// two declarations that follow its size (a bare h1..h6 size selector matches
+// three unrelated rules).
+//
+// Kilo's font-family declaration is not among them: the family setting replaces
+// that value outright rather than deriving from it, so there is nothing to
+// read. Neither is KaTeX's em size, which the math block states absolutely.
+//
+// Exported to the harness, which asserts each anchor still matches exactly
+// once against a fresh build (see PROBES in tools/lib/rules.js). Duplicating
+// them there would let the two drift.
+const CHAT_STYLE_ANCHORS: Record<string, RegExp> = {
+  "markdown font-size":
+    /\[data-component=markdown\]\{min-width:0;[^{}]*?font-size:([^;{}]+);/,
+  "heading font-size":
+    /h1,h2,h3,h4,h5,h6\{font-size:([^;{}]+);color:var\(--text-strong\);font-weight:var\(--font-weight-medium\);/,
+  "table font-size":
+    /table\{width:100%;border-collapse:collapse;margin:24px 0;font-size:([^;{}]+);/,
+  "code block font-size": /\.shiki\{background:[^{}]*?font-size:([^;{}]+);/,
+  // Read by the harness only: if it stops matching KATEX_DEFAULT_EM, the schema
+  // default in package.json is the thing that needs updating.
+  "katex em size": /\.katex\{font:\s*([\d.]+)em\s/,
+};
+
+// KaTeX's own `.katex` size, and therefore the value at which the math size
+// asks for nothing. Kept in step with the schema default in package.json, and
+// checked against the shipped stylesheet by the harness rather than read from
+// it, so that a KaTeX upgrade cannot silently start overriding the size for
+// users who never touched the setting.
+const KATEX_DEFAULT_EM = 1.21;
+
+// The four font sizes Kilo declares inside the assistant markdown: three the
+// typography block re-declares multiplied, and the code-block size it re-states
+// unchanged.
+interface ChatStyleValues {
+  size: string;
+  heading: string;
+  table: string;
+  code: string;
+}
+
+function readChatStyleValues(css: string): ChatStyleValues | undefined {
+  const size = CHAT_STYLE_ANCHORS["markdown font-size"].exec(css)?.[1];
+  const heading = CHAT_STYLE_ANCHORS["heading font-size"].exec(css)?.[1];
+  const table = CHAT_STYLE_ANCHORS["table font-size"].exec(css)?.[1];
+  const code = CHAT_STYLE_ANCHORS["code block font-size"].exec(css)?.[1];
+  if (!size || !heading || !table || !code) return undefined;
+  return { size, heading, table, code };
+}
+
+// A number setting can arrive as anything (a hand-edited settings.json is not
+// validated against the schema before it reaches us), and it is interpolated
+// into a stylesheet, so it is coerced and clamped rather than trusted. Rounded
+// to three places so the emitted calc() stays readable and so float noise
+// cannot make an unchanged setting look changed.
+function clampSetting(
+  key: string,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const raw = vscode.workspace
+    .getConfiguration("kiloCodeKbPatch")
+    .get<number>(key, fallback);
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Number(Math.min(max, Math.max(min, n)).toFixed(3));
+}
+
+// The font-family value goes verbatim into Kilo's stylesheet. This is the
+// user's own setting rather than a trust boundary, but a stray brace or
+// semicolon would corrupt the whole sheet and take the chat's styling with it,
+// so anything outside what a font-family list needs disqualifies the value and
+// it is ignored. The allowed set covers quoted and unquoted family names,
+// commas, and var(--custom-prop) references.
+const CHAT_FONT_FAMILY_RE = /^[A-Za-z0-9 \-_,.'"()]+$/;
+
+function chatFontFamily(): string {
+  const raw = vscode.workspace
+    .getConfiguration("kiloCodeKbPatch")
+    .get<string>("chatHistoryFontFamily", "");
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) return "";
+  return CHAT_FONT_FAMILY_RE.test(value) ? value : "";
+}
+
+// The rules one block asks for, given the settings and this build's own
+// declarations. Empty means the block is not written at all, which is what
+// leaves webview.css byte-identical to Kilo's when both bonuses are off.
+function chatCssRules(key: ChatCssBlockKey, pristineCss: string): string[] {
+  if (key === "math") {
+    // Gated on the math bonus as a whole: sizing math the user cannot produce
+    // would be a rule with nothing to style.
+    if (!chatMathRenderingEnabled()) return [];
+    const em = clampSetting("chatMathFontSizeEm", KATEX_DEFAULT_EM, 0.5, 2);
+    if (em === KATEX_DEFAULT_EM) return [];
+    return [`${CHAT_ANY_MD} .katex { font-size: ${em}em; }`];
+  }
+
+  const rules: string[] = [];
+  const scale = clampSetting("chatHistoryFontSizeEm", 1, 0.5, 3);
+  const values = scale === 1 ? undefined : readChatStyleValues(pristineCss);
+  if (values) {
+    rules.push(
+      `${CHAT_ASSISTANT_MD} { font-size: calc(${values.size} * ${scale}); }`,
+      `${CHAT_ASSISTANT_MD} :is(h1, h2, h3, h4, h5, h6) { font-size: calc(${values.heading} * ${scale}); }`,
+      `${CHAT_ASSISTANT_MD} table { font-size: calc(${values.table} * ${scale}); }`,
+      `${CHAT_ASSISTANT_MD} pre { font-size: ${values.code}; }`
+    );
+  }
+  const family = chatFontFamily();
+  if (family) rules.push(`${CHAT_ASSISTANT_MD} { font-family: ${family}; }`);
+  return rules;
+}
+
+// One block's text, or "" when it asks for no rules. Kilo wraps its own
+// component rules in `@layer components`, and an unlayered rule beats a layered
+// one whatever the specificity, so appending plain rules at the end of the file
+// is enough to win without !important.
+function chatCssBlock(key: ChatCssBlockKey, pristineCss: string): string {
+  const rules = chatCssRules(key, pristineCss);
+  if (rules.length === 0) return "";
+  return `\n${chatCssBegin(key)}\n${rules.join("\n")}\n${chatCssEnd(key)}\n`;
+}
+
+// Rewrite the appended blocks in Kilo's stylesheet to match the settings, and
+// report which bonuses that changed. Every block is stripped first, so this is
+// idempotent, self-healing after a Kilo update replaces the file, and exact in
+// reverse. Fails safe: a missing stylesheet changes nothing.
+function reconcileChatStyle(extPath: string): Record<ChatCssBlockKey, boolean> {
+  const unchanged = { typography: false, math: false };
+  const cssPath = path.join(extPath, "dist", CHAT_STYLE_FILE);
+  if (!fs.existsSync(cssPath)) return unchanged;
+  const content = fs.readFileSync(cssPath, "utf8");
+  const pristine = stripChatCss(content);
+
+  const desired = {} as Record<ChatCssBlockKey, string>;
+  let updated = pristine;
+  for (const key of CHAT_CSS_BLOCKS) {
+    desired[key] = chatCssBlock(key, pristine);
+    updated += desired[key];
+  }
+  if (updated === content) return unchanged;
+
+  const changed = {} as Record<ChatCssBlockKey, boolean>;
+  for (const key of CHAT_CSS_BLOCKS) {
+    changed[key] = (chatCssBlockRe(key).exec(content)?.[0] ?? "") !== desired[key];
+  }
+  fs.writeFileSync(cssPath, updated, "utf8");
+  return changed;
+}
+
+// Whether the stylesheet already carries exactly what the settings ask for, for
+// the status view. "off" is the caller's job: this only distinguishes a file
+// that matches from one that has yet to be reloaded.
+function chatCssApplied(extPath: string, key: ChatCssBlockKey): boolean {
+  const cssPath = path.join(extPath, "dist", CHAT_STYLE_FILE);
+  if (!fs.existsSync(cssPath)) return false;
+  const content = fs.readFileSync(cssPath, "utf8");
+  const desired = chatCssBlock(key, stripChatCss(content));
+  return (chatCssBlockRe(key).exec(content)?.[0] ?? "") === desired;
 }
 
 // Which bonus files a reconcile pass actually rewrote. Anything true here is a
@@ -2041,21 +2367,37 @@ function reconcileAttachFileButton(extPath: string): boolean {
 interface BonusChanges {
   title: boolean;
   attach: boolean;
+  math: boolean;
+  typography: boolean;
 }
 
-// One reconcile pass over both bonus knobs. Each reconciler fails safe on its
-// own (an unreadable file reads as "unchanged"), so a broken manifest cannot
-// stop the webview bundle from reconciling or vice versa.
+// One reconcile pass over every bonus. Each reconciler fails safe on its own
+// (an unreadable file reads as "unchanged"), so a broken manifest cannot stop
+// the webview bundle from reconciling or vice versa.
+//
+// The math bonus spans two files, a bundle splice for the extensions and a
+// stylesheet block for their size, so either one moving counts as that bonus
+// having changed.
 function reconcileBonuses(extPath: string): BonusChanges {
   let title = false;
   let attach = false;
+  let math = false;
+  let typography = false;
   try {
     title = reconcileOpenInTabTitle(extPath);
   } catch {}
   try {
     attach = reconcileAttachFileButton(extPath);
   } catch {}
-  return { title, attach };
+  try {
+    math = reconcileMathRendering(extPath);
+  } catch {}
+  try {
+    const css = reconcileChatStyle(extPath);
+    typography = css.typography;
+    math = math || css.math;
+  } catch {}
+  return { title, attach, math, typography };
 }
 
 // Offer the reload that pending bonus changes still need, as one notification
@@ -2068,11 +2410,18 @@ function notifyBonusReload(changed: BonusChanges): void {
   const items = [
     ...(changed.title ? ["editor title icon"] : []),
     ...(changed.attach ? ["attach-file button"] : []),
+    ...(changed.math ? ["math rendering"] : []),
+    ...(changed.typography ? ["chat typography"] : []),
   ];
   if (items.length === 0) return;
+  // Two items read as "a and b"; three or more as "a, b and c".
+  const list =
+    items.length <= 2
+      ? items.join(" and ")
+      : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
   vscode.window
     .showInformationMessage(
-      `Kilo Code KB Patch: ${items.join(" and ")} updated. Reload window to apply.`,
+      `Kilo Code KB Patch: ${list} updated. Reload window to apply.`,
       "Reload Window"
     )
     .then((choice) => {
@@ -2082,27 +2431,48 @@ function notifyBonusReload(changed: BonusChanges): void {
     });
 }
 
-// Flip a bonus setting to false, but only in the scopes where the user has
-// actually set it (globalValue/workspaceValue/workspaceFolderValue defined), so
-// Restore Originals turns the bonus off for good without writing settings
-// entries the user never added. An absent or already-false entry is left alone.
-async function forceSettingOff(key: string): Promise<void> {
+// Every bonus setting paired with the value that means "off" for it. Restore
+// Originals writes these back, so a numeric or textual knob is neutralised the
+// same way a boolean one is.
+const BONUS_SETTING_DEFAULTS: [string, boolean | number | string][] = [
+  ["addAttachFileButton", false],
+  ["renameOpenInTab", false],
+  ["chatMathRendering", false],
+  ["chatHistoryFontSizeEm", 1],
+  ["chatHistoryFontFamily", ""],
+  // KaTeX's own em size, so the default asks for no override at all. Kept in
+  // step with the schema default in package.json.
+  ["chatMathFontSizeEm", 1.21],
+];
+
+// Write a bonus setting back to its off value, but only in the scopes where the
+// user has actually set something else (globalValue/workspaceValue/
+// workspaceFolderValue defined), so Restore Originals turns the bonus off for
+// good without writing settings entries the user never added. An absent or
+// already-off entry is left alone.
+async function forceSettingOff(
+  key: string,
+  off: boolean | number | string
+): Promise<void> {
   const config = vscode.workspace.getConfiguration("kiloCodeKbPatch");
-  const info = config.inspect<boolean>(key);
+  const info = config.inspect<boolean | number | string>(key);
   if (!info) return;
-  const scopes: [boolean | undefined, vscode.ConfigurationTarget][] = [
+  const scopes: [
+    boolean | number | string | undefined,
+    vscode.ConfigurationTarget
+  ][] = [
     [info.globalValue, vscode.ConfigurationTarget.Global],
     [info.workspaceValue, vscode.ConfigurationTarget.Workspace],
     [info.workspaceFolderValue, vscode.ConfigurationTarget.WorkspaceFolder],
   ];
   for (const [value, target] of scopes) {
-    if (value !== undefined && value !== false) {
-      await config.update(key, false, target);
+    if (value !== undefined && value !== off) {
+      await config.update(key, off, target);
     }
   }
 }
 
-// Status for the two bonus items, for the status panel only. Each item's state
+// Status for the bonus items, for the status panel only. Each item's state
 // comes from its setting first (not enabled -> "off"), then from whether the file
 // actually reflects it. Bonus state never affects the verdict.
 function computeBonusStatus(extPath: string): BonusStatus[] {
@@ -2132,9 +2502,42 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
       : "pending";
   }
 
+  // The math bonus spans a bundle splice and a stylesheet block, so it reads
+  // "on" only when both agree with the settings. Its size is part of it rather
+  // than a row of its own: with the bonus off there is nothing to size.
+  let math: BonusState = "off";
+  if (chatMathRenderingEnabled()) {
+    const content = read(path.join(extPath, "dist", "webview.js"));
+    const variant = matchingMathExtension(content);
+    math = !variant
+      ? "unavailable"
+      : content.includes(variant.patched) && chatCssApplied(extPath, "math")
+      ? "on"
+      : "pending";
+  }
+
+  // Typography is requested from the settings alone, so a build whose own
+  // declarations could not be read still gets a row, and it reads "unavailable"
+  // rather than silently "off".
+  let typography: BonusState = "off";
+  const scale = clampSetting("chatHistoryFontSizeEm", 1, 0.5, 3);
+  if (scale !== 1 || chatFontFamily() !== "") {
+    const css = read(path.join(extPath, "dist", CHAT_STYLE_FILE));
+    typography = !css || chatCssRules("typography", stripChatCss(css)).length === 0
+      ? "unavailable"
+      : chatCssApplied(extPath, "typography")
+      ? "on"
+      : "pending";
+  }
+
   return [
     { label: "Prompt toolbar: + button opens the file picker", state: attach },
     { label: 'Editor title: group the "Open in Tab" icon', state: openInTab },
+    { label: "Chat: render $...$ and \\[...\\] math", state: math },
+    {
+      label: "Chat history: size and font of the agent's response",
+      state: typography,
+    },
   ];
 }
 
@@ -2271,19 +2674,23 @@ async function runPatch(
     }
   }
 
-  // Restore Originals also turns the bonuses off. Flip each present setting to
-  // false so it stays off, then reconcile (the reconcilers read the settings, so
-  // this reverts the button and title now and stops the next activation from
-  // re-applying them). The listener is suspended so its own reconcile cannot
-  // double-fire mid-batch; the final settings and files agree.
+  // Restore Originals also turns the bonuses off. Write each present setting
+  // back to its off value so it stays off, then reconcile (the reconcilers read
+  // the settings, so this reverts every bonus now and stops the next activation
+  // from re-applying them). The listener is suspended so its own reconcile
+  // cannot double-fire mid-batch; the final settings and files agree.
   let bonusReverted = 0;
   if (mode === "restore") {
     suspendReconcile = true;
     try {
-      await forceSettingOff("addAttachFileButton");
-      await forceSettingOff("renameOpenInTab");
+      for (const [key, off] of BONUS_SETTING_DEFAULTS) {
+        await forceSettingOff(key, off);
+      }
       if (reconcileAttachFileButton(extPath)) bonusReverted++;
       if (reconcileOpenInTabTitle(extPath)) bonusReverted++;
+      if (reconcileMathRendering(extPath)) bonusReverted++;
+      const css = reconcileChatStyle(extPath);
+      if (css.typography || css.math) bonusReverted++;
     } finally {
       suspendReconcile = false;
     }
@@ -2438,7 +2845,22 @@ export const __test = {
   reconcileAttachFileButton,
   matchingAttachFileButton,
   ATTACH_FILE_BUTTONS,
+  MATH_EXTENSIONS,
+  matchingMathExtension,
+  reconcileMathRendering,
+  CHAT_STYLE_FILE,
+  CHAT_CSS_BLOCKS,
+  stripChatCss,
+  chatCssBlockRe,
+  CHAT_STYLE_ANCHORS,
+  KATEX_DEFAULT_EM,
+  readChatStyleValues,
+  chatCssRules,
+  chatCssBlock,
+  chatCssApplied,
+  reconcileChatStyle,
   forceSettingOff,
+  BONUS_SETTING_DEFAULTS,
   computeBonusStatus,
   parseKiloVersion,
   compareKiloVersions,

@@ -16,12 +16,17 @@
 //   AMBIGUOUS   0 or >1 matches, so the shape moved or now aliases; needs a human
 //   ERROR       an anchor inside the shape went missing; needs a human
 //
+// Probes are checked alongside the rules. They cover a patch that stores no
+// per-release text at all but derives values from the build at reconcile time
+// (the typography bonus reads Kilo's own font declarations out of webview.css),
+// so there is never anything to paste, only "still readable" or ERROR.
+//
 // Exit code is 0 when every rule is covered, 1 when anything is new or unclear,
 // which makes this usable as a post-update check.
 const path = require("path");
 const { loadExtension } = require("./lib/load");
 const { resolveBundleSource, assertPristine, countOccurrences } = require("./lib/bundle");
-const { RULES, ATTACH_RULE } = require("./lib/rules");
+const { RULES, ATTACH_RULE, MATH_RULE, PROBES } = require("./lib/rules");
 
 function parseArgs(argv) {
   const args = {};
@@ -59,14 +64,17 @@ function main() {
   for (const fp of test.PATCHES) {
     known.set(fp.filename, new Map(fp.patches.map((p) => [p.original, p.patched])));
   }
-  const knownAttach = new Map(
-    test.ATTACH_FILE_BUTTONS.map((b) => [b.original, b.patched])
-  );
+  // The two webview.js bonuses keep their own variant lists rather than living
+  // in PATCHES, so each is compared against its own list.
+  const knownBonus = new Map([
+    [ATTACH_RULE.key, new Map(test.ATTACH_FILE_BUTTONS.map((b) => [b.original, b.patched]))],
+    [MATH_RULE.key, new Map(test.MATH_EXTENSIONS.map((m) => [m.original, m.patched]))],
+  ]);
 
   const proposals = [];
   let unclear = 0;
 
-  const run = (rule, isAttach) => {
+  const run = (rule, isBonus) => {
     const content = bundles[rule.file];
     if (content === undefined) {
       console.log(`  ERROR      ${rule.key}: ${rule.file} not present in dist/`);
@@ -95,13 +103,13 @@ function main() {
       return;
     }
 
-    let shipped = isAttach
-      ? knownAttach.get(result.original)
+    let shipped = isBonus
+      ? knownBonus.get(rule.key)?.get(result.original)
       : known.get(rule.file)?.get(result.original);
     let derivedPatched = result.patched;
     // A rule that widened its anchor still recognizes entries shipped with the
     // narrower pre-widening one; those are compared on the legacy form.
-    if (shipped === undefined && result.legacy && !isAttach) {
+    if (shipped === undefined && result.legacy && !isBonus) {
       const older = known.get(rule.file)?.get(result.legacy.original);
       if (older !== undefined) {
         shipped = older;
@@ -122,19 +130,40 @@ function main() {
     }
 
     console.log(`  NEW        ${rule.key}`);
-    proposals.push({ rule, result, isAttach });
+    proposals.push({ rule, result, isBonus });
     unclear++;
   };
 
   for (const rule of RULES) run(rule, false);
   run(ATTACH_RULE, true);
+  run(MATH_RULE, true);
+
+  // Probes assert a runtime derivation still works; they store nothing in src,
+  // so there is never anything to paste, only "still readable" or not.
+  for (const probe of PROBES) {
+    const content = bundles[probe.file];
+    if (content === undefined) {
+      console.log(`  ERROR      ${probe.key}: ${probe.file} not present in dist/`);
+      unclear++;
+      continue;
+    }
+    const outcome = probe.read(content, test);
+    if (outcome.error) {
+      console.log(`  ERROR      ${probe.key}: ${outcome.error}`);
+      unclear++;
+      continue;
+    }
+    console.log(
+      `  covered    ${probe.key} ${JSON.stringify(outcome.values)}`
+    );
+  }
 
   if (proposals.length > 0) {
     console.log(`\n${"=".repeat(76)}`);
     console.log(`Patterns to add for v${version}`);
     console.log("=".repeat(76));
 
-    const core = proposals.filter((p) => !p.isAttach);
+    const core = proposals.filter((p) => !p.isBonus);
     for (const file of ["webview.js", "kiloclaw.js"]) {
       const forFile = core.filter((p) => p.rule.file === file);
       if (forFile.length === 0) continue;
@@ -155,14 +184,17 @@ function main() {
       }
     }
 
-    const attach = proposals.find((p) => p.isAttach);
-    if (attach) {
-      console.log("\n// --- ATTACH_FILE_BUTTONS: prepend (newest first) ---");
+    const BONUS_ARRAYS = {
+      [ATTACH_RULE.key]: "ATTACH_FILE_BUTTONS",
+      [MATH_RULE.key]: "MATH_EXTENSIONS",
+    };
+    for (const { rule, result } of proposals.filter((p) => p.isBonus)) {
+      console.log(`\n// --- ${BONUS_ARRAYS[rule.key]}: prepend (newest first) ---`);
       console.log(`// v${version}+ derived symbols:`);
-      console.log(`//     ${JSON.stringify(attach.result.symbols)}`);
+      console.log(`//     ${JSON.stringify(result.symbols)}`);
       console.log("  {");
-      console.log(`    original: ${JSON.stringify(attach.result.original)},`);
-      console.log(`    patched: ${JSON.stringify(attach.result.patched)},`);
+      console.log(`    original: ${JSON.stringify(result.original)},`);
+      console.log(`    patched: ${JSON.stringify(result.patched)},`);
       console.log("  },");
     }
 

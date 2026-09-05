@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Run the chat-history patch and prove what it does, not just where it lands.
+// Run the patches whose correctness depends on Kilo's own code, and prove what
+// they do rather than only where they land.
 //
 //   node tools/behavior.js [--ext <path to kilocode.kilo-code-*>]
 //   node tools/behavior.js --vsix <path to a Kilo Code .vsix>
@@ -8,20 +9,29 @@
 // the one this build wants, verify proves it applies uniquely, reverses cleanly
 // and still parses. None of that can see a semantic dependency, and the 7.5.4
 // retarget found one the hard way (a caption calling an i18n key Kilo had
-// dropped, invisible for five releases). chat-history has the same exposure and
-// worse: its edit passes a synthetic caret into Kilo's own boundary gate, so its
-// correctness rests on how that gate reads its arguments. If Kilo ever stops
-// clamping the caret, or gates on something else, the pattern still derives,
-// still applies, still parses, and the chord silently stops recalling anything.
+// dropped, invisible for five releases). Two patches have that exposure, and
+// both are driven here against the build's own code:
 //
-// So this runs the real code. Kilo's whole prompt-history module (cap, storage
-// key, loader, saver, caret gate, dedupe helpers, navigator factory) is one
-// contiguous region of the bundle and is sliced verbatim; only localStorage and
-// Solid's createSignal are stubbed. The handler statement is sliced verbatim
-// too, in both its shipped-original and shipped-patched forms, and the two are
-// driven side by side through a table of keystrokes.
+//   chat-history  its edit passes a synthetic caret into Kilo's own boundary
+//                 gate, so its correctness rests on how that gate reads its
+//                 arguments. If Kilo ever stops clamping the caret, or gates on
+//                 something else, the pattern still derives, still applies,
+//                 still parses, and the chord silently stops recalling
+//                 anything. Kilo's whole prompt-history module (cap, storage
+//                 key, loader, saver, caret gate, dedupe helpers, navigator
+//                 factory) is one contiguous region of the bundle and is sliced
+//                 verbatim; only localStorage and Solid's createSignal are
+//                 stubbed. The handler statement is sliced verbatim too, in
+//                 both its shipped-original and shipped-patched forms, and the
+//                 two are driven side by side through a table of keystrokes.
 //
-// What each outcome means:
+//   math-render   its extensions only ever run if `marked` reaches them, which
+//                 is decided by registration order inside marked's own use(),
+//                 and adding them must not cost Kilo the `$$...$$` it already
+//                 renders. So the bundled marked is sliced out and run, with
+//                 Kilo's shipped extension pack registered on it in both forms.
+//
+// What each keystroke outcome means:
 //   handled       the handler consumed the key and rewrote the draft
 //   guard-return  Kilo's own selection guard stopped it, without preventDefault
 //   fell-through  the key reaches the handler's later branches, so the
@@ -29,7 +39,11 @@
 const path = require("path");
 const { loadExtension } = require("./lib/load");
 const { resolveBundleSource, assertPristine } = require("./lib/bundle");
-const { RULES, ID, esc } = require("./lib/rules");
+const { RULES, MATH_RULE, ID, esc } = require("./lib/rules");
+
+function findAll(content, source) {
+  return [...content.matchAll(new RegExp(source, "g"))];
+}
 
 let failures = 0;
 function check(condition, label, detail) {
@@ -225,6 +239,189 @@ const WALK = [
   { key: "ArrowDown", text: "my draft" },
 ];
 
+// --- math rendering ---------------------------------------------------------
+// Same argument as above, one step further. retarget proves the splice lands in
+// Kilo's katex extension pack and verify proves it applies once and reverses
+// cleanly, but neither can see whether `marked` ever reaches the added
+// tokenizers, nor whether adding them costs Kilo its own `$$...$$`. Both hinge on
+// registration order inside marked's use(), which is a property of the bundled
+// library rather than of the patch text.
+//
+// So this runs that library. marked is dependency-free and esbuild keeps it in
+// one contiguous region, which slices out and compiles as-is; the katex helper
+// region (the `$$` regexes, the render helper, and Kilo's `\(...\)` pack) is
+// contiguous too, and only katex itself is stubbed, by the name the render
+// helper calls it. Kilo's own extension pack is then registered in its shipped
+// form and in its shipped-patched form, and the two parse the same markdown
+// side by side.
+//
+// The bundle carries two copies of marked (the other belongs to streamdown), so
+// the copy is chosen by which instance the katex pack is registered on rather
+// than by taking the first match.
+
+// The marked instance Kilo registers its katex pack on, which is what tells the
+// two bundled copies apart.
+function markedInstance(content) {
+  const init = new RegExp(
+    `let (${ID})=(${ID})\\.use\\((${ID}),\\{renderer:\\{link\\(\\{href:`
+  ).exec(content);
+  if (!init) throw new Error("no marked.use() call with Kilo's renderer overrides");
+  return init[2];
+}
+
+// That copy of marked, as raw bytes. The tail is the re-export block the module
+// ends with; the head is the last defaults factory declared before it.
+function markedModule(content, instance) {
+  const tail = new RegExp(
+    `${esc(instance)}\\.parse=${esc(instance)};var (${ID})=${esc(instance)}\\.options,` +
+      `(${ID})=${esc(instance)}\\.setOptions,(${ID})=${esc(instance)}\\.use,` +
+      `(${ID})=${esc(instance)}\\.walkTokens,(${ID})=${esc(instance)}\\.parseInline;` +
+      `var (${ID})=(${ID})\\.parse,(${ID})=(${ID})\\.lex;`
+  ).exec(content);
+  if (!tail) throw new Error("no marked re-export block for this instance");
+  const end = tail.index + tail[0].length;
+
+  const defaults = findAll(
+    content.slice(0, end),
+    `function (${ID})\\(\\)\\{return\\{async:!1,breaks:!1,extensions:null,gfm:!0,` +
+      `hooks:null,pedantic:!1,renderer:null,silent:!1,tokenizer:null,walkTokens:null\\}\\}`
+  );
+  if (defaults.length === 0) throw new Error("no marked defaults factory before the re-exports");
+  const start = defaults[defaults.length - 1].index;
+  return content.slice(start, end);
+}
+
+// The katex helpers Kilo declares around its packs: the two `$$` regexes, the
+// render helper that wraps katex.renderToString, and the `\(...\)` pack. One
+// contiguous run, from the block regex to the `\(...\)` renderer that ends it.
+function katexHelpers(content) {
+  const start = new RegExp(`(${ID})=/\\^\\\\\\$\\\\\\$\\\\n`).exec(content);
+  if (!start) throw new Error("no $$-block regex in this build");
+  const render = new RegExp(
+    `function (${ID})\\((${ID}),(${ID})\\)\\{return\`<span dir="auto">` +
+      `\\$\\{(${ID})\\.renderToString\\(\\2,\\3\\)\\}</span>\`\\}`
+  ).exec(content);
+  if (!render) throw new Error("no katex render helper in this build");
+  const tailShape = new RegExp(
+    `function (${ID})\\((${ID})\\)\\{return ${esc(render[1])}\\(typeof \\2\\.text=="string"\\?\\2\\.text:"",` +
+      `\\{displayMode:\\2\\.displayMode===!0,throwOnError:!1\\}\\)\\}`
+  ).exec(content);
+  if (!tailShape) throw new Error("no inlineKatex renderer in this build");
+  const inlinePack = new RegExp(`(${ID})=\\{extensions:\\[\\{name:"inlineKatex"`).exec(content);
+  if (!inlinePack) throw new Error("no inlineKatex pack in this build");
+
+  return {
+    // `var` because the run starts mid-declaration-list in the bundle.
+    source: "var " + content.slice(start.index, tailShape.index + tailShape[0].length),
+    katex: render[4],
+    inlinePack: inlinePack[1],
+  };
+}
+
+// Kilo's doubleKatex pack as an object literal. `tail` is the entry's own
+// original or patched text, which ends with the `]});` that closes the array
+// and the use() call; dropping its last two characters leaves `...]}`.
+function katexPack(content, tail) {
+  const start = content.indexOf('{extensions:[{name:"doubleKatexBlock"');
+  if (start === -1) throw new Error("no doubleKatex pack in this build");
+  const at = content.indexOf(tail, start);
+  if (at === -1) throw new Error("the pack tail is not in this content");
+  return content.slice(start, at + tail.length - 2);
+}
+
+// A parse() closed over one registration of the two packs. marked's use()
+// mutates the instance, so each side gets its own copy of the module.
+function parser(module_, helpers, packSrc) {
+  const src = `
+"use strict";
+const ${helpers.katex} = {
+  renderToString(tex, opts) {
+    return "<KATEX " + (opts.displayMode ? "display" : "inline") + ">" + tex + "</KATEX>";
+  },
+};
+${module_}
+${helpers.source}
+const __instance = ${helpers.marked}.use(${helpers.inlinePack}, ${packSrc});
+return (md) => __instance.parse(md);
+`;
+  return new Function(src)();
+}
+
+// Each case says how many pieces of math the stock parser renders and how many
+// the patched one does, as "<inline>i<display>d". `keeps` is text that must
+// survive verbatim, which is how the currency cases are asserted rather than
+// hoped for.
+const MATH_CASES = [
+  { md: "inline $x^2$ here", stock: "0i0d", patched: "1i0d" },
+  { md: "the $x$-axis and $y$-axis", stock: "0i0d", patched: "2i0d" },
+  { md: "let $\\{x : x > 0\\}$ be a set", stock: "0i0d", patched: "1i0d" },
+  { md: "inline $$x^2$$ here", stock: "0i1d", patched: "0i1d" },
+  { md: "$$\nx^2\n$$", stock: "0i1d", patched: "0i1d" },
+  { md: "inline \\(x^2\\) here", stock: "1i0d", patched: "1i0d" },
+  { md: "\\[x^2\\]", stock: "0i0d", patched: "0i1d" },
+  { md: "inline \\[x^2\\] here", stock: "0i0d", patched: "0i1d" },
+  { md: "price is $5 and $10 total", stock: "0i0d", patched: "0i0d", keeps: "$5 and $10" },
+  { md: "a $ b $ c", stock: "0i0d", patched: "0i0d", keeps: "a $ b $ c" },
+  { md: "costs $20$30", stock: "0i0d", patched: "0i0d", keeps: "$20$30" },
+  { md: "`$x$` in code", stock: "0i0d", patched: "0i0d", keeps: "<code>$x$</code>" },
+  { md: "```\n$x$\n```", stock: "0i0d", patched: "0i0d", keeps: "$x$\n</code>" },
+  { md: "$x\ny$ spans lines", stock: "0i0d", patched: "0i0d", keeps: "$x" },
+];
+
+function signature(html) {
+  const inline = (html.match(/<KATEX inline>/g) ?? []).length;
+  const display = (html.match(/<KATEX display>/g) ?? []).length;
+  return `${inline}i${display}d`;
+}
+
+function runMath(test, content) {
+  const rule = MATH_RULE.derive(content);
+  if (!rule.original) {
+    console.log(`  FAIL  math-rendering does not derive here: ${JSON.stringify(rule)}`);
+    failures++;
+    return;
+  }
+  // Exercise what ships, not what the rule rebuilds.
+  const entry = test.MATH_EXTENSIONS.find((m) => content.includes(m.original));
+  if (!entry) {
+    console.log("  FAIL  no shipped math-rendering entry matches this build");
+    failures++;
+    return;
+  }
+  check(
+    entry.original === rule.original && entry.patched === rule.patched,
+    "the math entry that applies here is the one the shape rule derives",
+    "shipped and derived text differ; run retarget"
+  );
+
+  const instance = markedInstance(content);
+  const module_ = markedModule(content, instance);
+  const helpers = { ...katexHelpers(content), marked: instance };
+  const stockPack = katexPack(content, entry.original);
+  const patchedBundle = content.replace(entry.original, entry.patched);
+  const patchedPack = katexPack(patchedBundle, entry.patched);
+
+  const stock = parser(module_, helpers, stockPack);
+  const patched = parser(module_, helpers, patchedPack);
+
+  console.log(
+    `markdown (marked ${instance}, katex ${helpers.katex}, ` +
+      `render ${rule.symbols.render}, ${module_.length} bytes sliced)`
+  );
+  for (const c of MATH_CASES) {
+    const before = signature(stock(c.md));
+    const afterHtml = patched(c.md);
+    const after = signature(afterHtml);
+    const kept = c.keeps === undefined || afterHtml.includes(c.keeps);
+    check(
+      before === c.stock && after === c.patched && kept,
+      `${JSON.stringify(c.md)}: ${c.stock} -> ${c.patched}`,
+      `stock ${before}, patched ${after}` +
+        (kept ? "" : `, lost ${JSON.stringify(c.keeps)} from ${JSON.stringify(afterHtml)}`)
+    );
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -263,7 +460,7 @@ function main() {
   }
   check(
     entry.original === derived.original,
-    "the entry that applies here is the one the shape rule derives",
+    "the chat-history entry that applies here is the one the shape rule derives",
     "shipped and derived anchors differ; run retarget"
   );
 
@@ -315,6 +512,9 @@ function main() {
       `got "${r.outcome}" with ${JSON.stringify(r.text)}`
     );
   }
+
+  console.log("");
+  runMath(test, content);
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
   return failures === 0 ? 0 : 1;

@@ -26,6 +26,13 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.22.0
+
+- New bonus: render `$...$` inline math and `\[...\]` display math in chat, which Kilo Code leaves as literal text, and set how large rendered math is in `em` relative to the text around it (`kiloCodeKbPatch.chatMathRendering`, `kiloCodeKbPatch.chatMathFontSizeEm`)
+- New bonus: scale the agent's response text in chat history as a multiplier on Kilo Code's own font size, and choose its font (`kiloCodeKbPatch.chatHistoryFontSizeEm`, `kiloCodeKbPatch.chatHistoryFontFamily`)
+- Code blocks, reasoning blocks, tool output, and your own messages keep their own size and font
+- Both new extras are off by default, apply on Kilo Code 7.5.6 and later, and are switched off by **Restore Originals**
+
 ## 1.21.0
 
 - Support Kilo Code 7.5.11 and later, re-targeting every keyboard patch (chat input, chat Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

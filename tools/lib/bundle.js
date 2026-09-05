@@ -57,8 +57,8 @@ function resolveInstall(test, explicitPath) {
   return installs[installs.length - 1];
 }
 
-// Reverse every known patch (core, their `previous` forms, and the opt-in attach
-// button) so callers see the bytes Kilo shipped. Pure string work on a copy.
+// Reverse every known patch (core, their `previous` forms, and the opt-in
+// bonuses) so callers see the bytes Kilo shipped. Pure string work on a copy.
 function unpatched(content, filename, test) {
   let out = content;
   const file = test.PATCHES.find((f) => f.filename === filename);
@@ -71,14 +71,21 @@ function unpatched(content, filename, test) {
     }
   }
   if (filename === "webview.js") {
-    for (const b of test.ATTACH_FILE_BUTTONS) {
-      if (out.includes(b.patched)) out = out.replace(b.patched, b.original);
-      else {
-        const prev = b.previous?.find((p) => out.includes(p));
-        if (prev) out = out.replace(prev, b.original);
+    // Both webview.js bonuses are variant lists of the same shape: newest
+    // patched form first, older ones in `previous`.
+    for (const variants of [test.ATTACH_FILE_BUTTONS, test.MATH_EXTENSIONS]) {
+      for (const b of variants) {
+        if (out.includes(b.patched)) out = out.replace(b.patched, b.original);
+        else {
+          const prev = b.previous?.find((p) => out.includes(p));
+          if (prev) out = out.replace(prev, b.original);
+        }
       }
     }
   }
+  // The stylesheet bonuses append delimited blocks, so reversing them is a
+  // delete rather than a substitution.
+  if (filename === test.CHAT_STYLE_FILE) out = test.stripChatCss(out);
   return out;
 }
 
@@ -103,6 +110,12 @@ const PATCH_MARKERS = [
   // modifier half of that edit needs no marker of its own and could not serve
   // as one anyway, since pristine webview.js already ships `.ctrlKey)&&!`.
   '==="ArrowUp"?0:',
+  // The math-rendering bonus. Every injected extension is named with the same
+  // prefix, and Kilo names none of its own that way, so one marker covers all
+  // three and every release's variant of them.
+  'name:"kbpKatex',
+  // The typography bonus, which appends a delimited block to webview.css.
+  "kilo-code-kb-patch:begin",
   // Two attach-button fingerprints: forms shipped before 1.18.0 (now carried
   // in previous[]) and the pre-7.4.17 entries caption via Kilo's
   // t("prompt.action.attachFile"), while 1.18.0 recaptioned the 7.4.17+
@@ -139,15 +152,22 @@ function assertPristine(bundles) {
   );
 }
 
+// Every dist/ file the patch set touches: the bundles named in PATCHES plus the
+// stylesheet the typography bonus appends to. Kept as one list so the pristine
+// readers, the marker scan and the leakage check all cover the same set.
+function patchedFilenames(test) {
+  return [...test.PATCHES.map((fp) => fp.filename), test.CHAT_STYLE_FILE];
+}
+
 // Pristine contents of every file the patch set covers, keyed by filename.
 function readPristineBundles(extPath, test) {
   const bundles = {};
-  for (const fp of test.PATCHES) {
-    const fpath = path.join(extPath, "dist", fp.filename);
+  for (const filename of patchedFilenames(test)) {
+    const fpath = path.join(extPath, "dist", filename);
     if (!fs.existsSync(fpath)) continue;
-    bundles[fp.filename] = unpatched(
+    bundles[filename] = unpatched(
       fs.readFileSync(fpath, "utf8"),
-      fp.filename,
+      filename,
       test
     );
   }
@@ -160,9 +180,9 @@ function readPristineBundles(extPath, test) {
 function readVsixBundles(vsixPath, test) {
   const zip = openVsix(vsixPath);
   const bundles = {};
-  for (const fp of test.PATCHES) {
-    const payload = zip.read(`extension/dist/${fp.filename}`);
-    if (payload) bundles[fp.filename] = payload.toString("utf8");
+  for (const filename of patchedFilenames(test)) {
+    const payload = zip.read(`extension/dist/${filename}`);
+    if (payload) bundles[filename] = payload.toString("utf8");
   }
   if (Object.keys(bundles).length === 0) {
     throw new Error(
@@ -213,6 +233,7 @@ function countOccurrences(haystack, needle) {
 module.exports = {
   findKiloInstalls,
   resolveInstall,
+  patchedFilenames,
   unpatched,
   readPristineBundles,
   readVsixBundles,

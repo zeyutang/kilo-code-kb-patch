@@ -394,4 +394,132 @@ const ATTACH_RULE = {
   },
 };
 
-module.exports = { RULES, ATTACH_RULE, ID, esc };
+// The math-rendering bonus adds three `marked` extensions to the katex pack
+// Kilo already registers. Like the attach button it is an insertion rather than
+// a rewrite, so it lives outside PATCHES (in MATH_EXTENSIONS).
+//
+// The derived span is the tail of that pack: the second extension's renderer,
+// then the `]});` that closes the array and the use() call. It is the shortest
+// span that still pins the render helper, which is the only symbol the injected
+// code references, and it deliberately stops short of the two `$$` regex
+// variables that sit earlier in the pack, so a release that renames only those
+// keeps matching. Splicing after the last extension registers ours last, and
+// marked's use() *unshifts* each tokenizer, so last-registered is first-tried;
+// the `$...$` regex fails immediately on `$$` precisely so that Kilo's own
+// `$$...$$` extension keeps priority regardless.
+const MATH_EXTENSION_SOURCES = [
+  (render) =>
+    `{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},` +
+    `tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);` +
+    `if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},` +
+    `renderer(_n){return ${render}(_n.text,{displayMode:!1,throwOnError:!1})}}`,
+  (render) =>
+    `{name:"kbpKatexBlockBracket",level:"block",` +
+    `tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);` +
+    `if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},` +
+    `renderer(_n){return ${render}(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}}`,
+  (render) =>
+    `{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},` +
+    `tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);` +
+    `if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},` +
+    `renderer(_n){return ${render}(_n.text,{displayMode:!0,throwOnError:!1})}}`,
+];
+
+function mathExtensions(render) {
+  return MATH_EXTENSION_SOURCES.map((build) => build(render)).join(",");
+}
+
+const MATH_RULE = {
+  key: "math-rendering",
+  file: "webview.js",
+  derive(content) {
+    const matches = findAll(
+      content,
+      `renderer\\((${ID})\\)\\{return (${ID})\\(\\1\\.text,\\{displayMode:!0,throwOnError:!1\\}\\)\\}\\}\\]\\}\\);`
+    );
+    if (matches.length !== 1) return { matches: matches.length };
+    const [original, arg, render] = matches[0];
+
+    // Sanity-check that this really is Kilo's katex pack rather than some other
+    // extension array that happens to end the same way: the pack's first
+    // extension is the block-level `$$` one and names the same helper.
+    if (
+      !content.includes(
+        `{name:"doubleKatexBlock",level:"block"`
+      ) ||
+      !content.includes(`{name:"doubleKatexInline",level:"inline"`)
+    ) {
+      return { error: "the doubleKatex extension pack is not in this build" };
+    }
+
+    return {
+      original,
+      // "]});" is four characters, so dropping them leaves the last renderer
+      // and re-appending them after the injected extensions closes the array
+      // and the call exactly as before.
+      patched: `${original.slice(0, -4)},${mathExtensions(render)}]});`,
+      symbols: { arg, render },
+    };
+  },
+};
+
+// Probes are rules that assert a derivation still works without proposing a
+// pattern to paste. The typography bonus needs one: it stores no per-release
+// text in src at all, but it does read three font-size declarations out of
+// Kilo's stylesheet at reconcile time, and a build that restructured any of
+// them would silently emit fewer rules than the settings asked for. Reporting
+// them here turns that into a retarget failure instead.
+const PROBES = [
+  {
+    key: "chat-style",
+    file: "webview.css",
+    describe: "declarations the typography bonus multiplies",
+    read(content, test) {
+      // Each anchor must identify one declaration, not merely find one: a
+      // second match would mean the value read is whichever comes first, which
+      // is a guess. The anchors come from the extension itself so the two
+      // cannot drift.
+      const ambiguous = Object.entries(test.CHAT_STYLE_ANCHORS)
+        .map(([label, re]) => [
+          label,
+          (content.match(new RegExp(re.source, "g")) ?? []).length,
+        ])
+        .filter(([, count]) => count !== 1);
+      if (ambiguous.length > 0) {
+        return {
+          error:
+            "not exactly one match for: " +
+            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
+        };
+      }
+      const values = test.readChatStyleValues(content);
+      if (!values) return { error: "anchors matched but no value could be read" };
+
+      // The math knob never derives KaTeX's size, it states an absolute em and
+      // treats one value as "leave it alone". That value has to be the one this
+      // build actually uses, or the knob switches itself on for users who never
+      // touched it, so the two are compared here rather than at runtime.
+      const katexEm = Number(
+        test.CHAT_STYLE_ANCHORS["katex em size"].exec(content)?.[1]
+      );
+      if (katexEm !== test.KATEX_DEFAULT_EM) {
+        return {
+          error:
+            `KaTeX now sizes .katex at ${katexEm}em, but KATEX_DEFAULT_EM (and the ` +
+            `chatMathFontSizeEm schema default) is ${test.KATEX_DEFAULT_EM}`,
+        };
+      }
+      return { values: { ...values, katexEm } };
+    },
+  },
+];
+
+module.exports = {
+  RULES,
+  ATTACH_RULE,
+  MATH_RULE,
+  PROBES,
+  mathExtensions,
+  ID,
+  esc,
+};

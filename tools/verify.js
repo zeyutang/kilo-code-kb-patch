@@ -291,6 +291,15 @@ function main() {
           !styled.includes(`${values.code} * `),
         "code blocks are pinned to Kilo's own size, not scaled"
       );
+      // Kilo gives inline code and file-path links a monospace family and no
+      // size, so they follow the container unless pinned. Without these two
+      // rules the setting would scale the `code` spans inside a sentence.
+      check(
+        values !== undefined &&
+          styled.includes(`:not(pre) > code { font-size: ${values.size}; }`) &&
+          styled.includes(`a.file-path-link { font-size: ${values.size}; }`),
+        "inline code and file-path links are pinned to Kilo's own size"
+      );
       check(
         styled.includes("font-family: Charter, Georgia, serif"),
         "the font-family value is emitted verbatim"

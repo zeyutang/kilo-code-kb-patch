@@ -70,7 +70,8 @@ To turn one off, put it back to its default (or run **Restore Originals**, which
 - **Size and font of the agent's replies.**
   Scales the agent's rendered response text in chat history, and picks a different font for it.
   The size is a multiplier on Kilo Code's own **Display** font-size setting, so that setting keeps working as before.
-  Code blocks, reasoning blocks, tool output, and your own messages are left alone, and code, file paths, and math keep their own fonts.
+  Anything in a monospace font keeps Kilo Code's own size and font: code blocks, inline `code`, and file paths.
+  Reasoning blocks, tool output, and your own messages are left alone entirely.
 
   ```json
   "kiloCodeKbPatch.chatHistoryFontSizeEm": 1.25,

@@ -2150,10 +2150,13 @@ function reconcileMathRendering(extPath: string): boolean {
 // own (a literal 14px for headings, the base token again for tables), and a
 // heading that stays 14px while body text grows ends up *smaller* than the
 // paragraph around it. So each declaration Kilo makes is read and re-declared
-// multiplied. Code blocks are the one size deliberately not scaled, and they
-// get a rule for the opposite reason: Kilo's absolute size lives on `.shiki`,
-// which a block only gains once the highlighter has run, so `pre` is pinned to
-// that same value to keep a streaming block from resizing under the reader.
+// multiplied. Monospace content is what deliberately does *not* scale, and it
+// needs rules for the opposite reason, because Kilo gives it no size of its own
+// to hold it back: a fenced block's absolute size lives on `.shiki`, which it
+// only gains once the highlighter has run, and inline `code` and
+// `a.file-path-link` declare a family and nothing else. So `pre` is pinned to
+// Kilo's `.shiki` size (which also keeps a streaming block from resizing under
+// the reader) and the two inline forms to its base size.
 //
 // A build that renamed or restructured those declarations reads as
 // "unavailable" in the status view rather than producing a wrong size.
@@ -2230,9 +2233,10 @@ const CHAT_STYLE_ANCHORS: Record<string, RegExp> = {
 // users who never touched the setting.
 const KATEX_DEFAULT_EM = 1.21;
 
-// The four font sizes Kilo declares inside the assistant markdown: three the
+// The font sizes Kilo declares inside the assistant markdown: three the
 // typography block re-declares multiplied, and the code-block size it re-states
-// unchanged.
+// unchanged. `size` does double duty, since Kilo's base size is also what its
+// inline monospace content inherits and therefore what pins it.
 interface ChatStyleValues {
   size: string;
   heading: string;
@@ -2306,7 +2310,14 @@ function chatCssRules(key: ChatCssBlockKey, pristineCss: string): string[] {
       `${CHAT_ASSISTANT_MD} { font-size: calc(${values.size} * ${scale}); }`,
       `${CHAT_ASSISTANT_MD} :is(h1, h2, h3, h4, h5, h6) { font-size: calc(${values.heading} * ${scale}); }`,
       `${CHAT_ASSISTANT_MD} table { font-size: calc(${values.table} * ${scale}); }`,
-      `${CHAT_ASSISTANT_MD} pre { font-size: ${values.code}; }`
+      `${CHAT_ASSISTANT_MD} pre { font-size: ${values.code}; }`,
+      // Monospace content stays at the size Kilo would have given it. Kilo
+      // declares a family for these two and no size, so without a rule they
+      // follow the scaled container, and "code is not affected" would hold for
+      // fenced blocks but not for the `code` spans and file paths in the middle
+      // of a sentence.
+      `${CHAT_ASSISTANT_MD} :not(pre) > code { font-size: ${values.size}; }`,
+      `${CHAT_ASSISTANT_MD} a.file-path-link { font-size: ${values.size}; }`
     );
   }
   const family = chatFontFamily();

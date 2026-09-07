@@ -18,8 +18,10 @@
 //
 // Probes are checked alongside the rules. They cover a patch that stores no
 // per-release text at all but derives values from the build at reconcile time
-// (the typography bonus reads Kilo's own font declarations out of webview.css),
-// so there is never anything to paste, only "still readable" or ERROR.
+// (the typography bonus reads Kilo's own font declarations out of webview.css,
+// and the core chat-scroll block applies only while Kilo's textarea rule still
+// looks the way it assumes), so there is never anything to paste, only "still
+// readable" or ERROR.
 //
 // Exit code is 0 when every rule is covered, 1 when anything is new or unclear,
 // which makes this usable as a post-update check.
@@ -147,7 +149,7 @@ function main() {
       unclear++;
       continue;
     }
-    const outcome = probe.read(content, test);
+    const outcome = probe.read(content, test, bundles);
     if (outcome.error) {
       console.log(`  ERROR      ${probe.key}: ${outcome.error}`);
       unclear++;

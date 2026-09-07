@@ -26,6 +26,12 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.22.1
+
+- The chat history stays scrolled to the bottom while you type or delete in the chat box; Kilo Code let it jump up a couple of lines on some keystrokes and snap back on others
+- This is a core patch like the keyboard ones: **Apply Patches** adds it, **Restore Originals** removes it, and there is no setting
+- Applies on every Kilo Code release checked, 7.4.17 through 7.5.15, and needs no re-targeting when Kilo Code re-minifies
+
 ## 1.22.0
 
 - New bonus: render `$...$` inline math and `\[...\]` display math in chat, which Kilo Code leaves as literal text, and set how large rendered math is in `em` relative to the text around it (`kiloCodeKbPatch.chatMathRendering`, `kiloCodeKbPatch.chatMathFontSizeEm`)

@@ -25,7 +25,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const { loadExtension, shim } = require("./lib/load");
 const { resolveBundleSource, assertPristine, countOccurrences } = require("./lib/bundle");
-const { RULES } = require("./lib/rules");
+const { RULES, PROBES } = require("./lib/rules");
 
 let failures = 0;
 function check(condition, label, detail) {
@@ -94,6 +94,16 @@ function main() {
       check(result.applied.length > 0, `${fp.filename}: applied ${result.applied.length} patch(es)`);
       for (const description of result.applied) console.log(`          + ${description}`);
     }
+    // The core stylesheet block, the way Apply Patches writes it. The bonus
+    // settings are still at their defaults here, so only the core block lands.
+    const pristineCss = pristine[test.CHAT_STYLE_FILE];
+    const cssPath = path.join(dist, test.CHAT_STYLE_FILE);
+    const coreOn = test.coreCssDecision(true);
+    const coreOff = test.coreCssDecision(false);
+    const cssApplied = test.reconcileChatStyle(sandbox, coreOn);
+    for (const key of test.CHAT_CSS_CORE) {
+      check(cssApplied[key], `${test.CHAT_STYLE_FILE}: applied "${key}"`);
+    }
 
     console.log("\ncompleteness");
     const status = test.computeStatus(dist);
@@ -107,9 +117,11 @@ function main() {
       // a feature that never renders is also absent from the verdict and would
       // read as "nothing wrong" while being unpatched.
       const declared = new Set(
-        (test.PATCHES.find((f) => f.filename === file.filename)?.patches ?? []).map(
-          (p) => p.feature
-        )
+        file.filename === test.CHAT_STYLE_FILE
+          ? test.CHAT_CSS_CORE
+          : (test.PATCHES.find((f) => f.filename === file.filename)?.patches ?? []).map(
+              (p) => p.feature
+            )
       );
       check(
         file.features.length === declared.size,
@@ -118,8 +130,12 @@ function main() {
       );
 
       // The harness models the same behaviors as the extension; drift between
-      // the two means a rule was added or renamed on only one side.
-      const ruled = new Set(RULES.filter((r) => r.file === file.filename).map((r) => r.key));
+      // the two means a rule was added or renamed on only one side. A
+      // stylesheet feature's counterpart is a probe rather than a shape rule.
+      const ruled = new Set([
+        ...RULES.filter((r) => r.file === file.filename).map((r) => r.key),
+        ...PROBES.filter((p) => p.file === file.filename).map((p) => p.key),
+      ]);
       const missing = [...declared].filter((k) => !ruled.has(k));
       check(
         missing.length === 0,
@@ -133,6 +149,102 @@ function main() {
       if (pristine[fp.filename] === undefined) continue;
       const again = test.applyPatches(path.join(dist, fp.filename), fp.patches);
       check(again.noChanges, `${fp.filename}: re-apply is a no-op`);
+    }
+    const cssAgain = test.reconcileChatStyle(sandbox, coreOn);
+    check(
+      test.CHAT_CSS_CORE.every((key) => !cssAgain[key]),
+      `${test.CHAT_STYLE_FILE}: re-apply is a no-op`
+    );
+
+    // The core stylesheet block stores no per-release text: it is written when
+    // Kilo's own textarea rule still looks the way it assumes and skipped
+    // otherwise, so what is asserted is the block's shape, the contract with
+    // the bonus reconcile that shares the file (a core block is carried over
+    // exactly as found, never applied or dropped on the side), and the status
+    // rows that make an absent or stale block visible. What the rule does in a
+    // browser was established in a headless Chromium on a copy of Kilo's layout
+    // (see the comment above CHAT_SCROLL_RULE in src/extension.ts); nothing
+    // here can run layout.
+    console.log("\nchat scroll (core stylesheet patch)");
+    if (pristineCss === undefined) {
+      check(false, `${test.CHAT_STYLE_FILE} is present in dist/`);
+    } else {
+      const sizing = test.readPromptSizing(pristineCss);
+      check(
+        sizing !== undefined,
+        "Kilo's textarea sizing rule is readable",
+        JSON.stringify(sizing)
+      );
+      const applied = fs.readFileSync(cssPath, "utf8");
+      check(
+        countOccurrences(applied, "kilo-code-kb-patch:chat-scroll:begin") === 1 &&
+          countOccurrences(applied, "kilo-code-kb-patch:chat-scroll:end") === 1,
+        "exactly one chat-scroll block"
+      );
+      check(applied.includes(test.CHAT_SCROLL_RULE), "the block carries the field-sizing rule");
+      check(
+        test.CHAT_SCROLL_RULE.startsWith("@supports (field-sizing: content)") &&
+          test.CHAT_SCROLL_RULE.includes(".chat-view .prompt-input {") &&
+          test.CHAT_SCROLL_RULE.includes("height: auto !important"),
+        "the rule is guarded by @supports, scoped to .chat-view, and overrides the inline height"
+      );
+      check(test.chatCssApplied(sandbox, "chat-scroll"), "the block reads as applied");
+
+      shim.setConfig({ chatHistoryFontSizeEm: 1.3 });
+      const withBonus = test.reconcileChatStyle(sandbox);
+      check(
+        !withBonus["chat-scroll"] &&
+          fs.readFileSync(cssPath, "utf8").includes(test.CHAT_SCROLL_RULE),
+        "a bonus reconcile leaves the applied block in place"
+      );
+      // Presence is judged by the block marker: Kilo's own stylesheet contains
+      // the substring "chat-scroll" (`--chat-scrollbar-width`).
+      const hasBlock = () =>
+        fs.readFileSync(cssPath, "utf8").includes("kilo-code-kb-patch:chat-scroll:begin");
+      const removed = test.reconcileChatStyle(sandbox, coreOff);
+      check(removed["chat-scroll"] && !hasBlock(), "restoring removes the block");
+      shim.setConfig({ chatHistoryFontSizeEm: 1.4 });
+      test.reconcileChatStyle(sandbox);
+      check(!hasBlock(), "a bonus reconcile does not apply the block on its own");
+      const row = () =>
+        test.computeStatus(dist).files.find((f) => f.filename === test.CHAT_STYLE_FILE)
+          ?.features[0]?.state;
+      check(row() === "unpatched", 'an absent block reads "unpatched"', `got "${row()}"`);
+      check(
+        test.computeStatus(dist).verdict === "partially patched",
+        "and the verdict counts it",
+        `got "${test.computeStatus(dist).verdict}"`
+      );
+
+      // A stale form (an older kb-patch's text) is reported and rewritten
+      // rather than kept or duplicated.
+      fs.writeFileSync(
+        cssPath,
+        fs.readFileSync(cssPath, "utf8") +
+          "\n/* kilo-code-kb-patch:chat-scroll:begin */\n.stale {}\n/* kilo-code-kb-patch:chat-scroll:end */\n",
+        "utf8"
+      );
+      check(row() === "unpatched", 'a stale block reads "unpatched"', `got "${row()}"`);
+      const stillStale = test.reconcileChatStyle(sandbox);
+      check(
+        !stillStale["chat-scroll"] && fs.readFileSync(cssPath, "utf8").includes(".stale {}"),
+        "a bonus reconcile leaves a stale block for Apply"
+      );
+      shim.setConfig({});
+      const upgraded = test.reconcileChatStyle(sandbox, coreOn);
+      const fresh = fs.readFileSync(cssPath, "utf8");
+      check(
+        upgraded["chat-scroll"] &&
+          !fresh.includes(".stale {}") &&
+          countOccurrences(fresh, "kilo-code-kb-patch:chat-scroll:begin") === 1,
+        "Apply rewrites a stale block in place, exactly once"
+      );
+      check(row() === "patched", 'the fresh block reads "patched"', `got "${row()}"`);
+      check(
+        test.computeStatus(dist).verdict === "fully patched",
+        "and the verdict is whole again",
+        `got "${test.computeStatus(dist).verdict}"`
+      );
     }
 
     // The bonus only ships variants for the releases it was targeted at, and on
@@ -249,11 +361,9 @@ function main() {
     // restyled, code blocks keep their own size, and the math size is void
     // without the math bonus.
     console.log("\nchat stylesheet (opt-in bonuses)");
-    const pristineCss = pristine[test.CHAT_STYLE_FILE];
     if (pristineCss === undefined) {
       check(false, `${test.CHAT_STYLE_FILE} is present in dist/`);
     } else {
-      const cssPath = path.join(dist, test.CHAT_STYLE_FILE);
       const values = test.readChatStyleValues(pristineCss);
       check(values !== undefined, "Kilo's own declarations are readable", JSON.stringify(values));
 
@@ -441,7 +551,7 @@ function main() {
     shim.setConfig(Object.fromEntries(test.BONUS_SETTING_DEFAULTS));
     test.reconcileAttachFileButton(sandbox);
     test.reconcileMathRendering(sandbox);
-    test.reconcileChatStyle(sandbox);
+    test.reconcileChatStyle(sandbox, coreOff);
     for (const fp of test.PATCHES) {
       if (pristine[fp.filename] === undefined) continue;
       test.restorePatches(path.join(dist, fp.filename), fp.patches);

@@ -464,11 +464,15 @@ const MATH_RULE = {
 };
 
 // Probes are rules that assert a derivation still works without proposing a
-// pattern to paste. The typography bonus needs one: it stores no per-release
-// text in src at all, but it does read three font-size declarations out of
-// Kilo's stylesheet at reconcile time, and a build that restructured any of
-// them would silently emit fewer rules than the settings asked for. Reporting
-// them here turns that into a retarget failure instead.
+// pattern to paste. Two patches need one, and neither stores per-release text
+// in src at all. The typography bonus reads three font-size declarations out
+// of Kilo's stylesheet at reconcile time, and a build that restructured any of
+// them would silently emit fewer rules than the settings asked for. The core
+// chat-scroll block applies only while Kilo's textarea rule still looks the way
+// it assumes, and a build where that anchor moved would read "missing" in the
+// status view while stock behavior returned. Reporting both here turns either
+// into a retarget failure instead. A probe reads its own file and, for a
+// cross-file check, the other pristine bundles.
 const PROBES = [
   {
     key: "chat-style",
@@ -510,6 +514,79 @@ const PROBES = [
         };
       }
       return { values: { ...values, katexEm } };
+    },
+  },
+  {
+    key: "chat-scroll",
+    file: "webview.css",
+    describe: "what the chat-scroll block assumes about the prompt textarea",
+    read(content, test, bundles) {
+      const ambiguous = Object.entries(test.CHAT_SCROLL_ANCHORS)
+        .map(([label, re]) => [
+          label,
+          (content.match(new RegExp(re.source, "g")) ?? []).length,
+        ])
+        .filter(([, count]) => count !== 1);
+      if (ambiguous.length > 0) {
+        return {
+          error:
+            "not exactly one match for: " +
+            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
+        };
+      }
+      const sizing = test.readPromptSizing(content);
+      if (!sizing) return { error: "anchors matched but the sizing could not be read" };
+
+      // With the block in place Kilo's inline height is void, so the only cap
+      // on the textarea is the stylesheet's max-height. Kilo's script caps its
+      // own measurement too, and the two have agreed so far (200px on every
+      // build checked); a build that moved one without the other changes the
+      // effective cap under this patch, which is a decision for a human. A
+      // build with no measure-then-set script at all is one where the patch
+      // may be redundant, or where Kilo now sizes the box some other way that
+      // an engine-sized height would fight, so that is a stop too.
+      const js = bundles?.["webview.js"];
+      if (js === undefined) return { values: sizing };
+
+      // The rule reaches the textarea through two DOM strings the minifier
+      // cannot touch, `textarea.prompt-input` inside `.chat-view`. A build
+      // that renamed either would leave the block applied and inert while the
+      // status view read "patched", since the stylesheet anchors could still
+      // match, so the templates are checked here where the bundle is at hand.
+      const occurrences = (needle) => js.split(needle).length - 1;
+      const templates = {
+        "textarea.prompt-input template": occurrences("<textarea class=prompt-input "),
+        ".chat-view template": occurrences("class=chat-view"),
+      };
+      const moved = Object.entries(templates).filter(([, n]) => n !== 1);
+      if (moved.length > 0) {
+        return {
+          error:
+            "webview.js no longer has exactly one " +
+            moved.map(([label, n]) => `${label} (${n}x)`).join(", "),
+        };
+      }
+      const caps = [
+        ...js.matchAll(
+          new RegExp(`(${ID})\\.style\\.height=\`\\$\\{Math\\.min\\(\\1\\.scrollHeight,(\\d+)\\)\\}px\``, "g")
+        ),
+      ].map((m) => `${m[2]}px`);
+      if (caps.length === 0) {
+        return {
+          error:
+            "Kilo's measure-then-set auto-resize (height=auto, then Math.min(scrollHeight, cap)) " +
+            "is gone from webview.js; re-check whether the chat-scroll block is still needed or safe",
+        };
+      }
+      const disagreeing = caps.filter((cap) => cap !== sizing.maxHeight);
+      if (disagreeing.length > 0) {
+        return {
+          error:
+            `Kilo's script caps the textarea at ${[...new Set(caps)].join("/")} ` +
+            `but its stylesheet at ${sizing.maxHeight}; the block makes the stylesheet win`,
+        };
+      }
+      return { values: { ...sizing, scriptCapSites: caps.length } };
     },
   },
 ];

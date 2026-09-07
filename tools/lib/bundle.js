@@ -83,8 +83,8 @@ function unpatched(content, filename, test) {
       }
     }
   }
-  // The stylesheet bonuses append delimited blocks, so reversing them is a
-  // delete rather than a substitution.
+  // The stylesheet blocks, the core chat-scroll patch and the bonuses alike,
+  // are appended, so reversing them is a delete rather than a substitution.
   if (filename === test.CHAT_STYLE_FILE) out = test.stripChatCss(out);
   return out;
 }
@@ -114,8 +114,11 @@ const PATCH_MARKERS = [
   // prefix, and Kilo names none of its own that way, so one marker covers all
   // three and every release's variant of them.
   'name:"kbpKatex',
-  // The typography bonus, which appends a delimited block to webview.css.
-  "kilo-code-kb-patch:begin",
+  // Every stylesheet block, core or bonus, opens with this prefix. The blocks
+  // are keyed (`/* kilo-code-kb-patch:<key>:begin */`), so the bare
+  // `kilo-code-kb-patch:begin` an earlier draft of the marker looked for
+  // never matched a shipped block.
+  "/* kilo-code-kb-patch:",
   // Two attach-button fingerprints: forms shipped before 1.18.0 (now carried
   // in previous[]) and the pre-7.4.17 entries caption via Kilo's
   // t("prompt.action.attachFile"), while 1.18.0 recaptioned the 7.4.17+
@@ -153,8 +156,9 @@ function assertPristine(bundles) {
 }
 
 // Every dist/ file the patch set touches: the bundles named in PATCHES plus the
-// stylesheet the typography bonus appends to. Kept as one list so the pristine
-// readers, the marker scan and the leakage check all cover the same set.
+// stylesheet the chat-scroll patch and the two stylesheet bonuses append to.
+// Kept as one list so the pristine readers, the marker scan and the leakage
+// check all cover the same set.
 function patchedFilenames(test) {
   return [...test.PATCHES.map((fp) => fp.filename), test.CHAT_STYLE_FILE];
 }

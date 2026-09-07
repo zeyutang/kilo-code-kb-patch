@@ -1,7 +1,7 @@
 {
   "name": "kilo-code-kb-patch",
   "displayName": "Kilo Code KB Patch",
-  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, Cmd+Up/Down to recall earlier messages, smarter permission prompt key routing. Optional extras for chat math rendering and response typography.",
+  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, Cmd+Up/Down to recall earlier messages, smarter permission prompt key routing. Keeps the chat history scrolled to the bottom while you type. Optional extras for chat math rendering and response typography.",
   "version": "1.22.0",
   "publisher": "zeyutang",
   "license": "MIT",

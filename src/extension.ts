@@ -45,6 +45,92 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.5.16+ patterns. The re-minify landed in 7.5.16 itself, with
+      //     no intervening build to attribute it to: 7.5.15 derives every
+      //     rule covered off the v7.5.11+ block, so 7.5.11 through 7.5.15 is
+      //     one pattern generation and 1.21.x/1.22.x were correct across all
+      //     of it. 7.5.15 and 7.5.16 are adjacent published versions, both
+      //     shipped for all eight targets, so unlike the 7.5.11 range there
+      //     is no gap to reason about.
+      //
+      //     Chat keydown: Enter-check jg→Ug and event ut→dt, while the send
+      //     Wc and the chat Escape guard vn both held. In the history scope
+      //     only the caret Ct→xt and the direction $t→Nt moved, with the
+      //     textarea w, the navigator x, the text accessor N, the
+      //     selectionStart Et and the selectionEnd He all holding.
+      //     Document-level Escape: event Ce→we, store t unchanged.
+      //     kiloclaw.js changed bytes again yet both of its patch sites still
+      //     match the v7.5.4 patterns.
+      //
+      //     The permission scope moved exactly two letters, as narrow as
+      //     7.5.11's, and both are locals of the skip-predicate itself: the
+      //     in-textarea guard oe→se and the dialog branch X→J, giving the
+      //     tail Z?W.key==="Enter":J?!0:se?!1:z(Y). Everything else held,
+      //     namely the shortcuts branch Z, the event W, the
+      //     interactive-element helper z, the element argument Y, the
+      //     bare-Enter check j, the dispatch O, the element-level reject H
+      //     and the document handler V. perm-keys anchors on both moved
+      //     letters, so it needs a fresh entry; perm-escape reads covered off
+      //     the v7.5.4+ entry and perm-approve off the v7.5.8+ one, the same
+      //     pair 7.5.11 rode, and both of those anchors pin every symbol they
+      //     splice, so this block ships neither. Adding them would put two
+      //     variants of one behavior in the array at once, which is what the
+      //     aliasing sweep forbids and what applyPatches would otherwise
+      //     resolve silently by array order.
+      //
+      //     J is a revival with a changed role rather than a fresh spelling:
+      //     it named this scope's element argument on 7.5.0, z(J), and now
+      //     names its dialog branch. se is new to the guard, whose spelling
+      //     has walked te→ce→ie→oe→se since 7.5.0. Ug is the Enter-check
+      //     helper shared with the chat keydown, so a single rename moved
+      //     chat-input and the bare-Enter check j together; perm-approve
+      //     anchors on j rather than on the helper, which is exactly why it
+      //     stayed covered. The six elements of template sIa (dt, Et, He, xt,
+      //     Nt, mn) are once again, in that same order, the chat-history
+      //     handler's event, selectionStart, selectionEnd, caret, direction
+      //     and result, so the wholesale cross-scope letter collision first
+      //     seen on 7.5.8 now holds for a third generation. ---
+      {
+        feature: "chat-input",
+        original: "Ug(dt)&&!dt.shiftKey&&(dt.preventDefault(),Wc())",
+        patched: "Ug(dt)&&(dt.metaKey||dt.ctrlKey)&&(dt.preventDefault(),Wc())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.16+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'if(dt.key==="Escape"&&vn()){dt.preventDefault(),dt.stopPropagation(),t.abort();return}',
+        patched:
+          'if(dt.key==="Escape"&&vn()&&(dt.shiftKey||!dt.target?.value?.trim())){dt.preventDefault(),dt.stopPropagation(),t.abort();return}',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.16+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if((dt.key==="ArrowUp"||dt.key==="ArrowDown")&&!dt.altKey&&!dt.ctrlKey&&!dt.metaKey&&!dt.shiftKey){let Et=w?.selectionStart??0,He=w?.selectionEnd??0;if(Et!==He)return;let xt=Et,Nt=dt.key==="ArrowUp"?"up":"down",mn=x.navigate(Nt,N(),xt)',
+        patched:
+          'if((dt.key==="ArrowUp"||dt.key==="ArrowDown")&&(dt.metaKey||dt.ctrlKey)&&!dt.altKey&&!dt.shiftKey){let Et=w?.selectionStart??0,He=w?.selectionEnd??0;if(Et!==He)return;let xt=dt.key==="ArrowUp"?0:N().length,Nt=dt.key==="ArrowUp"?"up":"down",mn=x.navigate(Nt,N(),xt)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.5.16+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'W.key==="Enter":J?!0:se?!1:z(Y)',
+        patched:
+          'W.key==="Enter":J?!0:se?W.target?.value?.trim()?(W.key==="Enter"&&!W.metaKey&&!W.ctrlKey||W.key===" "||W.key==="Escape"&&!W.shiftKey&&!W.ctrlKey):!1:z(Y)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.5.16+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'we.key!=="Escape"||!t.submitting()&&t.status()==="idle"||we.defaultPrevented||(we.preventDefault(),t.abort())',
+        patched:
+          'we.key!=="Escape"||!t.submitting()&&t.status()==="idle"||we.defaultPrevented||!we.shiftKey&&we.target?.value?.trim()||(we.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.5.16+)",
+      },
       // --- v7.5.11+ patterns. The re-minify landed in 7.5.11, three releases
       //     before the 7.5.14 this retarget was asked for. Every build in
       //     that range derives byte-identical patterns at every site: 7.5.11,
@@ -1780,6 +1866,32 @@ interface WebviewVariant {
 type AttachButtonDef = WebviewVariant;
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  // v7.5.16: container Ar→fr, tooltip $n→Ln, when-wrapper ge→me. Only those
+  // three moved; insert P, create B, ghost Qt, icon Go, when-pred cn,
+  // controller h, textarea w, setter Q, sync ln, indexing accessor a and the
+  // glyph "plus" all held, the smallest churn this scope has had. Kilo's own
+  // mention-menu row, h.selectMention(So,w,Q,ln), occurs exactly once and
+  // pins all four closure locals the injected button calls; each is
+  // corroborated separately too. w=Nt is the textarea.prompt-input node from
+  // template sIa, whose chain reads dt→Et→He→xt/Nt for the container,
+  // wrapper, ghost-wrapper, highlight-overlay and textarea, then mn→nr/fr for
+  // hint-selectors and hint-actions, so fr is the toolbar the button joins.
+  // Q is the text signal setter, which the selectMention row is the only
+  // reliable pin for here because [N,Q]=xe("") occurs three times in this
+  // build, and ln is the auto-resize,
+  // ()=>{w&&(w.style.height="auto",...)}. The sprite icon component is
+  // function Go(e), reached from the href builder oWe=e=>`opencode-icon-${e}`
+  // and the only caller of it. Captioned by a literal because attachFile
+  // appears nowhere in this build's vsix (0 hits across all 509 js and json
+  // entries), so u.t() would still render the raw key; the catalog is
+  // unchanged from 7.5.6, shipping only prompt.action.{continue,enhance,
+  // enhanceDescription,indexing,send,stop}.
+  {
+    original:
+      'P(fr,B(me,{get when(){return cn()},get children(){return B(Ln,{get value(){return a.status().message||a.label()}',
+    patched:
+      'P(fr,B(Ln,{get value(){return "Attach file"},placement:"top",get children(){return B(Qt,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,ln)},get"aria-label"(){return "Attach file"},get children(){return B(Go,{name:"plus",size:"small"})}})}}),null),P(fr,B(me,{get when(){return cn()},get children(){return B(Ln,{get value(){return a.status().message||a.label()}',
+  },
   // v7.5.11: insert N→P, container or→Ar, tooltip jn→$n, ghost St→Qt, icon
   // qo→Go, when-pred vn→cn, setter P→Q, sync Jt→ln (create B, when-wrapper
   // ge, controller h, textarea w, indexing accessor a, glyph "plus"
@@ -2097,11 +2209,18 @@ function reconcileAttachFileButton(extPath: string): boolean {
 // tried first, and the `$...$` regex is written to fail immediately on `$$` so
 // that Kilo's own `$$...$$` extension keeps priority anyway.
 // One entry per spelling of the render helper. It churns in webview.js (bR in
-// 7.5.6, MR in 7.5.8, RR in 7.5.11 through 7.5.14) while the rest of the span
-// is byte-stable, so these three entries cover every release from 7.5.6 on.
+// 7.5.6, MR in 7.5.8, RR in 7.5.11 through 7.5.15, qR in 7.5.16) while the
+// rest of the span is byte-stable, so these four entries cover every release
+// from 7.5.6 on.
 // Note this is the first patch site where 7.5.11 and 7.5.14 could have
 // differed and did not, even though they ship distinct bundles.
 const MATH_EXTENSIONS: WebviewVariant[] = [
+  {
+    original:
+      "renderer(n){return qR(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      'renderer(n){return qR(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return qR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return qR(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return qR(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
+  },
   {
     original:
       "renderer(n){return RR(n.text,{displayMode:!0,throwOnError:!1})}}]});",

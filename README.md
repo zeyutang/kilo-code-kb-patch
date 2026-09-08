@@ -12,9 +12,9 @@ It also keeps the chat history scrolled to the bottom while you type.
 
 | Kilo Code | KB Patch |
 | --------- | -------- |
-| 7.5.11+   | 1.21.x   |
+| 7.5.16+   | 1.23.x   |
+| 7.5.11-15 | 1.21.x   |
 | 7.5.8-9   | 1.20.x   |
-| 7.5.6     | 1.19.x   |
 | (prev.)   | (prev.)  |
 
 Each patch release keeps the earlier versions' patterns, so a newer patch still works on an older Kilo Code.

@@ -31,6 +31,18 @@ function findAll(content, source) {
   return [...content.matchAll(new RegExp(source, "g"))];
 }
 
+// Occurrences of a literal inside a span, for a rule that has to know where
+// its edit lands within the bytes it anchored.
+function countIn(haystack, needle) {
+  let count = 0;
+  let i = 0;
+  while ((i = haystack.indexOf(needle, i)) !== -1) {
+    count++;
+    i += needle.length;
+  }
+  return count;
+}
+
 // The identifier a capture group holds, for the emitted symbol map.
 function symbolMap(names, match) {
   const out = {};
@@ -85,6 +97,82 @@ const RULES = [
     description: (v) =>
       `Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v${v}+)`,
   }),
+
+  // The @-mention menu's Escape. Since 7.5.11 a mention query may contain
+  // spaces (Kilo-Org/kilocode#13592), so ordinary prose typed after a mention
+  // still matches the trigger, and the controller keeps the menu closed only
+  // while the query extends the mention it inserted at that exact "@" offset
+  // or a query it already found dead. Escape closes the menu but records
+  // nothing, so the next keystroke re-derives it (Kilo-Org/kilocode#13961).
+  // The edit makes Escape record the dismissed query in the controller's own
+  // dead-query slot, which is what its onInput consults, and clears that slot
+  // once the "@" it named is gone so retyping the "@" gets the menu back.
+  //
+  // onInput and onKeyDown sit next to each other inside the controller, so
+  // the anchor runs from onInput's trigger test (which binds the dead slot,
+  // the "@" offset, the text and the close) through onKeyDown's Escape
+  // branch (which binds the query accessor and the event). Every symbol the
+  // splice references is inside it; a build whose Escape branch matched while
+  // its onInput bound those names differently would bind the wrong slot, which
+  // is the 7.4.22 aliasing failure. The bare Escape branch is not unique (the
+  // slash-command menu has the same one), so the two hops are what make it so.
+  {
+    key: "mention-escape",
+    file: "webview.js",
+    description: (v) =>
+      `Mention menu Escape: Escape records the dismissed @ query so typing on keeps the menu closed; retyping the @ reopens it (v${v}+)`,
+    derive(content) {
+      const heads = findAll(
+        content,
+        String.raw`let (${ID})=(${ID})\.substring\(0,(${ID})\)\.match\((${ID})\);` +
+          String.raw`if\(!\1\)\{(${ID})\(\);return\}let (${ID})=\1\[1\]\?\?"";` +
+          String.raw`if\((${ID})=\(\1\.index\?\?0\)\+\(/\^\\s/\.test\(\1\[0\]\)\?1:0\),` +
+          String.raw`(${ID})\(\6,(${ID})\.get\(\7\),(${ID})\(\)\)\)\{\5\(\);return\}` +
+          String.raw`if\((${ID})&&\11\.at===\7&&\6\.startsWith\(\11\.query\)\)\{\5\(\);return\}`
+      );
+      if (heads.length !== 1) return { matches: heads.length };
+      const head = heads[0];
+      const [, match, text, , , close, , at, , , , dead] = head;
+
+      const tails = findAll(
+        content,
+        String.raw`let (${ID})=(${ID})\(\)\?\?"";return (${ID})\.type==="file-picker"` +
+          String.raw`&&/\\s/\.test\(\1\)&&!(${ID})\(\1\)\?!1:\((${ID})\.preventDefault\(\),` +
+          String.raw`(${ID})&&(${ID})\(\3,\6,(${ID}),(${ID})\),!0\)\}` +
+          String.raw`return \5\.key==="Escape"\?\(\5\.preventDefault\(\),\5\.stopPropagation\(\),` +
+          String.raw`(${ID})\(\),!0\):!1\}`
+      );
+      if (tails.length !== 1) return { matches: tails.length };
+      const tail = tails[0];
+      const mentionQuery = tail[2];
+      if (tail[10] !== close) {
+        return { error: "onKeyDown's Escape closes with a different function than onInput" };
+      }
+      if (tail.index <= head.index || tail.index - head.index > 4000) {
+        return { error: "onKeyDown's Escape branch is not just after onInput's trigger test" };
+      }
+
+      const original = content.slice(head.index, tail.index + tail[0].length);
+      const closeReturn = `if(!${match}){${close}();return}`;
+      const escapeTail = `${close}(),!0):!1}`;
+      if (countIn(original, closeReturn) !== 1 || !original.endsWith(escapeTail)) {
+        return { error: "the trigger's close or the Escape tail is not where the shape expects" };
+      }
+      const patched =
+        original
+          .replace(
+            closeReturn,
+            `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`
+          )
+          .slice(0, -escapeTail.length) +
+        `${dead}={at:${at},query:${mentionQuery}()??""},${escapeTail}`;
+      return {
+        original,
+        patched,
+        symbols: { text, match, close, at, dead, mentionQuery, event: tail[5] },
+      };
+    },
+  },
 
   // Prompt-history navigation. Kilo's own gate (q_a in 7.5.6) lets an arrow key
   // reach the history only when the caret already sits at the boundary it is

@@ -94,7 +94,8 @@ const PATCHES: FilePatches[] = [
         feature: "chat-input",
         original: "Ug(dt)&&!dt.shiftKey&&(dt.preventDefault(),Wc())",
         patched: "Ug(dt)&&(dt.metaKey||dt.ctrlKey)&&(dt.preventDefault(),Wc())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.16+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.16+)",
       },
       {
         feature: "chat-escape",
@@ -104,6 +105,21 @@ const PATCHES: FilePatches[] = [
           'if(dt.key==="Escape"&&vn()&&(dt.shiftKey||!dt.target?.value?.trim())){dt.preventDefault(),dt.stopPropagation(),t.abort();return}',
         description:
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.16+)",
+      },
+      // The @-mention menu's Escape, added in kb-patch 1.24.0 for a Kilo
+      // regression that dates from 7.5.11 (Kilo-Org/kilocode#13961). The
+      // anchor runs from the mention controller's onInput trigger test
+      // through its onKeyDown Escape branch: that span binds the dead-query
+      // slot J, the "@" offset se, the text pt, the close Ie and the query
+      // accessor l, every symbol the two edits reference (see rules.js).
+      {
+        feature: "mention-escape",
+        original:
+          'let Bt=pt.substring(0,yt).match(Fme);if(!Bt){Ie();return}let Mt=Bt[1]??"";if(se=(Bt.index??0)+(/^\\s/.test(Bt[0])?1:0),u7n(Mt,pe.get(se),Re())){Ie();return}if(J&&J.at===se&&Mt.startsWith(J.query)){Ie();return}J=void 0,ue=!1,d(Mt);let It=We(w);if(!Mt){let Ye=I("",It);p(Ye),g(Rme(Ye,"")),ve("");return}de(),p(Ye=>{let Ft=Ye.length?Ye:I("",It);return I(Mt,D(p7n(Mt,Ft)))}),g(Rme(u(),Mt)),ve(Mt)},Ge=(pt,yt,De,Bt)=>{if(!le()||pt.isComposing)return!1;if(pt.key==="ArrowDown")return pt.preventDefault(),ue=!0,g(Mt=>Math.min(Mt+1,Math.max(u().length-1,0))),!0;if(pt.key==="ArrowUp")return pt.preventDefault(),ue=!0,g(Mt=>Math.max(Mt-1,0)),!0;if(pt.key==="Enter"||pt.key==="Tab"){let Mt=u()[m()];if(!Mt)return!1;let It=l()??"";return Mt.type==="file-picker"&&/\\s/.test(It)&&!jVe(It)?!1:(pt.preventDefault(),yt&&ce(Mt,yt,De,Bt),!0)}return pt.key==="Escape"?(pt.preventDefault(),pt.stopPropagation(),Ie(),!0):!1}',
+        patched:
+          'let Bt=pt.substring(0,yt).match(Fme);if(!Bt){J&&pt[J.at]!=="@"&&(J=void 0),Ie();return}let Mt=Bt[1]??"";if(se=(Bt.index??0)+(/^\\s/.test(Bt[0])?1:0),u7n(Mt,pe.get(se),Re())){Ie();return}if(J&&J.at===se&&Mt.startsWith(J.query)){Ie();return}J=void 0,ue=!1,d(Mt);let It=We(w);if(!Mt){let Ye=I("",It);p(Ye),g(Rme(Ye,"")),ve("");return}de(),p(Ye=>{let Ft=Ye.length?Ye:I("",It);return I(Mt,D(p7n(Mt,Ft)))}),g(Rme(u(),Mt)),ve(Mt)},Ge=(pt,yt,De,Bt)=>{if(!le()||pt.isComposing)return!1;if(pt.key==="ArrowDown")return pt.preventDefault(),ue=!0,g(Mt=>Math.min(Mt+1,Math.max(u().length-1,0))),!0;if(pt.key==="ArrowUp")return pt.preventDefault(),ue=!0,g(Mt=>Math.max(Mt-1,0)),!0;if(pt.key==="Enter"||pt.key==="Tab"){let Mt=u()[m()];if(!Mt)return!1;let It=l()??"";return Mt.type==="file-picker"&&/\\s/.test(It)&&!jVe(It)?!1:(pt.preventDefault(),yt&&ce(Mt,yt,De,Bt),!0)}return pt.key==="Escape"?(pt.preventDefault(),pt.stopPropagation(),J={at:se,query:l()??""},Ie(),!0):!1}',
+        description:
+          "Mention menu Escape: Escape records the dismissed @ query so typing on keeps the menu closed; retyping the @ reopens it (v7.5.16+)",
       },
       {
         feature: "chat-history",
@@ -179,7 +195,8 @@ const PATCHES: FilePatches[] = [
         feature: "chat-input",
         original: "jg(ut)&&!ut.shiftKey&&(ut.preventDefault(),Wc())",
         patched: "jg(ut)&&(ut.metaKey||ut.ctrlKey)&&(ut.preventDefault(),Wc())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.11+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.11+)",
       },
       {
         feature: "chat-escape",
@@ -189,6 +206,31 @@ const PATCHES: FilePatches[] = [
           'if(ut.key==="Escape"&&vn()&&(ut.shiftKey||!ut.target?.value?.trim())){ut.preventDefault(),ut.stopPropagation(),t.abort();return}',
         description:
           "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.5.11+)",
+      },
+      // The @-mention menu's Escape, added in kb-patch 1.24.0 (see the
+      // v7.5.16+ entry). This scope is the one place where 7.5.11 and 7.5.12
+      // differ: the anchor sweeps up two helper spellings the edit never
+      // references (K7n/W7n on 7.5.11, W7n/Z7n on 7.5.12 through 7.5.15), so
+      // 7.5.11 carries its own entry while 7.5.12, 7.5.14 and 7.5.15 share
+      // one. The dead-query slot X, the "@" offset oe, the close Ie and the
+      // query accessor l are the same on all four builds.
+      {
+        feature: "mention-escape",
+        original:
+          'let Bt=pt.substring(0,yt).match(_me);if(!Bt){Ie();return}let Mt=Bt[1]??"";if(oe=(Bt.index??0)+(/^\\s/.test(Bt[0])?1:0),W7n(Mt,pe.get(oe),Qe())){Ie();return}if(X&&X.at===oe&&Mt.startsWith(X.query)){Ie();return}X=void 0,de=!1,d(Mt);let It=Ve(w);if(!Mt){let Ze=I("",It);p(Ze),g(Eme(Ze,"")),we("");return}le(),p(Ze=>{let Ft=Ze.length?Ze:I("",It);return I(Mt,D(Z7n(Mt,Ft)))}),g(Eme(u(),Mt)),we(Mt)},Ge=(pt,yt,De,Bt)=>{if(!ce()||pt.isComposing)return!1;if(pt.key==="ArrowDown")return pt.preventDefault(),de=!0,g(Mt=>Math.min(Mt+1,Math.max(u().length-1,0))),!0;if(pt.key==="ArrowUp")return pt.preventDefault(),de=!0,g(Mt=>Math.max(Mt-1,0)),!0;if(pt.key==="Enter"||pt.key==="Tab"){let Mt=u()[m()];if(!Mt)return!1;let It=l()??"";return Mt.type==="file-picker"&&/\\s/.test(It)&&!DVe(It)?!1:(pt.preventDefault(),yt&&se(Mt,yt,De,Bt),!0)}return pt.key==="Escape"?(pt.preventDefault(),pt.stopPropagation(),Ie(),!0):!1}',
+        patched:
+          'let Bt=pt.substring(0,yt).match(_me);if(!Bt){X&&pt[X.at]!=="@"&&(X=void 0),Ie();return}let Mt=Bt[1]??"";if(oe=(Bt.index??0)+(/^\\s/.test(Bt[0])?1:0),W7n(Mt,pe.get(oe),Qe())){Ie();return}if(X&&X.at===oe&&Mt.startsWith(X.query)){Ie();return}X=void 0,de=!1,d(Mt);let It=Ve(w);if(!Mt){let Ze=I("",It);p(Ze),g(Eme(Ze,"")),we("");return}le(),p(Ze=>{let Ft=Ze.length?Ze:I("",It);return I(Mt,D(Z7n(Mt,Ft)))}),g(Eme(u(),Mt)),we(Mt)},Ge=(pt,yt,De,Bt)=>{if(!ce()||pt.isComposing)return!1;if(pt.key==="ArrowDown")return pt.preventDefault(),de=!0,g(Mt=>Math.min(Mt+1,Math.max(u().length-1,0))),!0;if(pt.key==="ArrowUp")return pt.preventDefault(),de=!0,g(Mt=>Math.max(Mt-1,0)),!0;if(pt.key==="Enter"||pt.key==="Tab"){let Mt=u()[m()];if(!Mt)return!1;let It=l()??"";return Mt.type==="file-picker"&&/\\s/.test(It)&&!DVe(It)?!1:(pt.preventDefault(),yt&&se(Mt,yt,De,Bt),!0)}return pt.key==="Escape"?(pt.preventDefault(),pt.stopPropagation(),X={at:oe,query:l()??""},Ie(),!0):!1}',
+        description:
+          "Mention menu Escape: Escape records the dismissed @ query so typing on keeps the menu closed; retyping the @ reopens it (v7.5.12+)",
+      },
+      {
+        feature: "mention-escape",
+        original:
+          'let Bt=pt.substring(0,yt).match(_me);if(!Bt){Ie();return}let Mt=Bt[1]??"";if(oe=(Bt.index??0)+(/^\\s/.test(Bt[0])?1:0),K7n(Mt,pe.get(oe),Qe())){Ie();return}if(X&&X.at===oe&&Mt.startsWith(X.query)){Ie();return}X=void 0,de=!1,d(Mt);let It=Ve(w);if(!Mt){let Ze=I("",It);p(Ze),g(Eme(Ze,"")),we("");return}le(),p(Ze=>{let Ft=Ze.length?Ze:I("",It);return I(Mt,D(W7n(Mt,Ft)))}),g(Eme(u(),Mt)),we(Mt)},Ge=(pt,yt,De,Bt)=>{if(!ce()||pt.isComposing)return!1;if(pt.key==="ArrowDown")return pt.preventDefault(),de=!0,g(Mt=>Math.min(Mt+1,Math.max(u().length-1,0))),!0;if(pt.key==="ArrowUp")return pt.preventDefault(),de=!0,g(Mt=>Math.max(Mt-1,0)),!0;if(pt.key==="Enter"||pt.key==="Tab"){let Mt=u()[m()];if(!Mt)return!1;let It=l()??"";return Mt.type==="file-picker"&&/\\s/.test(It)&&!DVe(It)?!1:(pt.preventDefault(),yt&&se(Mt,yt,De,Bt),!0)}return pt.key==="Escape"?(pt.preventDefault(),pt.stopPropagation(),Ie(),!0):!1}',
+        patched:
+          'let Bt=pt.substring(0,yt).match(_me);if(!Bt){X&&pt[X.at]!=="@"&&(X=void 0),Ie();return}let Mt=Bt[1]??"";if(oe=(Bt.index??0)+(/^\\s/.test(Bt[0])?1:0),K7n(Mt,pe.get(oe),Qe())){Ie();return}if(X&&X.at===oe&&Mt.startsWith(X.query)){Ie();return}X=void 0,de=!1,d(Mt);let It=Ve(w);if(!Mt){let Ze=I("",It);p(Ze),g(Eme(Ze,"")),we("");return}le(),p(Ze=>{let Ft=Ze.length?Ze:I("",It);return I(Mt,D(W7n(Mt,Ft)))}),g(Eme(u(),Mt)),we(Mt)},Ge=(pt,yt,De,Bt)=>{if(!ce()||pt.isComposing)return!1;if(pt.key==="ArrowDown")return pt.preventDefault(),de=!0,g(Mt=>Math.min(Mt+1,Math.max(u().length-1,0))),!0;if(pt.key==="ArrowUp")return pt.preventDefault(),de=!0,g(Mt=>Math.max(Mt-1,0)),!0;if(pt.key==="Enter"||pt.key==="Tab"){let Mt=u()[m()];if(!Mt)return!1;let It=l()??"";return Mt.type==="file-picker"&&/\\s/.test(It)&&!DVe(It)?!1:(pt.preventDefault(),yt&&se(Mt,yt,De,Bt),!0)}return pt.key==="Escape"?(pt.preventDefault(),pt.stopPropagation(),X={at:oe,query:l()??""},Ie(),!0):!1}',
+        description:
+          "Mention menu Escape: Escape records the dismissed @ query so typing on keeps the menu closed; retyping the @ reopens it (v7.5.11+)",
       },
       {
         feature: "chat-history",
@@ -562,7 +604,8 @@ const PATCHES: FilePatches[] = [
         feature: "chat-input",
         original: "bg(Te)&&!Te.shiftKey&&(Te.preventDefault(),tn())",
         patched: "bg(Te)&&(Te.metaKey||Te.ctrlKey)&&(Te.preventDefault(),tn())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.23+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.23+)",
       },
       {
         feature: "chat-escape",
@@ -631,7 +674,8 @@ const PATCHES: FilePatches[] = [
         feature: "chat-input",
         original: "Ag(De)&&!De.shiftKey&&(De.preventDefault(),zt())",
         patched: "Ag(De)&&(De.metaKey||De.ctrlKey)&&(De.preventDefault(),zt())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.22+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.22+)",
       },
       {
         feature: "chat-escape",
@@ -690,7 +734,8 @@ const PATCHES: FilePatches[] = [
         feature: "chat-input",
         original: "mg(Me)&&!Me.shiftKey&&(Me.preventDefault(),zt())",
         patched: "mg(Me)&&(Me.metaKey||Me.ctrlKey)&&(Me.preventDefault(),zt())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.21+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.21+)",
       },
       {
         feature: "chat-escape",
@@ -756,7 +801,8 @@ const PATCHES: FilePatches[] = [
         feature: "chat-input",
         original: "mg(Le)&&!Le.shiftKey&&(Le.preventDefault(),Vt())",
         patched: "mg(Le)&&(Le.metaKey||Le.ctrlKey)&&(Le.preventDefault(),Vt())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.20+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.20+)",
       },
       {
         feature: "chat-escape",
@@ -824,7 +870,8 @@ const PATCHES: FilePatches[] = [
         original: "ng($e)&&!$e.shiftKey&&($e.preventDefault(),aa())",
         previous: "ng($e)&&$e.metaKey&&($e.preventDefault(),aa())",
         patched: "ng($e)&&($e.metaKey||$e.ctrlKey)&&($e.preventDefault(),aa())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.17+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.17+)",
       },
       {
         feature: "chat-escape",
@@ -885,7 +932,8 @@ const PATCHES: FilePatches[] = [
         original: "Zm($e)&&!$e.shiftKey&&($e.preventDefault(),ua())",
         previous: "Zm($e)&&$e.metaKey&&($e.preventDefault(),ua())",
         patched: "Zm($e)&&($e.metaKey||$e.ctrlKey)&&($e.preventDefault(),ua())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.16+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.16+)",
       },
       {
         feature: "chat-escape",
@@ -935,7 +983,8 @@ const PATCHES: FilePatches[] = [
         original: "Zm(ze)&&!ze.shiftKey&&(ze.preventDefault(),pa())",
         previous: "Zm(ze)&&ze.metaKey&&(ze.preventDefault(),pa())",
         patched: "Zm(ze)&&(ze.metaKey||ze.ctrlKey)&&(ze.preventDefault(),pa())",
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.13+)",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.13+)",
       },
       {
         feature: "perm-keys",
@@ -1052,9 +1101,9 @@ const PATCHES: FilePatches[] = [
       //     Re-derived from the 7.4.7 bundle. ---
       {
         feature: "chat-input",
-        original: 'Vm($e)&&!$e.shiftKey&&($e.preventDefault(),da())',
-        previous: 'Vm($e)&&$e.metaKey&&($e.preventDefault(),da())',
-        patched: 'Vm($e)&&($e.metaKey||$e.ctrlKey)&&($e.preventDefault(),da())',
+        original: "Vm($e)&&!$e.shiftKey&&($e.preventDefault(),da())",
+        previous: "Vm($e)&&$e.metaKey&&($e.preventDefault(),da())",
+        patched: "Vm($e)&&($e.metaKey||$e.ctrlKey)&&($e.preventDefault(),da())",
         description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.7+)",
       },
       {
@@ -1109,12 +1158,9 @@ const PATCHES: FilePatches[] = [
       //     below are unchanged from 7.3.63 and match both releases. ---
       {
         feature: "chat-input",
-        original:
-          'Om(Ge)&&!Ge.shiftKey&&(Ge.preventDefault(),Ea())',
-        previous:
-          'Om(Ge)&&Ge.metaKey&&(Ge.preventDefault(),Ea())',
-        patched:
-          'Om(Ge)&&(Ge.metaKey||Ge.ctrlKey)&&(Ge.preventDefault(),Ea())',
+        original: "Om(Ge)&&!Ge.shiftKey&&(Ge.preventDefault(),Ea())",
+        previous: "Om(Ge)&&Ge.metaKey&&(Ge.preventDefault(),Ea())",
+        patched: "Om(Ge)&&(Ge.metaKey||Ge.ctrlKey)&&(Ge.preventDefault(),Ea())",
         description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.0+)",
       },
       {
@@ -1129,12 +1175,9 @@ const PATCHES: FilePatches[] = [
       // --- v7.3.63 chat patterns (Ne event, $m Enter-check, Oa send) ---
       {
         feature: "chat-input",
-        original:
-          '$m(Ne)&&!Ne.shiftKey&&(Ne.preventDefault(),Oa())',
-        previous:
-          '$m(Ne)&&Ne.metaKey&&(Ne.preventDefault(),Oa())',
-        patched:
-          '$m(Ne)&&(Ne.metaKey||Ne.ctrlKey)&&(Ne.preventDefault(),Oa())',
+        original: "$m(Ne)&&!Ne.shiftKey&&(Ne.preventDefault(),Oa())",
+        previous: "$m(Ne)&&Ne.metaKey&&(Ne.preventDefault(),Oa())",
+        patched: "$m(Ne)&&(Ne.metaKey||Ne.ctrlKey)&&(Ne.preventDefault(),Oa())",
         description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.3.63)",
       },
       {
@@ -1160,8 +1203,7 @@ const PATCHES: FilePatches[] = [
       },
       {
         feature: "perm-escape",
-        original:
-          'j=q=>{if(q.key==="Escape"){$(q,"reject");return}}',
+        original: 'j=q=>{if(q.key==="Escape"){$(q,"reject");return}}',
         patched:
           'j=q=>{if(q.key==="Escape"&&(q.shiftKey||!q.target?.value?.trim())){$(q,"reject");return}}',
         description:
@@ -1169,8 +1211,7 @@ const PATCHES: FilePatches[] = [
       },
       {
         feature: "perm-approve",
-        original:
-          'if(z(q)){$(q,"once");return}}};',
+        original: 'if(z(q)){$(q,"once");return}}};',
         previous:
           'if(z(q)||q.key===" "&&!q.metaKey&&!q.ctrlKey&&!q.target?.value?.trim()||q.key==="Enter"&&q.metaKey){$(q,"once");return}}};',
         patched:
@@ -1190,13 +1231,11 @@ const PATCHES: FilePatches[] = [
       // --- v7.3.50-7.3.54 patterns (legacy minified symbols: Fm, je, Ce, ge, G, S, P, M, N, ee) ---
       {
         feature: "chat-input",
-        original:
-          'Fm(je)&&!je.shiftKey&&(je.preventDefault(),Ce())',
-        previous:
-          'Fm(je)&&je.metaKey&&(je.preventDefault(),Ce())',
-        patched:
-          'Fm(je)&&(je.metaKey||je.ctrlKey)&&(je.preventDefault(),Ce())',
-        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.3.50-54)",
+        original: "Fm(je)&&!je.shiftKey&&(je.preventDefault(),Ce())",
+        previous: "Fm(je)&&je.metaKey&&(je.preventDefault(),Ce())",
+        patched: "Fm(je)&&(je.metaKey||je.ctrlKey)&&(je.preventDefault(),Ce())",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.3.50-54)",
       },
       {
         feature: "chat-escape",
@@ -1221,8 +1260,7 @@ const PATCHES: FilePatches[] = [
       },
       {
         feature: "perm-escape",
-        original:
-          'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
+        original: 'P=z=>{if(z.key==="Escape"){N(z,"reject");return}}',
         previous:
           'P=z=>{if(z.key==="Escape"&&(z.shiftKey||!z.target?.value)){N(z,"reject");return}}',
         patched:
@@ -1232,8 +1270,7 @@ const PATCHES: FilePatches[] = [
       },
       {
         feature: "perm-approve",
-        original:
-          'if(M(z)){N(z,"once");return}}};',
+        original: 'if(M(z)){N(z,"once");return}}};',
         previous:
           'if(M(z)||z.key===" "&&!z.metaKey&&!z.ctrlKey&&!z.target?.value?.trim()||z.key==="Enter"&&z.metaKey){N(z,"once");return}if(z.key==="Escape"&&z.shiftKey){N(z,"reject");return}}};',
         patched:
@@ -1268,13 +1305,15 @@ const PATCHES: FilePatches[] = [
           'kf(T)&&!T.shiftKey?(T.preventDefault(),y()):T.key==="Escape"&&k()',
         patched:
           'kf(T)&&(T.metaKey||T.ctrlKey)?(T.preventDefault(),y()):T.key==="Escape"&&k()',
-        description: "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.5.4+)",
+        description:
+          "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.5.4+)",
       },
       {
         feature: "kiloclaw-chat",
         original: "kf(I)&&!I.shiftKey&&(I.preventDefault(),v())",
         patched: "kf(I)&&(I.metaKey||I.ctrlKey)&&(I.preventDefault(),v())",
-        description: "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.4+)",
+        description:
+          "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.5.4+)",
       },
       // --- v7.4.21+ patterns. 7.4.21 re-minified only the Enter-check helper
       //     $A→RA; the event variables (Q, D) and the save/send/cancel calls
@@ -1286,13 +1325,15 @@ const PATCHES: FilePatches[] = [
           'RA(Q)&&!Q.shiftKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
         patched:
           'RA(Q)&&(Q.metaKey||Q.ctrlKey)?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
-        description: "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.4.21+)",
+        description:
+          "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.4.21+)",
       },
       {
         feature: "kiloclaw-chat",
-        original: 'RA(D)&&!D.shiftKey&&(D.preventDefault(),v())',
-        patched: 'RA(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())',
-        description: "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.21+)",
+        original: "RA(D)&&!D.shiftKey&&(D.preventDefault(),v())",
+        patched: "RA(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())",
+        description:
+          "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.21+)",
       },
       // --- v7.4.17+ patterns. 7.4.17 re-minified only the Enter-check helper
       //     NA→$A; the event variables (Q, D) and the save/send/abort calls (y/w,
@@ -1305,14 +1346,16 @@ const PATCHES: FilePatches[] = [
           '$A(Q)&&Q.metaKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
         patched:
           '$A(Q)&&(Q.metaKey||Q.ctrlKey)?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
-        description: "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.4.17+)",
+        description:
+          "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.4.17+)",
       },
       {
         feature: "kiloclaw-chat",
-        original: '$A(D)&&!D.shiftKey&&(D.preventDefault(),v())',
-        previous: '$A(D)&&D.metaKey&&(D.preventDefault(),v())',
-        patched: '$A(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())',
-        description: "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.17+)",
+        original: "$A(D)&&!D.shiftKey&&(D.preventDefault(),v())",
+        previous: "$A(D)&&D.metaKey&&(D.preventDefault(),v())",
+        patched: "$A(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())",
+        description:
+          "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.17+)",
       },
       // --- v7.4.8+ patterns. 7.4.8 renamed only the Enter-check helper LA→NA; the event
       //     variables and the save/send/abort calls are unchanged. ---
@@ -1324,14 +1367,16 @@ const PATCHES: FilePatches[] = [
           'NA(Q)&&Q.metaKey?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
         patched:
           'NA(Q)&&(Q.metaKey||Q.ctrlKey)?(Q.preventDefault(),y()):Q.key==="Escape"&&w()',
-        description: "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.4.8+)",
+        description:
+          "KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v7.4.8+)",
       },
       {
         feature: "kiloclaw-chat",
-        original: 'NA(D)&&!D.shiftKey&&(D.preventDefault(),v())',
-        previous: 'NA(D)&&D.metaKey&&(D.preventDefault(),v())',
-        patched: 'NA(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())',
-        description: "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.8+)",
+        original: "NA(D)&&!D.shiftKey&&(D.preventDefault(),v())",
+        previous: "NA(D)&&D.metaKey&&(D.preventDefault(),v())",
+        patched: "NA(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())",
+        description:
+          "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v7.4.8+)",
       },
       // --- pre-7.4.8 patterns (Enter-check helper LA) ---
       {
@@ -1346,10 +1391,9 @@ const PATCHES: FilePatches[] = [
       },
       {
         feature: "kiloclaw-chat",
-        original:
-          'LA(D)&&!D.shiftKey&&(D.preventDefault(),v())',
-        previous: 'LA(D)&&D.metaKey&&(D.preventDefault(),v())',
-        patched: 'LA(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())',
+        original: "LA(D)&&!D.shiftKey&&(D.preventDefault(),v())",
+        previous: "LA(D)&&D.metaKey&&(D.preventDefault(),v())",
+        patched: "LA(D)&&(D.metaKey||D.ctrlKey)&&(D.preventDefault(),v())",
         description: "KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send",
       },
     ],
@@ -1362,6 +1406,7 @@ const PATCHES: FilePatches[] = [
 const FEATURE_ORDER = [
   "chat-input",
   "chat-escape",
+  "mention-escape",
   "chat-history",
   "chat-scroll",
   "perm-keys",
@@ -1380,6 +1425,7 @@ type FeatureKey = (typeof FEATURE_ORDER)[number];
 const FEATURE_LABELS: Record<FeatureKey, string> = {
   "chat-input": "Chat input: Enter adds a newline, Cmd/Ctrl+Enter sends",
   "chat-escape": "Chat Escape: aborts only when the input is empty",
+  "mention-escape": "Mention menu Escape: stays closed while you keep typing",
   "chat-history": "Chat history: Cmd/Ctrl+Up/Down, not bare Up/Down",
   "chat-scroll": "Chat scroll: history stays at the bottom while you type",
   "perm-keys": "Permission prompt: typing keys stay in the input",
@@ -1390,12 +1436,31 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
   "kiloclaw-chat": "KiloClaw chat: Cmd/Ctrl+Enter sends",
 };
 
+// The @-mention trigger Kilo has shipped since 7.5.11, which lets a query run
+// across spaces (Kilo-Org/kilocode#13592). A regex literal survives
+// minification, so it doubles as the fingerprint of the behavior the
+// mention-escape feature answers.
+const MENTION_SPACED_TRIGGER = "/(?:^|\\s)@(?![^\\n]*\\s@)([^\\n]*)$/";
+
+// A feature that fixes something Kilo only does from a certain release on is
+// not "missing" on the builds before it: there is nothing there to patch. A
+// gate says whether a build has the Kilo behavior the feature answers, keyed
+// on text the minifier cannot rename, and a feature with no gate is wanted on
+// every build. The status view reports a gated-out feature as "unneeded",
+// which draws neutrally and stays out of the verdict.
+const FEATURE_GATES: Partial<Record<FeatureKey, (content: string) => boolean>> =
+  {
+    "mention-escape": (content) => content.includes(MENTION_SPACED_TRIGGER),
+  };
+
 // "patched": the patched text is present. "unpatched": the original text is
 // present (Apply will fix it). "missing": no known variant of this feature was
 // found, so its minified symbols changed for this Kilo version and the pattern
 // needs re-targeting. "missing" is what the status view must surface rather than
 // dropping the row, so an out-of-date pattern is visible instead of silent.
-type FeatureState = "patched" | "unpatched" | "missing";
+// "unneeded": the feature's gate says this build predates the Kilo behavior it
+// fixes, so no variant is expected to match.
+type FeatureState = "patched" | "unpatched" | "missing" | "unneeded";
 type Verdict =
   | "fully patched"
   | "partially patched"
@@ -1425,7 +1490,7 @@ interface BonusStatus {
 // "missing" so the status view can show it rather than omitting the row.
 function statusForFile(
   content: string,
-  patches: PatchDef[]
+  patches: PatchDef[],
 ): { label: string; state: FeatureState }[] {
   const byFeature = new Map<FeatureKey, FeatureState>();
   const intended = new Set<FeatureKey>();
@@ -1445,24 +1510,28 @@ function statusForFile(
 
   return FEATURE_ORDER.filter((k) => intended.has(k)).map((k) => ({
     label: FEATURE_LABELS[k],
-    state: byFeature.get(k) ?? "missing",
+    state:
+      byFeature.get(k) ??
+      (FEATURE_GATES[k]?.(content) === false ? "unneeded" : "missing"),
   }));
 }
 
 // Rows in FEATURE_ORDER, whichever derivation they came from.
 function inFeatureOrder<T extends { label: string }>(rows: T[]): T[] {
   const rank = new Map<string, number>(
-    FEATURE_ORDER.map((key, i) => [FEATURE_LABELS[key], i])
+    FEATURE_ORDER.map((key, i) => [FEATURE_LABELS[key], i]),
   );
   return [...rows].sort(
-    (a, b) => (rank.get(a.label) ?? 0) - (rank.get(b.label) ?? 0)
+    (a, b) => (rank.get(a.label) ?? 0) - (rank.get(b.label) ?? 0),
   );
 }
 
 function computeVerdict(files: FileStatus[]): Verdict {
+  // A feature this build has no need of neither counts for nor against it.
   const states = files
     .filter((f) => f.found)
-    .flatMap((f) => f.features.map((ft) => ft.state));
+    .flatMap((f) => f.features.map((ft) => ft.state))
+    .filter((s) => s !== "unneeded");
 
   if (states.length === 0) return "version not recognized";
 
@@ -1511,16 +1580,13 @@ function computeStatus(distDir: string): {
           found: true,
           features: chatCssCoreStatus(fs.readFileSync(cssPath, "utf8")),
         }
-      : { filename: CHAT_STYLE_FILE, found: false, features: [] }
+      : { filename: CHAT_STYLE_FILE, found: false, features: [] },
   );
   return { files, verdict: computeVerdict(files) };
 }
 
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // The native modal dialog has a fixed, narrow width that wraps long rows, so the
@@ -1530,34 +1596,41 @@ function showStatusPanel(
   version: string,
   verdict: Verdict,
   files: FileStatus[],
-  bonuses: BonusStatus[]
+  bonuses: BonusStatus[],
 ): void {
   const panel = vscode.window.createWebviewPanel(
     "kiloCodeKbPatchStatus",
     "Kilo Code KB Patch",
     vscode.ViewColumn.Active,
-    { enableScripts: false }
+    { enableScripts: false },
   );
 
   const verdictClass =
     verdict === "fully patched"
       ? "ok"
       : verdict === "not patched" || verdict === "version not recognized"
-      ? "bad"
-      : "warn";
+        ? "bad"
+        : "warn";
 
   // Each feature state gets a distinct mark, color, and hint so an unpatched or
   // stale-pattern row reads differently from a patched one at a glance.
-  const marks: Record<FeatureState, { mark: string; cls: string; hint: string }> =
-    {
-      patched: { mark: "✓", cls: "ok", hint: "" },
-      unpatched: { mark: "○", cls: "warn", hint: "not applied — run Apply" },
-      missing: {
-        mark: "✗",
-        cls: "bad",
-        hint: "no matching code — patch needs update",
-      },
-    };
+  const marks: Record<
+    FeatureState,
+    { mark: string; cls: string; hint: string }
+  > = {
+    patched: { mark: "✓", cls: "ok", hint: "" },
+    unpatched: { mark: "○", cls: "warn", hint: "not applied — run Apply" },
+    missing: {
+      mark: "✗",
+      cls: "bad",
+      hint: "no matching code — patch needs update",
+    },
+    unneeded: {
+      mark: "○",
+      cls: "off",
+      hint: "not needed on this Kilo Code build",
+    },
+  };
 
   const sections = files
     .map((f) => {
@@ -1576,7 +1649,7 @@ function showStatusPanel(
             return `<div class="row"><span class="mark ${
               m.cls
             }">${m.mark}</span><span class="label">${escapeHtml(
-              ft.label
+              ft.label,
             )}</span>${hint}</div>`;
           })
           .join("");
@@ -1588,17 +1661,19 @@ function showStatusPanel(
   // Bonus rows use their own marks. "off" is a neutral white circle (the item is
   // simply not enabled); it never reads as a problem. These rows do not feed the
   // verdict badge above.
-  const bonusMarks: Record<BonusState, { mark: string; cls: string; hint: string }> =
-    {
-      on: { mark: "✓", cls: "ok", hint: "" },
-      off: { mark: "○", cls: "off", hint: "" },
-      pending: { mark: "○", cls: "warn", hint: "reload to apply" },
-      unavailable: {
-        mark: "✗",
-        cls: "bad",
-        hint: "no matching code — patch needs update",
-      },
-    };
+  const bonusMarks: Record<
+    BonusState,
+    { mark: string; cls: string; hint: string }
+  > = {
+    on: { mark: "✓", cls: "ok", hint: "" },
+    off: { mark: "○", cls: "off", hint: "" },
+    pending: { mark: "○", cls: "warn", hint: "reload to apply" },
+    unavailable: {
+      mark: "✗",
+      cls: "bad",
+      hint: "no matching code — patch needs update",
+    },
+  };
   const bonusRows = bonuses
     .map((b) => {
       const m = bonusMarks[b.state];
@@ -1608,7 +1683,7 @@ function showStatusPanel(
       return `<div class="row"><span class="mark ${
         m.cls
       }">${m.mark}</span><span class="label">${escapeHtml(
-        b.label
+        b.label,
       )}</span>${hint}</div>`;
     })
     .join("");
@@ -1752,7 +1827,7 @@ function findLatestKiloExt(): string | undefined {
     const dirs = entries.filter((d) => d.startsWith("kilocode.kilo-code-"));
     if (dirs.length === 0) continue;
     dirs.sort((a, b) =>
-      compareKiloVersions(parseKiloVersion(a), parseKiloVersion(b))
+      compareKiloVersions(parseKiloVersion(a), parseKiloVersion(b)),
     );
     return path.join(root, dirs[dirs.length - 1]);
   }
@@ -1813,7 +1888,7 @@ function reconcileOpenInTabTitle(extPath: string): boolean {
   const desired = desiredOpenInTabTitle();
   const updated = content.replace(
     OPEN_IN_TAB_TITLE_RE,
-    (_match, prefix: string) => `${prefix}${JSON.stringify(desired)}`
+    (_match, prefix: string) => `${prefix}${JSON.stringify(desired)}`,
   );
   if (updated === content) return false;
   fs.writeFileSync(pkgPath, updated, "utf8");
@@ -1903,7 +1978,7 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   // enhanceDescription,indexing,send,stop}.
   {
     original:
-      'P(fr,B(me,{get when(){return cn()},get children(){return B(Ln,{get value(){return a.status().message||a.label()}',
+      "P(fr,B(me,{get when(){return cn()},get children(){return B(Ln,{get value(){return a.status().message||a.label()}",
     patched:
       'P(fr,B(Ln,{get value(){return "Attach file"},placement:"top",get children(){return B(Qt,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,ln)},get"aria-label"(){return "Attach file"},get children(){return B(Go,{name:"plus",size:"small"})}})}}),null),P(fr,B(me,{get when(){return cn()},get children(){return B(Ln,{get value(){return a.status().message||a.label()}',
   },
@@ -1932,7 +2007,7 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   // selectionStart, selectionEnd, caret, direction and result locals.
   {
     original:
-      'P(Ar,B(ge,{get when(){return cn()},get children(){return B($n,{get value(){return a.status().message||a.label()}',
+      "P(Ar,B(ge,{get when(){return cn()},get children(){return B($n,{get value(){return a.status().message||a.label()}",
     patched:
       'P(Ar,B($n,{get value(){return "Attach file"},placement:"top",get children(){return B(Qt,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,ln)},get"aria-label"(){return "Attach file"},get children(){return B(Go,{name:"plus",size:"small"})}})}}),null),P(Ar,B(ge,{get when(){return cn()},get children(){return B($n,{get value(){return a.status().message||a.label()}',
   },
@@ -2043,7 +2118,7 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   // sync yt, and the indexing accessor a unchanged).
   {
     original:
-      'P(Qa,_(se,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+      "P(Qa,_(se,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}",
     patched:
       'P(Qa,_(Sn,{get value(){return "Attach file"},placement:"top",get children(){return _(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,Q,yt)},get"aria-label"(){return "Attach file"},get children(){return _(Ji,{name:"plus",size:"small"})}})}}),null),P(Qa,_(se,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
     previous: [
@@ -2058,7 +2133,7 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   // anchor and is not copied into the injected button.
   {
     original:
-      'R(Ta,_(oe,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
+      "R(Ta,_(oe,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}",
     patched:
       'R(Ta,_(Sn,{get value(){return "Attach file"},placement:"top",get children(){return _(Et,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,L,yt)},get"aria-label"(){return "Attach file"},get children(){return _(Vi,{name:"plus",size:"small"})}})}}),null),R(Ta,_(oe,{get when(){return mt()},get children(){return _(Sn,{get value(){return a.status().message||a.label()}',
     previous: [
@@ -2069,7 +2144,7 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   },
   {
     original:
-      'R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}',
+      "R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}",
     patched:
       'R(ai,_(Mn,{get value(){return "Attach file"},placement:"top",get children(){return _(_t,{variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},w,L,bt)},get"aria-label"(){return "Attach file"},get children(){return _(Wi,{name:"plus",size:"small"})}})}}),null),R(ai,_(oe,{get when(){return gt()},get children(){return _(Mn,{get value(){return r.status().message||r.label()}',
     previous: [
@@ -2080,7 +2155,7 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   },
   {
     original:
-      'F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
+      "F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}",
     patched:
       'F(Pe,x(Fn,{get value(){return "Attach file"},placement:"top",get children(){return x(St,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,Ut)},get"aria-label"(){return "Attach file"},get children(){return x(Hi,{name:"plus",size:"small"})}})}}),null),F(Pe,x(ce,{get when(){return Ke()},get children(){return x(Fn,{get value(){return r.status().message||r.label()}',
     previous: [
@@ -2096,25 +2171,25 @@ const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   },
   {
     original:
-      'R(Pe,C(le,{get when(){return Ue()},get children(){return C(Pn,{get value(){return r.status().message||r.label()}',
+      "R(Pe,C(le,{get when(){return Ue()},get children(){return C(Pn,{get value(){return r.status().message||r.label()}",
     patched:
       'R(Pe,C(Pn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,nn)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(en,{name:"plus-small",size:"small"})}})}}),null),R(Pe,C(le,{get when(){return Ue()},get children(){return C(Pn,{get value(){return r.status().message||r.label()}',
   },
   {
     original:
-      'P(Pe,_(se,{get when(){return Ue()},get children(){return _(Gn,{get value(){return r.status().message||r.label()}',
+      "P(Pe,_(se,{get when(){return Ue()},get children(){return _(Gn,{get value(){return r.status().message||r.label()}",
     patched:
       'P(Pe,_(Gn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return _(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,nn)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return _(tn,{name:"plus-small",size:"small"})}})}}),null),P(Pe,_(se,{get when(){return Ue()},get children(){return _(Gn,{get value(){return r.status().message||r.label()}',
   },
   {
     original:
-      'R(Pe,C(ce,{get when(){return Ue()},get children(){return C(On,{get value(){return r.status().message||r.label()}',
+      "R(Pe,C(ce,{get when(){return Ue()},get children(){return C(On,{get value(){return r.status().message||r.label()}",
     patched:
       'R(Pe,C(On,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,Q,an)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(tn,{name:"plus-small",size:"small"})}})}}),null),R(Pe,C(ce,{get when(){return Ue()},get children(){return C(On,{get value(){return r.status().message||r.label()}',
   },
   {
     original:
-      'R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
+      "R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}",
     patched:
       'R(Re,C(Gn,{get value(){return u.t("prompt.action.attachFile")},placement:"top",get children(){return C(_t,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");h.selectMention({type:"file-picker"},k,L,an)},get"aria-label"(){return u.t("prompt.action.attachFile")},get children(){return C(tn,{name:"plus",size:"small"})}})}}),null),R(Re,C(de,{get when(){return He()},get children(){return C(Gn,{get value(){return r.status().message||r.label()}',
   },
@@ -2134,13 +2209,13 @@ function addAttachFileButtonEnabled(): boolean {
 // re-minify), which callers treat as a silent no-op.
 function matchingVariant(
   content: string,
-  variants: WebviewVariant[]
+  variants: WebviewVariant[],
 ): WebviewVariant | undefined {
   return variants.find(
     (v) =>
       content.includes(v.patched) ||
       content.includes(v.original) ||
-      v.previous?.some((p) => content.includes(p))
+      v.previous?.some((p) => content.includes(p)),
   );
 }
 
@@ -2152,7 +2227,7 @@ function matchingVariant(
 function reconcileVariant(
   extPath: string,
   variants: WebviewVariant[],
-  enabled: boolean
+  enabled: boolean,
 ): boolean {
   const webviewPath = path.join(extPath, "dist", "webview.js");
   if (!fs.existsSync(webviewPath)) return false;
@@ -2176,7 +2251,9 @@ function reconcileVariant(
   return true;
 }
 
-function matchingAttachFileButton(content: string): AttachButtonDef | undefined {
+function matchingAttachFileButton(
+  content: string,
+): AttachButtonDef | undefined {
   return matchingVariant(content, ATTACH_FILE_BUTTONS);
 }
 
@@ -2184,7 +2261,7 @@ function reconcileAttachFileButton(extPath: string): boolean {
   return reconcileVariant(
     extPath,
     ATTACH_FILE_BUTTONS,
-    addAttachFileButtonEnabled()
+    addAttachFileButtonEnabled(),
   );
 }
 
@@ -2240,19 +2317,19 @@ const MATH_EXTENSIONS: WebviewVariant[] = [
     original:
       "renderer(n){return RR(n.text,{displayMode:!0,throwOnError:!1})}}]});",
     patched:
-      "renderer(n){return RR(n.text,{displayMode:!0,throwOnError:!1})}},{name:\"kbpKatexInlineDollar\",level:\"inline\",start(_e){let _i=_e.indexOf(\"$\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:\"kbpKatexInlineDollar\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:\"kbpKatexBlockBracket\",level:\"block\",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:\"kbpKatexBlockBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!0,throwOnError:!1})+\"\\n\"}},{name:\"kbpKatexInlineBracket\",level:\"inline\",start(_e){let _i=_e.indexOf(\"\\\\[\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:\"kbpKatexInlineBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!0,throwOnError:!1})}}]});",
+      'renderer(n){return RR(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return RR(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
   },
   {
     original:
       "renderer(n){return MR(n.text,{displayMode:!0,throwOnError:!1})}}]});",
     patched:
-      "renderer(n){return MR(n.text,{displayMode:!0,throwOnError:!1})}},{name:\"kbpKatexInlineDollar\",level:\"inline\",start(_e){let _i=_e.indexOf(\"$\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:\"kbpKatexInlineDollar\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:\"kbpKatexBlockBracket\",level:\"block\",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:\"kbpKatexBlockBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!0,throwOnError:!1})+\"\\n\"}},{name:\"kbpKatexInlineBracket\",level:\"inline\",start(_e){let _i=_e.indexOf(\"\\\\[\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:\"kbpKatexInlineBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!0,throwOnError:!1})}}]});",
+      'renderer(n){return MR(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return MR(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
   },
   {
     original:
       "renderer(n){return bR(n.text,{displayMode:!0,throwOnError:!1})}}]});",
     patched:
-      "renderer(n){return bR(n.text,{displayMode:!0,throwOnError:!1})}},{name:\"kbpKatexInlineDollar\",level:\"inline\",start(_e){let _i=_e.indexOf(\"$\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:\"kbpKatexInlineDollar\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:\"kbpKatexBlockBracket\",level:\"block\",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:\"kbpKatexBlockBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!0,throwOnError:!1})+\"\\n\"}},{name:\"kbpKatexInlineBracket\",level:\"inline\",start(_e){let _i=_e.indexOf(\"\\\\[\");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:\"kbpKatexInlineBracket\",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!0,throwOnError:!1})}}]});",
+      'renderer(n){return bR(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return bR(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
   },
 ];
 
@@ -2333,8 +2410,9 @@ type PatchBlockKey = ChatCssBlockKey | ChatScriptBlockKey;
 // view under their file and counted in the verdict. Typed against both lists,
 // so a key that is not registered as a feature (or not a block) is a compile
 // error rather than a row that never renders.
-const CHAT_CSS_CORE = ["chat-scroll"] as const satisfies readonly (ChatCssBlockKey &
-  FeatureKey)[];
+const CHAT_CSS_CORE = [
+  "chat-scroll",
+] as const satisfies readonly (ChatCssBlockKey & FeatureKey)[];
 type ChatCssCoreKey = (typeof CHAT_CSS_CORE)[number];
 const CHAT_SCRIPT_CORE = [
   "chat-scroll",
@@ -2356,7 +2434,7 @@ const patchBlockEnd = (key: PatchBlockKey) =>
 function patchBlockRe(key: PatchBlockKey): RegExp {
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
-    `\\n?${esc(patchBlockBegin(key))}[\\s\\S]*?${esc(patchBlockEnd(key))}\\n?`
+    `\\n?${esc(patchBlockBegin(key))}[\\s\\S]*?${esc(patchBlockEnd(key))}\\n?`,
   );
 }
 
@@ -2392,7 +2470,7 @@ function stripChatScript(js: string): string {
 function reconcileBlocks<K extends PatchBlockKey>(
   filePath: string,
   keys: readonly K[],
-  desired: (key: K, pristine: string, current: string) => string
+  desired: (key: K, pristine: string, current: string) => string,
 ): Record<K, boolean> {
   const changed = Object.fromEntries(keys.map((key) => [key, false])) as Record<
     K,
@@ -2427,7 +2505,7 @@ function blockCoreStatus<K extends PatchBlockKey & FeatureKey>(
   content: string,
   keys: readonly K[],
   strip: (content: string) => string,
-  block: (key: K, pristine: string) => string
+  block: (key: K, pristine: string) => string,
 ): { label: string; state: FeatureState }[] {
   const pristine = strip(content);
   return keys.map((key) => {
@@ -2436,8 +2514,8 @@ function blockCoreStatus<K extends PatchBlockKey & FeatureKey>(
     const state: FeatureState = !desired
       ? "missing"
       : current === desired
-      ? "patched"
-      : "unpatched";
+        ? "patched"
+        : "unpatched";
     return { label: FEATURE_LABELS[key], state };
   });
 }
@@ -2448,9 +2526,11 @@ function blockResult<K extends PatchBlockKey & FeatureKey>(
   filename: string,
   keys: readonly K[],
   changed: Record<K, boolean>,
-  mode: "apply" | "restore"
+  mode: "apply" | "restore",
 ): PatchResult {
-  const moved = keys.filter((key) => changed[key]).map((key) => FEATURE_LABELS[key]);
+  const moved = keys
+    .filter((key) => changed[key])
+    .map((key) => FEATURE_LABELS[key]);
   return {
     filename,
     applied: mode === "apply" ? moved : [],
@@ -2532,7 +2612,7 @@ function clampSetting(
   key: string,
   fallback: number,
   min: number,
-  max: number
+  max: number,
 ): number {
   const raw = vscode.workspace
     .getConfiguration("kiloCodeKbPatch")
@@ -2679,7 +2759,7 @@ function readScrollThreshold(js: string): number | undefined {
     }
   }
   const threshold = Number(
-    CHAT_SCROLL_SCRIPT_ANCHORS["bottom threshold"].exec(js)?.[1]
+    CHAT_SCROLL_SCRIPT_ANCHORS["bottom threshold"].exec(js)?.[1],
   );
   return Number.isInteger(threshold) ? threshold : undefined;
 }
@@ -2754,7 +2834,7 @@ function chatCssRules(key: ChatCssBlockKey, pristineCss: string): string[] {
       // fenced blocks but not for the `code` spans and file paths in the middle
       // of a sentence.
       `${CHAT_ASSISTANT_MD} :not(pre) > code { font-size: ${values.size}; }`,
-      `${CHAT_ASSISTANT_MD} a.file-path-link { font-size: ${values.size}; }`
+      `${CHAT_ASSISTANT_MD} a.file-path-link { font-size: ${values.size}; }`,
     );
   }
   const family = chatFontFamily();
@@ -2778,7 +2858,7 @@ type CoreCssDecision = Record<ChatCssCoreKey, boolean>;
 
 function coreCssDecision(on: boolean): CoreCssDecision {
   return Object.fromEntries(
-    CHAT_CSS_CORE.map((key) => [key, on])
+    CHAT_CSS_CORE.map((key) => [key, on]),
   ) as CoreCssDecision;
 }
 
@@ -2790,7 +2870,7 @@ function coreCssDecision(on: boolean): CoreCssDecision {
 // way a bundle patch's `previous` is.
 function reconcileChatStyle(
   extPath: string,
-  core?: CoreCssDecision
+  core?: CoreCssDecision,
 ): Record<ChatCssBlockKey, boolean> {
   return reconcileBlocks(
     path.join(extPath, "dist", CHAT_STYLE_FILE),
@@ -2802,12 +2882,14 @@ function reconcileChatStyle(
             ? chatCssBlock(key, pristine)
             : ""
           : current
-        : chatCssBlock(key, pristine)
+        : chatCssBlock(key, pristine),
   );
 }
 
 // The stylesheet's core rows for the status view.
-function chatCssCoreStatus(css: string): { label: string; state: FeatureState }[] {
+function chatCssCoreStatus(
+  css: string,
+): { label: string; state: FeatureState }[] {
   return blockCoreStatus(css, CHAT_CSS_CORE, stripChatCss, chatCssBlock);
 }
 
@@ -2827,18 +2909,25 @@ function chatCssApplied(extPath: string, key: ChatCssBlockKey): boolean {
 // and a splice neither sees nor moves an appended block.
 function reconcileChatScript(
   extPath: string,
-  on: boolean
+  on: boolean,
 ): Record<ChatScriptBlockKey, boolean> {
   return reconcileBlocks(
     path.join(extPath, "dist", CHAT_SCRIPT_FILE),
     CHAT_SCRIPT_BLOCKS,
-    (key, pristine) => (on ? chatScriptBlock(key, pristine) : "")
+    (key, pristine) => (on ? chatScriptBlock(key, pristine) : ""),
   );
 }
 
 // The bundle's core block rows for the status view, listed with its splices.
-function chatScriptCoreStatus(js: string): { label: string; state: FeatureState }[] {
-  return blockCoreStatus(js, CHAT_SCRIPT_CORE, stripChatScript, chatScriptBlock);
+function chatScriptCoreStatus(
+  js: string,
+): { label: string; state: FeatureState }[] {
+  return blockCoreStatus(
+    js,
+    CHAT_SCRIPT_CORE,
+    stripChatScript,
+    chatScriptBlock,
+  );
 }
 
 // Which bonus files a reconcile pass actually rewrote. Anything true here is a
@@ -2901,7 +2990,7 @@ function notifyBonusReload(changed: BonusChanges): void {
   vscode.window
     .showInformationMessage(
       `Kilo Code KB Patch: ${list} updated. Reload window to apply.`,
-      "Reload Window"
+      "Reload Window",
     )
     .then((choice) => {
       if (choice === "Reload Window") {
@@ -2931,14 +3020,14 @@ const BONUS_SETTING_DEFAULTS: [string, boolean | number | string][] = [
 // already-off entry is left alone.
 async function forceSettingOff(
   key: string,
-  off: boolean | number | string
+  off: boolean | number | string,
 ): Promise<void> {
   const config = vscode.workspace.getConfiguration("kiloCodeKbPatch");
   const info = config.inspect<boolean | number | string>(key);
   if (!info) return;
   const scopes: [
     boolean | number | string | undefined,
-    vscode.ConfigurationTarget
+    vscode.ConfigurationTarget,
   ][] = [
     [info.globalValue, vscode.ConfigurationTarget.Global],
     [info.workspaceValue, vscode.ConfigurationTarget.Workspace],
@@ -2956,7 +3045,8 @@ async function forceSettingOff(
 // actually reflects it. Bonus state never affects the verdict.
 function computeBonusStatus(extPath: string): BonusStatus[] {
   const cfg = vscode.workspace.getConfiguration("kiloCodeKbPatch");
-  const read = (p: string) => (fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "");
+  const read = (p: string) =>
+    fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
 
   let attach: BonusState = "off";
   if (cfg.get<boolean>("addAttachFileButton", false)) {
@@ -2965,20 +3055,20 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
     attach = !variant
       ? "unavailable"
       : content.includes(variant.patched)
-      ? "on"
-      : "pending";
+        ? "on"
+        : "pending";
   }
 
   let openInTab: BonusState = "off";
   if (cfg.get<boolean>("renameOpenInTab", false)) {
     const match = read(path.join(extPath, "package.json")).match(
-      OPEN_IN_TAB_TITLE_RE
+      OPEN_IN_TAB_TITLE_RE,
     );
     openInTab = !match
       ? "unavailable"
       : match[0].includes(JSON.stringify(OPEN_IN_TAB_RENAMED))
-      ? "on"
-      : "pending";
+        ? "on"
+        : "pending";
   }
 
   // The math bonus spans a bundle splice and a stylesheet block, so it reads
@@ -2991,8 +3081,8 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
     math = !variant
       ? "unavailable"
       : content.includes(variant.patched) && chatCssApplied(extPath, "math")
-      ? "on"
-      : "pending";
+        ? "on"
+        : "pending";
   }
 
   // Typography is requested from the settings alone, so a build whose own
@@ -3002,11 +3092,12 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   const scale = clampSetting("chatHistoryFontSizeEm", 1, 0.5, 3);
   if (scale !== 1 || chatFontFamily() !== "") {
     const css = read(path.join(extPath, "dist", CHAT_STYLE_FILE));
-    typography = !css || chatCssRules("typography", stripChatCss(css)).length === 0
-      ? "unavailable"
-      : chatCssApplied(extPath, "typography")
-      ? "on"
-      : "pending";
+    typography =
+      !css || chatCssRules("typography", stripChatCss(css)).length === 0
+        ? "unavailable"
+        : chatCssApplied(extPath, "typography")
+          ? "on"
+          : "pending";
   }
 
   return [
@@ -3106,7 +3197,7 @@ function restorePatches(filePath: string, patches: PatchDef[]): PatchResult {
 // or restored), so activation's Apply path knows if the held bonus-reload
 // notification is already covered by this one or must still be surfaced.
 async function runPatch(
-  mode: "apply" | "restore" | "status"
+  mode: "apply" | "restore" | "status",
 ): Promise<boolean> {
   const extPath = findLatestKiloExt();
   if (!extPath) {
@@ -3117,7 +3208,7 @@ async function runPatch(
     vscode.window.showErrorMessage(
       `Kilo Code KB Patch: Could not find a kilocode.kilo-code-* install. Searched: ${
         searched || "(no extensions folder found)"
-      }`
+      }`,
     );
     return false;
   }
@@ -3161,14 +3252,14 @@ async function runPatch(
         CHAT_STYLE_FILE,
         CHAT_CSS_CORE,
         reconcileChatStyle(extPath, coreCssDecision(true)),
-        "apply"
+        "apply",
       ),
       blockResult(
         CHAT_SCRIPT_FILE,
         CHAT_SCRIPT_CORE,
         reconcileChatScript(extPath, true),
-        "apply"
-      )
+        "apply",
+      ),
     );
   }
 
@@ -3195,8 +3286,8 @@ async function runPatch(
           CHAT_SCRIPT_FILE,
           CHAT_SCRIPT_CORE,
           reconcileChatScript(extPath, false),
-          "restore"
-        )
+          "restore",
+        ),
       );
     } finally {
       suspendReconcile = false;
@@ -3213,7 +3304,7 @@ async function runPatch(
     vscode.window
       .showInformationMessage(
         `Kilo Code KB Patch: ${verb} ${totalApplied} patch(es) on v${version}. Reload window to take effect.`,
-        "Reload Window"
+        "Reload Window",
       )
       .then((choice) => {
         if (choice === "Reload Window") {
@@ -3230,19 +3321,19 @@ async function runPatch(
   const { files, verdict } = computeStatus(distDir);
   if (mode === "restore") {
     vscode.window.showInformationMessage(
-      `Kilo Code KB Patch: Nothing to restore on v${version}. Files are already original.`
+      `Kilo Code KB Patch: Nothing to restore on v${version}. Files are already original.`,
     );
     return false;
   }
   if (verdict === "fully patched") {
     vscode.window.showInformationMessage(
-      `Kilo Code KB Patch: v${version} is already fully patched. Nothing to apply.`
+      `Kilo Code KB Patch: v${version} is already fully patched. Nothing to apply.`,
     );
     return false;
   }
   if (verdict === "version not recognized") {
     vscode.window.showWarningMessage(
-      `Kilo Code KB Patch: No known patterns match v${version}. Update KB Patch to support it.`
+      `Kilo Code KB Patch: No known patterns match v${version}. Update KB Patch to support it.`,
     );
     return false;
   }
@@ -3253,7 +3344,7 @@ async function runPatch(
     .flatMap((f) => f.features)
     .filter((ft) => ft.state === "missing").length;
   vscode.window.showWarningMessage(
-    `Kilo Code KB Patch: ${missing} feature(s) on v${version} have no matching pattern. Update KB Patch to cover them.`
+    `Kilo Code KB Patch: ${missing} feature(s) on v${version} have no matching pattern. Update KB Patch to cover them.`,
   );
   return false;
 }
@@ -3263,14 +3354,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("kiloCodeKbPatch.apply", () =>
-      runPatch("apply")
+      runPatch("apply"),
     ),
     vscode.commands.registerCommand("kiloCodeKbPatch.restore", () =>
-      runPatch("restore")
+      runPatch("restore"),
     ),
     vscode.commands.registerCommand("kiloCodeKbPatch.status", () =>
-      runPatch("status")
-    )
+      runPatch("status"),
+    ),
   );
 
   // Auto-patch on activation if not yet patched
@@ -3289,7 +3380,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (suspendReconcile) return;
       if (!e.affectsConfiguration("kiloCodeKbPatch")) return;
       notifyBonusReload(reconcileBonuses(extPath));
-    })
+    }),
   );
 
   // Read after the bonus reconcile, which may itself rewrite webview.js, so the
@@ -3302,7 +3393,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const cssNeedsPatching =
     fs.existsSync(cssPath) &&
     chatCssCoreStatus(fs.readFileSync(cssPath, "utf8")).some(
-      (f) => f.state === "unpatched"
+      (f) => f.state === "unpatched",
     );
   const scriptNeedsPatching =
     content !== "" &&
@@ -3312,7 +3403,7 @@ export function activate(context: vscode.ExtensionContext): void {
       (p) =>
         !content.includes(p.patched) &&
         (content.includes(p.original) ||
-          (p.previous && content.includes(p.previous)))
+          (p.previous && content.includes(p.previous))),
     ) ||
     cssNeedsPatching ||
     scriptNeedsPatching;
@@ -3334,7 +3425,7 @@ export function activate(context: vscode.ExtensionContext): void {
     .showInformationMessage(
       `Kilo Code KB Patch: v${version} detected, apply patches?`,
       "Apply",
-      "Ignore"
+      "Ignore",
     )
     .then((choice) => {
       if (choice === "Apply") {
@@ -3353,6 +3444,9 @@ export function deactivate(): void {}
 // exports, so this has no effect at runtime.
 export const __test = {
   PATCHES,
+  FEATURE_LABELS,
+  FEATURE_GATES,
+  MENTION_SPACED_TRIGGER,
   computeStatus,
   applyPatches,
   restorePatches,

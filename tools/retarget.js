@@ -10,8 +10,10 @@
 // bytes are pristine by construction, which also makes it the only way to target
 // a release that is not installed.
 //
-// Each rule lands in one of four states:
+// Each rule lands in one of five states:
 //   covered     the derived pattern is already in src/extension.ts, nothing to do
+//   n/a         the feature's gate says this build predates the Kilo behavior
+//               it fixes, and the rule agrees by finding no site
 //   NEW         derived cleanly and not yet present, emitted below for pasting
 //   AMBIGUOUS   0 or >1 matches, so the shape moved or now aliases; needs a human
 //   ERROR       an anchor inside the shape went missing; needs a human
@@ -84,6 +86,23 @@ function main() {
       return;
     }
     const result = rule.derive(content);
+
+    // A gated feature is expected to find nothing on a build that predates
+    // the behavior it fixes. The gate and the rule read the same fact off
+    // different text, so a gate that closes where the rule still derives is a
+    // stale gate, and that is reported rather than pasted around.
+    const gate = isBonus ? undefined : test.FEATURE_GATES[rule.key];
+    if (gate && !gate(content)) {
+      if (result.original !== undefined) {
+        console.log(
+          `  ERROR      ${rule.key}: its gate says this build does not need it, but the rule derives a site`
+        );
+        unclear++;
+        return;
+      }
+      console.log(`  n/a        ${rule.key}: this build predates the Kilo behavior it fixes`);
+      return;
+    }
 
     if (result.error) {
       console.log(`  ERROR      ${rule.key}: ${result.error}`);

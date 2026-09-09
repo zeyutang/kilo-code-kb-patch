@@ -117,9 +117,23 @@ function main() {
     console.log("\ncompleteness");
     const status = test.computeStatus(dist);
     check(status.verdict === "fully patched", `verdict is "fully patched"`, `got "${status.verdict}"`);
+    // A row may also read "unneeded", but only where the feature's gate says
+    // this build predates the Kilo behavior it fixes; a label maps back to its
+    // key through the extension's own label table.
+    const keyOf = (label) =>
+      Object.entries(test.FEATURE_LABELS).find(([, l]) => l === label)?.[0];
     for (const file of status.files) {
       if (!file.found) continue;
       for (const feature of file.features) {
+        if (feature.state === "unneeded") {
+          const gate = test.FEATURE_GATES[keyOf(feature.label)];
+          check(
+            gate !== undefined && gate(pristine[file.filename]) === false,
+            `${file.filename}: ${feature.label} (not needed on this build)`,
+            "reads unneeded without a gate that says so"
+          );
+          continue;
+        }
         check(feature.state === "patched", `${file.filename}: ${feature.label}`, `state "${feature.state}"`);
       }
       // Every behavior the patch set declares must reach the status view, since
@@ -154,6 +168,27 @@ function main() {
         missing.length === 0,
         `${file.filename}: every declared feature has a shape rule`,
         `no rule for: ${missing.join(", ")}`
+      );
+    }
+
+    // A gate and its shape rule are two readings of the same fact, that a
+    // build has the Kilo behavior a feature fixes, so the two must agree: a
+    // gate that opens where the rule finds no site would report "missing"
+    // for a build that needs a retarget, and a gate that closes where the
+    // rule derives would hide a site that is there to patch.
+    console.log("\ngates (features that fix a behavior this build may predate)");
+    for (const [key, gate] of Object.entries(test.FEATURE_GATES)) {
+      const rule = RULES.find((r) => r.key === key);
+      if (!check(rule !== undefined, `${key}: the gated feature has a shape rule`)) continue;
+      const content = pristine[rule.file];
+      if (content === undefined) continue;
+      const wanted = gate(content);
+      const derives = rule.derive(content).original !== undefined;
+      check(
+        wanted === derives,
+        `${key}: the gate (${wanted ? "wanted" : "not needed"}) agrees with the rule (${
+          derives ? "derives" : "no site"
+        })`
       );
     }
 

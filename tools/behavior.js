@@ -9,8 +9,8 @@
 // the one this build wants, verify proves it applies uniquely, reverses cleanly
 // and still parses. None of that can see a semantic dependency, and the 7.5.4
 // retarget found one the hard way (a caption calling an i18n key Kilo had
-// dropped, invisible for five releases). Two patches have that exposure, and
-// both are driven here against the build's own code:
+// dropped, invisible for five releases). Three patches have that exposure, and
+// all of them are driven here against the build's own code:
 //
 //   chat-history  its edit passes a synthetic caret into Kilo's own boundary
 //                 gate, so its correctness rests on how that gate reads its
@@ -30,6 +30,12 @@
 //                 and adding them must not cost Kilo the `$$...$$` it already
 //                 renders. So the bundled marked is sliced out and run, with
 //                 Kilo's shipped extension pack registered on it in both forms.
+//
+//   mention-escape its edit writes the mention controller's own dead-query
+//                 slot, so what Escape buys rests on how the controller's
+//                 onInput reads that slot back. The controller's whole module
+//                 is sliced and driven through a table of edits and keys in
+//                 both forms.
 //
 // What each keystroke outcome means:
 //   handled       the handler consumed the key and rewrote the draft
@@ -422,6 +428,229 @@ function runMath(test, content) {
   }
 }
 
+// --- mention menu Escape -----------------------------------------------------
+// The mention-escape splice writes the controller's own dead-query slot, and
+// what that buys depends on onInput consulting the slot the way it does now.
+// The consult sits inside the anchor, so a rewrite of it reads as "missing",
+// but a change to what the slot means, or to when onInput clears it, would
+// leave the pattern deriving, applying and parsing while Escape went back to
+// closing the menu for one keystroke. So the controller is run.
+//
+// Its module is one contiguous region of the bundle: the var statement that
+// declares the trigger regex, the helper functions, and the factory whose
+// returned object names mentionResults. Solid's createSignal, createEffect and
+// onCleanup, the fuzzy matcher, the two mention constants declared just before
+// the region, the timers and document.execCommand are stubbed, by the names
+// the region binds them under. postMessage is recorded and never answered, so
+// no search result ever settles a query on the tool's behalf: every close
+// below is the keystroke's own doing, in the stock form and the patched one.
+
+// The region, as raw bytes, plus the names the runner has to bind around it.
+function mentionModule(content, test) {
+  const trigger = content.indexOf(test.MENTION_SPACED_TRIGGER);
+  if (trigger === -1) throw new Error("no spaced mention trigger in this build");
+  const start = content.lastIndexOf("var ", trigger);
+  const exportAt = content.indexOf("mentionResults:", trigger);
+  if (exportAt === -1) throw new Error("no mentionResults export after the trigger");
+
+  // Walk back through declarations until one's body encloses the export.
+  let factoryAt = exportAt;
+  for (;;) {
+    factoryAt = content.lastIndexOf("function ", factoryAt - 1);
+    if (factoryAt === -1 || factoryAt < start) {
+      throw new Error("no declaration enclosing the mention controller's exports");
+    }
+    if (factoryAt + block(content, factoryAt).length > exportAt) break;
+  }
+  const source = content.slice(start, factoryAt + block(content, factoryAt).length);
+  const factory = /^function (\w+)\(/.exec(content.slice(factoryAt))[1];
+
+  const bind = (label, re, haystack) => {
+    const found = new RegExp(re).exec(haystack);
+    if (!found) throw new Error(`could not bind ${label} for the mention controller`);
+    return found[1];
+  };
+  return {
+    source,
+    factory,
+    terminal: bind("the terminal constant", `var (${ID})="terminal",`, content),
+    changes: bind("the git-changes constant", `var (${ID})="git-changes",`, content),
+    signal: bind("createSignal", `let\\[${ID},${ID}\\]=(${ID})\\(new Set\\)`, source),
+    effect: bind("createEffect", `;(${ID})\\(\\(\\)=>\\{${ID}\\(\\)\\|\\|\\(`, source),
+    cleanup: bind("onCleanup", `;(${ID})\\(\\(\\)=>\\{${ID}\\(\\),${ID}&&clearTimeout`, source),
+    fuzzy: bind("the fuzzy matcher", `(${ID})\\.default\\.single\\(`, source),
+  };
+}
+
+// A live controller from one form of the module, driven the way the prompt
+// component drives it: onInput after every edit, onKeyDown for a key, and
+// selectMention for a row chosen from the menu (its execCommand splices the
+// textarea the way the browser's would).
+function mentionSession(module_) {
+  const src = `
+"use strict";
+const ${module_.terminal} = "terminal", ${module_.changes} = "git-changes";
+const ${module_.signal} = (init) => {
+  let v = init;
+  return [() => v, (n) => (v = typeof n === "function" ? n(v) : n)];
+};
+const ${module_.effect} = (fn) => { fn(); };
+const ${module_.cleanup} = () => {};
+const ${module_.fuzzy} = { default: { single: () => null, go: () => [] } };
+const setTimeout = () => 0, clearTimeout = () => {};
+const document = {
+  active: null,
+  execCommand(command, ui, text) {
+    const t = document.active, a = t.selectionStart, b = t.selectionEnd;
+    t.value = t.value.slice(0, a) + text + t.value.slice(b);
+    t.selectionStart = t.selectionEnd = a + text.length;
+    return true;
+  },
+};
+${module_.source}
+return (ctx) => ({ controller: ${module_.factory}(ctx, undefined, () => false, undefined), document });`;
+  const { controller, document } = new Function(src)()({
+    postMessage: () => {},
+    onMessage: () => () => {},
+  });
+  const textarea = {
+    value: "",
+    selectionStart: 0,
+    selectionEnd: 0,
+    isConnected: true,
+    focus() {},
+    setSelectionRange(a, b) {
+      this.selectionStart = a;
+      this.selectionEnd = b;
+    },
+  };
+  document.active = textarea;
+  const setText = () => {};
+  const open = () => (controller.showMention() ? "open" : "closed");
+  return {
+    // An edit: the draft is now `value` with the caret at `caret` (its end by
+    // default), and the input event reaches the controller.
+    type(value, caret = value.length) {
+      textarea.value = value;
+      textarea.selectionStart = textarea.selectionEnd = caret;
+      controller.onInput(value, caret);
+      return open();
+    },
+    key(name) {
+      const handled = controller.onKeyDown(
+        { key: name, isComposing: false, preventDefault() {}, stopPropagation() {} },
+        textarea,
+        setText,
+        () => {}
+      );
+      return `${open()}, ${handled ? "handled" : "fell-through"}`;
+    },
+    select(file) {
+      controller.selectMention({ type: "file", value: file }, textarea, setText, () => {});
+      return textarea.value;
+    },
+    draft: () => textarea.value,
+  };
+}
+
+// One session per form, walked through the same steps. Each step says what the
+// menu does afterwards in the stock form and in the patched one; the two agree
+// everywhere except where Escape's record is what decides, which is the point.
+const MENTION_STEPS = [
+  { label: "type @docs/f", run: (s) => s.type("@docs/f"), stock: "open", patched: "open" },
+  { label: "Escape", run: (s) => s.key("Escape"), stock: "closed, handled", patched: "closed, handled" },
+  { label: "type on: @docs/fi", run: (s) => s.type("@docs/fi"), stock: "open", patched: "closed" },
+  { label: "edit back to a shorter query: @docs/", run: (s) => s.type("@docs/"), stock: "open", patched: "open" },
+  {
+    label: "choose docs/file.md from the menu, then type h after it",
+    run: (s) => s.type(s.select("docs/file.md") + "h"),
+    stock: "closed",
+    patched: "closed",
+  },
+  {
+    label: "insert a prefix before the @ (caret before the mention)",
+    run: (s) => s.type("Summarize @docs/file.md h", 10),
+    stock: "closed",
+    patched: "closed",
+  },
+  {
+    label: "type on after the shifted mention: ...he",
+    run: (s) => s.type("Summarize @docs/file.md he"),
+    stock: "open",
+    patched: "open",
+  },
+  { label: "Escape", run: (s) => s.key("Escape"), stock: "closed, handled", patched: "closed, handled" },
+  {
+    label: "type on: ...hel",
+    run: (s) => s.type("Summarize @docs/file.md hel"),
+    stock: "open",
+    patched: "closed",
+  },
+  { label: "a new draft: type @", run: (s) => s.type("@"), stock: "open", patched: "open" },
+  { label: "Escape on the empty query", run: (s) => s.key("Escape"), stock: "closed, handled", patched: "closed, handled" },
+  { label: "type on: @f", run: (s) => s.type("@f"), stock: "open", patched: "closed" },
+  { label: "a second @ later on the line: @f bar @", run: (s) => s.type("@f bar @"), stock: "open", patched: "open" },
+  { label: "delete the whole draft", run: (s) => s.type(""), stock: "closed", patched: "closed" },
+  { label: "retype @", run: (s) => s.type("@"), stock: "open", patched: "open" },
+  { label: "type plain prose", run: (s) => s.type("plain"), stock: "closed", patched: "closed" },
+  {
+    label: "Escape with the menu closed",
+    run: (s) => s.key("Escape"),
+    stock: "closed, fell-through",
+    patched: "closed, fell-through",
+  },
+];
+
+function runMention(test, content) {
+  console.log("mention menu Escape (stock -> patched)");
+  if (!test.FEATURE_GATES["mention-escape"](content)) {
+    console.log("  n/a   this build predates the spaced mention query the patch answers");
+    return;
+  }
+  const rule = RULES.find((r) => r.key === "mention-escape");
+  const derived = rule.derive(content);
+  if (!derived.original) {
+    console.log(`  FAIL  mention-escape does not derive here: ${JSON.stringify(derived)}`);
+    failures++;
+    return;
+  }
+  const entry = test.PATCHES.find((f) => f.filename === "webview.js").patches.find(
+    (p) => p.feature === "mention-escape" && content.includes(p.original)
+  );
+  if (!entry) {
+    console.log("  FAIL  no shipped mention-escape entry matches this build");
+    failures++;
+    return;
+  }
+  check(
+    entry.original === derived.original && entry.patched === derived.patched,
+    "the mention-escape entry that applies here is the one the shape rule derives",
+    "shipped and derived text differ; run retarget"
+  );
+
+  const module_ = mentionModule(content, test);
+  const patchedSource = module_.source.replace(entry.original, entry.patched);
+  if (patchedSource === module_.source) {
+    console.log("  FAIL  the shipped mention-escape site is not inside the sliced controller");
+    failures++;
+    return;
+  }
+  const stock = mentionSession(module_);
+  const patched = mentionSession({ ...module_, source: patchedSource });
+  console.log(
+    `  (controller ${module_.factory}, signal ${module_.signal}, ${module_.source.length} bytes sliced)`
+  );
+  for (const step of MENTION_STEPS) {
+    const before = step.run(stock);
+    const after = step.run(patched);
+    check(
+      before === step.stock && after === step.patched,
+      `${step.label}: ${step.stock} -> ${step.patched}`,
+      `stock "${before}", patched "${after}"`
+    );
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -515,6 +744,9 @@ function main() {
 
   console.log("");
   runMath(test, content);
+
+  console.log("");
+  runMention(test, content);
 
   console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
   return failures === 0 ? 0 : 1;

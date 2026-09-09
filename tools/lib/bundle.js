@@ -112,6 +112,10 @@ const PATCH_MARKERS = [
   // modifier half of that edit needs no marker of its own and could not serve
   // as one anyway, since pristine webview.js already ships `.ctrlKey)&&!`.
   '==="ArrowUp"?0:',
+  // The mention-escape splice's guard on the controller's dead-query slot.
+  // Kilo indexes nothing with `.at]` and never compares a character to "@"
+  // this way: 0 in every pristine build checked, 7.4.17 through 7.5.16.
+  '.at]!=="@"&&(',
   // The math-rendering bonus. Every injected extension is named with the same
   // prefix, and Kilo names none of its own that way, so one marker covers all
   // three and every release's variant of them.

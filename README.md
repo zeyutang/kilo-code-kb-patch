@@ -6,7 +6,7 @@
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/zeyutang/kilo-code-kb-patch)](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
 
 Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd/Ctrl+Enter` sends, `Cmd/Ctrl+Up` and `Cmd/Ctrl+Down` recall earlier messages, and permission prompts stop hijacking your keystrokes while you are typing.
-It also keeps the chat history scrolled to the bottom while you type.
+It also keeps the chat history scrolled to the bottom while you type, and makes `Escape` dismiss the `@` mention menu for good.
 
 ## Supported versions (latest three)
 
@@ -23,20 +23,25 @@ Each patch release keeps the earlier versions' patterns, so a newer patch still 
 
 ### Keyboard patches
 
-| Key                    | Before Patched (native Kilo Code)    | After Patched                                      |
-| ---------------------- | ------------------------------------ | -------------------------------------------------- |
-| `Enter`                | Send / Approve                       | **New line** (approves when the chat box is empty) |
-| `Cmd/Ctrl+Enter`       | Send / Save                          | **Send / Approve / Save**                          |
-| `Shift+Enter`          | New line                             | New line (unchanged)                               |
-| `Escape`               | Reject / Abort                       | Reject / Abort **only when the chat box is empty** |
-| `Shift+Escape`         | Reject / Abort                       | **Reject / Abort** (always)                        |
-| `Up` / `Down`          | Previous / next message at the edges | **Caret movement only**                            |
-| `Cmd/Ctrl+Up` / `Down` | Caret to start / end                 | **Previous / next message**                        |
+| Key                      | Before Patched (native Kilo Code)        | After Patched                                             |
+| ------------------------ | ---------------------------------------- | --------------------------------------------------------- |
+| `Enter`                  | Send / Approve                           | **New line** (approves when the chat box is empty)        |
+| `Cmd/Ctrl+Enter`         | Send / Save                              | **Send / Approve / Save**                                 |
+| `Shift+Enter`            | New line                                 | New line (unchanged)                                      |
+| `Escape`                 | Reject / Abort                           | Reject / Abort **only when the chat box is empty**        |
+| `Escape` (`@` menu open) | Closes the menu until the next keystroke | Closes the menu **and keeps it closed** while you type on |
+| `Shift+Escape`           | Reject / Abort                           | **Reject / Abort** (always)                               |
+| `Up` / `Down`            | Previous / next message at the edges     | **Caret movement only**                                   |
+| `Cmd/Ctrl+Up` / `Down`   | Caret to start / end                     | **Previous / next message**                               |
 
 Applies to the chat input, the permission prompt, and the KiloClaw edit/chat panels.
 
 Native Kilo Code recalls a message when a bare `Up` or `Down` reaches the start or end of what you typed, which is why holding the key can jump away mid-edit.
 Patched, recall moves to `Cmd/Ctrl+Up` / `Down` and works from anywhere in the chat box, and stepping forward past the newest message brings your unsent draft back.
+
+Since Kilo Code 7.5.11 an `@` mention query may contain spaces, so ordinary prose typed after a mention can bring the menu back on every keystroke, `Escape` only closes it until the next key, and `Enter` then replaces your text with the highlighted file ([Kilo-Org/kilocode#13961](https://github.com/Kilo-Org/kilocode/issues/13961)).
+Patched, `Escape` dismisses the query you were looking at: the menu stays closed while you type on, and comes back when you edit back into a shorter query or retype the `@`.
+Earlier Kilo Code releases end a query at the first space and need no such patch, which the status view reports as "not needed".
 
 ### Scrolling
 
@@ -139,7 +144,7 @@ Pick a suggested answer or type your own. The patch leaves these alone.
 
 ### Menus and dialogs
 
-Model and mode pickers, confirmations, `@`-mentions. The patch leaves these alone.
+Model and mode pickers, confirmations, `@`-mentions. The patch leaves these alone, except that `Escape` in the `@`-mention menu now dismisses the query for good (see [Keyboard patches](#keyboard-patches)).
 
 - Kilo Code moves focus into them when they open and handles their keys: arrow keys or type-ahead to move, `Enter` to choose, `Escape` to close pop-up menu **without** invoking the permission prompt abort.
 

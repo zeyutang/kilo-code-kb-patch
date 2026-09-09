@@ -27,6 +27,12 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.23.2
+
+- `Escape` in the `@` mention menu now keeps the menu closed while you type on; since Kilo Code 7.5.11 the menu came back on the next keystroke, and `Enter` could then replace your text with the highlighted file
+- The menu comes back when you edit back into a shorter query or retype the `@`
+- Applies on Kilo Code 7.5.11 through 7.5.16; earlier releases end a query at the first space, and the status view reports the patch as not needed there
+
 ## 1.23.1
 
 - The chat history stays at the bottom after a backspace that empties the last line of a multi-line draft; since 1.22.1 that keystroke left it one line short until the line count next changed

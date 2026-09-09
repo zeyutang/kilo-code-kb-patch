@@ -15,13 +15,15 @@
 //                 rewrites the first match, so first must equal only)
 //   completeness  applying yields "fully patched" with no feature missing
 //   idempotence   a second apply is a no-op, so activation cannot drift
-//   validity      the fully patched bundles still parse
+//   validity      the fully patched bundles still parse, the appended script
+//                 block included
 //   zero leakage  restoring returns the file byte-for-byte to pristine, which
 //                 is the strongest statement that nothing outside the intended
 //                 spans was touched
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const vm = require("vm");
 const { execFileSync } = require("child_process");
 const { loadExtension, shim } = require("./lib/load");
 const { resolveBundleSource, assertPristine, countOccurrences } = require("./lib/bundle");
@@ -104,6 +106,13 @@ function main() {
     for (const key of test.CHAT_CSS_CORE) {
       check(cssApplied[key], `${test.CHAT_STYLE_FILE}: applied "${key}"`);
     }
+    // The core script block, the same patch's other half, appended to the
+    // bundle the splices above landed in.
+    const scriptPath = path.join(dist, test.CHAT_SCRIPT_FILE);
+    const scriptApplied = test.reconcileChatScript(sandbox, true);
+    for (const key of test.CHAT_SCRIPT_CORE) {
+      check(scriptApplied[key], `${test.CHAT_SCRIPT_FILE}: applied "${key}" block`);
+    }
 
     console.log("\ncompleteness");
     const status = test.computeStatus(dist);
@@ -115,13 +124,17 @@ function main() {
       }
       // Every behavior the patch set declares must reach the status view, since
       // a feature that never renders is also absent from the verdict and would
-      // read as "nothing wrong" while being unpatched.
+      // read as "nothing wrong" while being unpatched. A bundle declares its
+      // splices' features plus, for the one that takes it, the script block's.
       const declared = new Set(
         file.filename === test.CHAT_STYLE_FILE
           ? test.CHAT_CSS_CORE
-          : (test.PATCHES.find((f) => f.filename === file.filename)?.patches ?? []).map(
-              (p) => p.feature
-            )
+          : [
+              ...(test.PATCHES.find((f) => f.filename === file.filename)?.patches ?? []).map(
+                (p) => p.feature
+              ),
+              ...(file.filename === test.CHAT_SCRIPT_FILE ? test.CHAT_SCRIPT_CORE : []),
+            ]
       );
       check(
         file.features.length === declared.size,
@@ -154,6 +167,11 @@ function main() {
     check(
       test.CHAT_CSS_CORE.every((key) => !cssAgain[key]),
       `${test.CHAT_STYLE_FILE}: re-apply is a no-op`
+    );
+    const scriptAgain = test.reconcileChatScript(sandbox, true);
+    check(
+      test.CHAT_SCRIPT_CORE.every((key) => !scriptAgain[key]),
+      `${test.CHAT_SCRIPT_FILE}: re-apply of the block is a no-op`
     );
 
     // The core stylesheet block stores no per-release text: it is written when
@@ -240,6 +258,183 @@ function main() {
         "Apply rewrites a stale block in place, exactly once"
       );
       check(row() === "patched", 'the fresh block reads "patched"', `got "${row()}"`);
+      check(
+        test.computeStatus(dist).verdict === "fully patched",
+        "and the verdict is whole again",
+        `got "${test.computeStatus(dist).verdict}"`
+      );
+    }
+
+    // The script block is the other half of the same patch: a listener pair
+    // appended to the bundle, with no per-release text either. Its threshold
+    // is read out of the build, so what is asserted is the derivation, the
+    // block's shape and placement, its survival across the bundle's own bonus
+    // reconciles, the status rows, and the round trip. The block itself has no
+    // dependency on Kilo's code, only on three class names, so unlike the
+    // stylesheet rule it can also be run here, against a stand-in DOM.
+    console.log("\nchat scroll (core script patch)");
+    const pristineJs = pristine[test.CHAT_SCRIPT_FILE];
+    if (pristineJs === undefined) {
+      check(false, `${test.CHAT_SCRIPT_FILE} is present in dist/`);
+    } else {
+      const threshold = test.readScrollThreshold(pristineJs);
+      check(
+        Number.isInteger(threshold),
+        "Kilo's chat templates and scroll threshold are readable",
+        JSON.stringify({ threshold })
+      );
+      const block = test.chatScriptBlock("chat-scroll", pristineJs);
+      const scriptOn = () => fs.readFileSync(scriptPath, "utf8");
+      const marker = "kilo-code-kb-patch:chat-scroll:begin";
+      check(
+        countOccurrences(scriptOn(), marker) === 1 &&
+          countOccurrences(scriptOn(), "kilo-code-kb-patch:chat-scroll:end") === 1,
+        "exactly one chat-scroll block"
+      );
+      check(
+        block !== "" && scriptOn().endsWith(block),
+        "the block is appended at the very end of the bundle"
+      );
+      const body = test.chatScrollScript(threshold);
+      check(
+        body.includes('addEventListener("beforeinput"') &&
+          body.includes('addEventListener("input"') &&
+          body.includes("textarea.prompt-input") &&
+          body.includes(".chat-view") &&
+          body.includes(".message-list") &&
+          body.includes(`< ${threshold} ?`),
+        "the script names the three class names and this build's threshold"
+      );
+      check(
+        !body.includes("preventDefault") && !body.includes("stopPropagation"),
+        "the script prevents and stops nothing"
+      );
+
+      // Run it. The stand-in scroller clamps its scrollTop the way a real one
+      // does, since that clamp is the whole point.
+      const listeners = {};
+      const list = {
+        scrollHeight: 4000,
+        clientHeight: 500,
+        top: 3500,
+        get scrollTop() {
+          return this.top;
+        },
+        set scrollTop(v) {
+          this.top = Math.max(0, Math.min(v, this.scrollHeight - this.clientHeight));
+        },
+      };
+      class HTMLTextAreaElement {
+        constructor(selector, inChatView) {
+          this.selector = selector;
+          this.inChatView = inChatView;
+        }
+        matches(s) {
+          return s === this.selector;
+        }
+        closest(s) {
+          return s === ".chat-view" && this.inChatView
+            ? { querySelector: (q) => (q === ".message-list" ? list : null) }
+            : null;
+        }
+      }
+      vm.runInNewContext(body, {
+        window: {
+          addEventListener: (type, fn, capture) => {
+            listeners[type] = { fn, capture: !!capture };
+          },
+        },
+        HTMLTextAreaElement,
+      });
+      check(
+        listeners.beforeinput?.capture === true && listeners.input?.capture === false,
+        "the script listens on window: beforeinput in capture, input in bubble"
+      );
+      // One edit: the snapshot, then the clamp the browser would apply
+      // mid-edit, then the input event. Returns the distance left.
+      const edit = (target, clampBy) => {
+        listeners.beforeinput.fn({ target });
+        list.scrollTop -= clampBy;
+        listeners.input.fn({ target });
+        return list.scrollHeight - list.clientHeight - list.scrollTop;
+      };
+      const prompt = new HTMLTextAreaElement("textarea.prompt-input", true);
+      list.scrollTop = 3500;
+      check(edit(prompt, 21) === 0, "an edit that clamped the history re-pins it");
+      list.scrollTop = 3500 - threshold + 1;
+      check(edit(prompt, 0) === 0, "a history within Kilo's threshold counts as at the bottom");
+      list.scrollTop = 3500 - threshold - 40;
+      const away = list.scrollTop;
+      check(
+        edit(prompt, 0) === 3500 - away,
+        "a history the user scrolled away from is left where it was"
+      );
+      list.scrollTop = 3500;
+      check(
+        edit(new HTMLTextAreaElement("textarea.other", true), 21) === 21,
+        "an edit in another textarea is ignored"
+      );
+      list.scrollTop = 3500;
+      check(
+        edit(new HTMLTextAreaElement("textarea.prompt-input", false), 21) === 21,
+        "a prompt textarea outside .chat-view is ignored"
+      );
+      list.scrollTop = 3500;
+      check(edit({ tagName: "DIV" }, 21) === 21, "an edit in a non-textarea is ignored");
+
+      // The bundle's bonuses are splices elsewhere in the file, so switching
+      // them on and off must leave the block exactly as it was.
+      const jsRow = () =>
+        test
+          .computeStatus(dist)
+          .files.find((f) => f.filename === test.CHAT_SCRIPT_FILE)
+          ?.features.find((ft) => ft.label.startsWith("Chat scroll"))?.state;
+      check(jsRow() === "patched", 'the block reads "patched" in the bundle\'s rows', `got "${jsRow()}"`);
+      shim.setConfig({ addAttachFileButton: true, chatMathRendering: true });
+      test.reconcileAttachFileButton(sandbox);
+      test.reconcileMathRendering(sandbox);
+      check(
+        scriptOn().endsWith(block) && jsRow() === "patched",
+        "enabling the bundle bonuses leaves the block in place"
+      );
+      shim.setConfig({});
+      test.reconcileAttachFileButton(sandbox);
+      test.reconcileMathRendering(sandbox);
+      check(
+        scriptOn().endsWith(block) && jsRow() === "patched",
+        "disabling them does too"
+      );
+
+      const removed = test.reconcileChatScript(sandbox, false);
+      check(
+        removed["chat-scroll"] && !scriptOn().includes(marker),
+        "restoring removes the block"
+      );
+      check(jsRow() === "unpatched", 'an absent block reads "unpatched"', `got "${jsRow()}"`);
+      check(
+        test.computeStatus(dist).verdict === "partially patched",
+        "and the verdict counts it",
+        `got "${test.computeStatus(dist).verdict}"`
+      );
+
+      // A stale form (an older kb-patch's text) is reported and rewritten
+      // rather than kept or duplicated.
+      fs.writeFileSync(
+        scriptPath,
+        scriptOn() +
+          "\n/* kilo-code-kb-patch:chat-scroll:begin */\n/* stale */\n/* kilo-code-kb-patch:chat-scroll:end */\n",
+        "utf8"
+      );
+      check(jsRow() === "unpatched", 'a stale block reads "unpatched"', `got "${jsRow()}"`);
+      const upgraded = test.reconcileChatScript(sandbox, true);
+      check(
+        upgraded["chat-scroll"] &&
+          !scriptOn().includes("/* stale */") &&
+          countOccurrences(scriptOn(), marker) === 1 &&
+          scriptOn().endsWith(block),
+        "Apply rewrites a stale block in place, exactly once"
+      );
+      check(jsRow() === "patched", 'the fresh block reads "patched"', `got "${jsRow()}"`);
       check(
         test.computeStatus(dist).verdict === "fully patched",
         "and the verdict is whole again",
@@ -552,6 +747,7 @@ function main() {
     test.reconcileAttachFileButton(sandbox);
     test.reconcileMathRendering(sandbox);
     test.reconcileChatStyle(sandbox, coreOff);
+    test.reconcileChatScript(sandbox, false);
     for (const fp of test.PATCHES) {
       if (pristine[fp.filename] === undefined) continue;
       test.restorePatches(path.join(dist, fp.filename), fp.patches);

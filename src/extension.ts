@@ -1449,6 +1449,16 @@ function statusForFile(
   }));
 }
 
+// Rows in FEATURE_ORDER, whichever derivation they came from.
+function inFeatureOrder<T extends { label: string }>(rows: T[]): T[] {
+  const rank = new Map<string, number>(
+    FEATURE_ORDER.map((key, i) => [FEATURE_LABELS[key], i])
+  );
+  return [...rows].sort(
+    (a, b) => (rank.get(a.label) ?? 0) - (rank.get(b.label) ?? 0)
+  );
+}
+
 function computeVerdict(files: FileStatus[]): Verdict {
   const states = files
     .filter((f) => f.found)
@@ -1480,14 +1490,19 @@ function computeStatus(distDir: string): {
       continue;
     }
     const content = fs.readFileSync(fpath, "utf8");
+    // A core block has no PatchDef: it is derived from the build at reconcile
+    // time, so its row comes from that same derivation, and it takes its place
+    // in FEATURE_ORDER among the file's splices.
+    const features = statusForFile(content, fp.patches);
+    if (fp.filename === CHAT_SCRIPT_FILE) {
+      features.push(...chatScriptCoreStatus(content));
+    }
     files.push({
       filename: fp.filename,
       found: true,
-      features: statusForFile(content, fp.patches),
+      features: inFeatureOrder(features),
     });
   }
-  // The stylesheet's core block has no PatchDef: it is derived from the build
-  // at reconcile time, so its row comes from that same derivation.
   const cssPath = path.join(distDir, CHAT_STYLE_FILE);
   files.push(
     fs.existsSync(cssPath)
@@ -2261,22 +2276,27 @@ function reconcileMathRendering(extPath: string): boolean {
   return reconcileVariant(extPath, MATH_EXTENSIONS, chatMathRenderingEnabled());
 }
 
-// --- Chat stylesheet blocks --------------------------------------------------
-// One core patch and two bonuses are stylesheet work, and all three are applied
-// by appending a delimited block to Kilo's own dist/webview.css instead of
-// splicing a bundle. That buys what a JS patch cannot: no minified identifier
-// is involved, so nothing here needs re-targeting on a re-minify, and removal
-// is exact, since an append is reversed by deleting the block.
+// --- Appended blocks ---------------------------------------------------------
+// One core patch and two bonuses are applied by appending a delimited block to
+// one of Kilo's own dist/ files instead of splicing into a bundle's code. That
+// buys what a splice cannot: no minified identifier is involved, so nothing
+// here needs re-targeting on a re-minify, and removal is exact, since an append
+// is reversed by deleting the block. A block's markers are CSS comments, which
+// are JS comments too, so the same machinery serves both files.
 //
-//   chat-scroll  core: the chat textarea is sized by the engine instead of by
-//                Kilo's measure-then-set script, which is what keeps the chat
-//                history pinned to the bottom while typing (see
-//                CHAT_SCROLL_RULE). Apply Patches writes it, Restore Originals
-//                removes it, and it feeds the verdict like a keyboard patch.
-//   typography   bonus: the agent's reply is scaled and optionally re-fonted
-//   math         bonus: rendered math is sized, which is part of the
-//                math-rendering bonus rather than a knob of its own: the size
-//                is meaningless when that bonus is off, so this block is
+//   chat-scroll  core, two blocks: a stylesheet rule that hands the chat
+//                textarea's sizing to the engine instead of Kilo's
+//                measure-then-set script, and a script that re-pins the chat
+//                history after an edit the browser laid out mid-way through
+//                (see CHAT_SCROLL_RULE and chatScrollScript). Together they
+//                keep the history at the bottom while typing. Apply Patches
+//                writes them, Restore Originals removes them, and each feeds
+//                the verdict like a keyboard patch.
+//   typography   bonus, webview.css: the agent's reply is scaled and optionally
+//                re-fonted
+//   math         bonus, webview.css: rendered math is sized, which is part of
+//                the math-rendering bonus rather than a knob of its own: the
+//                size is meaningless when that bonus is off, so this block is
 //                written only while it is on
 //
 // Each patch owns its own block, so a change can be attributed to the patch it
@@ -2299,46 +2319,145 @@ function reconcileMathRendering(extPath: string): boolean {
 // A build that renamed or restructured those declarations reads as
 // "unavailable" in the status view rather than producing a wrong size.
 const CHAT_STYLE_FILE = "webview.css";
+const CHAT_SCRIPT_FILE = "webview.js";
 
-// One block per patch, in the order they are appended: the core patch first,
-// keyed by its FEATURE_ORDER name, then the bonuses.
+// One block per patch and file, in the order they are appended: a core patch
+// first, keyed by its FEATURE_ORDER name, then the bonuses.
 const CHAT_CSS_BLOCKS = ["chat-scroll", "typography", "math"] as const;
 type ChatCssBlockKey = (typeof CHAT_CSS_BLOCKS)[number];
+const CHAT_SCRIPT_BLOCKS = ["chat-scroll"] as const;
+type ChatScriptBlockKey = (typeof CHAT_SCRIPT_BLOCKS)[number];
+type PatchBlockKey = ChatCssBlockKey | ChatScriptBlockKey;
 
-// The core stylesheet patches: written by Apply, removed by Restore, listed in
-// the status view under webview.css and counted in the verdict. Typed against
-// both lists, so a key that is not registered as a feature (or not a block) is
-// a compile error rather than a row that never renders.
+// The core blocks: written by Apply, removed by Restore, listed in the status
+// view under their file and counted in the verdict. Typed against both lists,
+// so a key that is not registered as a feature (or not a block) is a compile
+// error rather than a row that never renders.
 const CHAT_CSS_CORE = ["chat-scroll"] as const satisfies readonly (ChatCssBlockKey &
   FeatureKey)[];
 type ChatCssCoreKey = (typeof CHAT_CSS_CORE)[number];
+const CHAT_SCRIPT_CORE = [
+  "chat-scroll",
+] as const satisfies readonly (ChatScriptBlockKey & FeatureKey)[];
 
 function isChatCssCore(key: ChatCssBlockKey): key is ChatCssCoreKey {
   return (CHAT_CSS_CORE as readonly ChatCssBlockKey[]).includes(key);
 }
 
-const chatCssBegin = (key: ChatCssBlockKey) =>
+const patchBlockBegin = (key: PatchBlockKey) =>
   `/* kilo-code-kb-patch:${key}:begin */`;
-const chatCssEnd = (key: ChatCssBlockKey) =>
+const patchBlockEnd = (key: PatchBlockKey) =>
   `/* kilo-code-kb-patch:${key}:end */`;
 
 // One block, with the newlines around it, so extracting it and stripping it are
 // the same span. Built per key rather than shared, since the blocks sit next to
 // each other and a key-agnostic pattern could pair one block's begin with
 // another's end.
-function chatCssBlockRe(key: ChatCssBlockKey): RegExp {
+function patchBlockRe(key: PatchBlockKey): RegExp {
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
-    `\\n?${esc(chatCssBegin(key))}[\\s\\S]*?${esc(chatCssEnd(key))}\\n?`
+    `\\n?${esc(patchBlockBegin(key))}[\\s\\S]*?${esc(patchBlockEnd(key))}\\n?`
   );
 }
 
-// Strip every block this extension has ever appended, which is what returns the
-// file to the bytes Kilo shipped.
-function stripChatCss(css: string): string {
-  let out = css;
-  for (const key of CHAT_CSS_BLOCKS) out = out.replace(chatCssBlockRe(key), "");
+// A block's full text from its body: the markers on their own lines, and a
+// newline on each side so the append lands on a line of its own whatever the
+// file ends with.
+function patchBlock(key: PatchBlockKey, body: string): string {
+  return `\n${patchBlockBegin(key)}\n${body}\n${patchBlockEnd(key)}\n`;
+}
+
+// Strip every block this extension has ever appended to a file, which is what
+// returns it to the bytes Kilo shipped.
+function stripBlocks(content: string, keys: readonly PatchBlockKey[]): string {
+  let out = content;
+  for (const key of keys) out = out.replace(patchBlockRe(key), "");
   return out;
+}
+
+function stripChatCss(css: string): string {
+  return stripBlocks(css, CHAT_CSS_BLOCKS);
+}
+
+function stripChatScript(js: string): string {
+  return stripBlocks(js, CHAT_SCRIPT_BLOCKS);
+}
+
+// Rewrite one file's appended blocks and report which changed. `desired` gives
+// each key's whole block text ("" for none) from the file's pristine bytes and
+// the block as currently found, which is what lets a core block be carried over
+// untouched by a pass that has no say on it. Every block is stripped first, so
+// this is idempotent, self-healing after a Kilo update replaces the file, and
+// exact in reverse. Fails safe: a missing file changes nothing.
+function reconcileBlocks<K extends PatchBlockKey>(
+  filePath: string,
+  keys: readonly K[],
+  desired: (key: K, pristine: string, current: string) => string
+): Record<K, boolean> {
+  const changed = Object.fromEntries(keys.map((key) => [key, false])) as Record<
+    K,
+    boolean
+  >;
+  if (!fs.existsSync(filePath)) return changed;
+  const content = fs.readFileSync(filePath, "utf8");
+  const pristine = stripBlocks(content, keys);
+
+  let updated = pristine;
+  const wanted = {} as Record<K, string>;
+  for (const key of keys) {
+    const current = patchBlockRe(key).exec(content)?.[0] ?? "";
+    wanted[key] = desired(key, pristine, current);
+    updated += wanted[key];
+  }
+  if (updated === content) return changed;
+
+  for (const key of keys) {
+    changed[key] = (patchBlockRe(key).exec(content)?.[0] ?? "") !== wanted[key];
+  }
+  fs.writeFileSync(filePath, updated, "utf8");
+  return changed;
+}
+
+// A file's core blocks as status rows, in the shape statusForFile gives the
+// bundle splices. "missing" means the block's anchors no longer match (this
+// build does not look the way the block assumes), "unpatched" that the block is
+// absent or stale (Apply writes the current form), "patched" that the current
+// form is present.
+function blockCoreStatus<K extends PatchBlockKey & FeatureKey>(
+  content: string,
+  keys: readonly K[],
+  strip: (content: string) => string,
+  block: (key: K, pristine: string) => string
+): { label: string; state: FeatureState }[] {
+  const pristine = strip(content);
+  return keys.map((key) => {
+    const desired = block(key, pristine);
+    const current = patchBlockRe(key).exec(content)?.[0] ?? "";
+    const state: FeatureState = !desired
+      ? "missing"
+      : current === desired
+      ? "patched"
+      : "unpatched";
+    return { label: FEATURE_LABELS[key], state };
+  });
+}
+
+// A reconcile pass's effect on a file's core blocks, in the shape the apply and
+// restore commands report the bundle splices in.
+function blockResult<K extends PatchBlockKey & FeatureKey>(
+  filename: string,
+  keys: readonly K[],
+  changed: Record<K, boolean>,
+  mode: "apply" | "restore"
+): PatchResult {
+  const moved = keys.filter((key) => changed[key]).map((key) => FEATURE_LABELS[key]);
+  return {
+    filename,
+    applied: mode === "apply" ? moved : [],
+    skipped: [],
+    reverted: mode === "restore" ? moved : [],
+    noChanges: moved.length === 0,
+  };
 }
 
 // The agent's rendered reply, and nothing else. Kilo puts a user message under
@@ -2440,7 +2559,7 @@ function chatFontFamily(): string {
   return CHAT_FONT_FAMILY_RE.test(value) ? value : "";
 }
 
-// --- chat-scroll -------------------------------------------------------------
+// --- chat-scroll, the stylesheet half ----------------------------------------
 // Kilo sizes the chat textarea from a script that runs on every input event: it
 // sets the height to `auto`, reads `scrollHeight`, then sets the height to that
 // (`ln` in 7.5.15, `Jt` in 7.5.9). The read forces a synchronous layout in
@@ -2471,7 +2590,8 @@ function chatFontFamily(): string {
 // Verified in a headless Chromium on a copy of Kilo's layout: stock ends 40px
 // short of the bottom after a backspace inside a three-line draft and stays
 // there until the line count changes; with this rule the distance is 0 on
-// every keystroke.
+// every keystroke that Kilo's own measurement would have clamped. The edits the
+// browser itself lays out part-way through are the script half's job, below.
 const CHAT_SCROLL_RULE =
   "@supports (field-sizing: content) { .chat-view .prompt-input { field-sizing: content; height: auto !important; } }";
 
@@ -2501,6 +2621,105 @@ function readPromptSizing(css: string): PromptSizing | undefined {
     return undefined;
   }
   return { minHeight: sizing[1], maxHeight: sizing[2] };
+}
+
+// --- chat-scroll, the script half --------------------------------------------
+// With the textarea engine-sized, Kilo's measurement no longer moves anything,
+// but the browser lays some edits out part-way through on its own. A backspace
+// that empties the last line of a draft leaves the text ending in a newline,
+// and the editing command forces a layout before it puts back the placeholder
+// break that renders that empty line, so that layout sees the textarea one
+// line shorter. The scroller grows by that line in the same layout, its
+// maximum scrollTop drops, and the browser clamps the position. The final
+// layout is then identical to the one before the keystroke, so neither of
+// Kilo's ResizeObservers fires, and the history sits one line short until the
+// line count next changes (reported on 7.5.16 with the 1.22.1 rule applied:
+// two lines, Enter, a character typed, deleted and typed again, and the
+// history 21px short from the deletion on).
+//
+// So this block records, before each edit of the chat textarea, whether the
+// history was at the bottom, within Kilo's own threshold (read out of the
+// bundle so the two agree), and after the edit puts it back there. It listens
+// on window: beforeinput in the capture phase, which runs before any of Kilo's
+// handlers and before the browser touches the DOM, and input in the bubble
+// phase, which runs after Solid's document-level delegate has run Kilo's own
+// input handler and its measurement, so on an engine without field-sizing it
+// covers Kilo's collapse as well. Kilo registers no beforeinput handler and
+// stops no input event. The scroll it makes lands within the threshold, which
+// the controller's scroll handler treats as benign on every build checked, so
+// Kilo's userScrolled state is untouched: a history the user scrolled away
+// from is never moved, since it was not at the bottom before the edit. Nothing
+// is prevented or stopped, and no other textarea qualifies: the target must be
+// textarea.prompt-input inside .chat-view, and the list is found from there.
+//
+// Verified in the same headless Chromium, driven with real key events: with
+// the stylesheet rule alone the backspace that empties the third line leaves
+// the history 21px short at a 15px base font; with this block the distance is
+// 0 after every keystroke, with or without the rule.
+//
+// What the block assumes about Kilo, matched to decide whether it is written
+// at all: the three class names it reaches the DOM through, each in exactly
+// one template, and the controller's default threshold. A build that renamed
+// or duplicated any reads as "missing" in the status view and keeps stock
+// behavior, rather than carrying a script that finds nothing. Exported to the
+// harness, whose probe asserts the same on every pristine build.
+const CHAT_SCROLL_SCRIPT_ANCHORS: Record<string, RegExp> = {
+  "message-list template": /<div class=message-list[ >]/,
+  "chat-view template": /class=chat-view[ >]/,
+  "prompt-input template": /<textarea class=prompt-input /,
+  "bottom threshold": /bottomThreshold\?\?(\d+)/,
+};
+
+// Kilo's own "at the bottom" distance in px, or undefined when any anchor is
+// missing or ambiguous.
+function readScrollThreshold(js: string): number | undefined {
+  for (const re of Object.values(CHAT_SCROLL_SCRIPT_ANCHORS)) {
+    if ((js.match(new RegExp(re.source, "g")) ?? []).length !== 1) {
+      return undefined;
+    }
+  }
+  const threshold = Number(
+    CHAT_SCROLL_SCRIPT_ANCHORS["bottom threshold"].exec(js)?.[1]
+  );
+  return Number.isInteger(threshold) ? threshold : undefined;
+}
+
+// The block's body. Plain source rather than minified, since it is read in
+// place by anyone who opens the bundle to see what changed.
+function chatScrollScript(threshold: number): string {
+  return [
+    "(() => {",
+    "  // Kilo Code KB Patch: keep the chat history at the bottom across an edit",
+    "  // of the chat box, which the browser can lay out part-way through and",
+    "  // clamp the history's scroller on. Before the edit, note whether the",
+    "  // history was at the bottom; after it, put it back there.",
+    "  const listOf = (e) => {",
+    "    const t = e.target;",
+    '    return t instanceof HTMLTextAreaElement && t.matches("textarea.prompt-input")',
+    '      ? t.closest(".chat-view")?.querySelector(".message-list") ?? null',
+    "      : null;",
+    "  };",
+    "  let pinned = null;",
+    '  window.addEventListener("beforeinput", (e) => {',
+    "    const list = listOf(e);",
+    `    pinned = list && list.scrollHeight - list.clientHeight - list.scrollTop < ${threshold} ? list : null;`,
+    "  }, true);",
+    '  window.addEventListener("input", (e) => {',
+    "    const list = pinned;",
+    "    pinned = null;",
+    "    if (list && list === listOf(e)) list.scrollTop = list.scrollHeight;",
+    "  });",
+    "})();",
+  ].join("\n");
+}
+
+// The block for one key, or "" when this build does not look the way the
+// script assumes, which leaves the bundle byte-identical to Kilo's.
+function chatScriptBlock(key: ChatScriptBlockKey, pristineJs: string): string {
+  const threshold = readScrollThreshold(pristineJs);
+  return threshold === undefined
+    ? ""
+    : patchBlock(key, chatScrollScript(threshold));
 }
 
 // The rules one block asks for, given the settings and this build's own
@@ -2549,8 +2768,7 @@ function chatCssRules(key: ChatCssBlockKey, pristineCss: string): string[] {
 // is enough to win without !important.
 function chatCssBlock(key: ChatCssBlockKey, pristineCss: string): string {
   const rules = chatCssRules(key, pristineCss);
-  if (rules.length === 0) return "";
-  return `\n${chatCssBegin(key)}\n${rules.join("\n")}\n${chatCssEnd(key)}\n`;
+  return rules.length === 0 ? "" : patchBlock(key, rules.join("\n"));
 }
 
 // What the core blocks should do in one reconcile pass: true writes the current
@@ -2569,77 +2787,28 @@ function coreCssDecision(on: boolean): CoreCssDecision {
 // passed, and are otherwise carried over exactly as found: a bonus reconcile
 // (activation, a settings change) must neither apply a core patch without the
 // apply prompt nor drop one, and a stale form is left for Apply to rewrite, the
-// way a bundle patch's `previous` is. Every block is stripped first, so this is
-// idempotent, self-healing after a Kilo update replaces the file, and exact in
-// reverse. Fails safe: a missing stylesheet changes nothing.
+// way a bundle patch's `previous` is.
 function reconcileChatStyle(
   extPath: string,
   core?: CoreCssDecision
 ): Record<ChatCssBlockKey, boolean> {
-  const unchanged = { "chat-scroll": false, typography: false, math: false };
-  const cssPath = path.join(extPath, "dist", CHAT_STYLE_FILE);
-  if (!fs.existsSync(cssPath)) return unchanged;
-  const content = fs.readFileSync(cssPath, "utf8");
-  const pristine = stripChatCss(content);
-
-  const desired = {} as Record<ChatCssBlockKey, string>;
-  let updated = pristine;
-  for (const key of CHAT_CSS_BLOCKS) {
-    const current = chatCssBlockRe(key).exec(content)?.[0] ?? "";
-    desired[key] = isChatCssCore(key)
-      ? core
-        ? core[key]
-          ? chatCssBlock(key, pristine)
-          : ""
-        : current
-      : chatCssBlock(key, pristine);
-    updated += desired[key];
-  }
-  if (updated === content) return unchanged;
-
-  const changed = {} as Record<ChatCssBlockKey, boolean>;
-  for (const key of CHAT_CSS_BLOCKS) {
-    changed[key] = (chatCssBlockRe(key).exec(content)?.[0] ?? "") !== desired[key];
-  }
-  fs.writeFileSync(cssPath, updated, "utf8");
-  return changed;
-}
-
-// The core blocks' rows for the status view, in the shape statusForFile gives
-// the bundles. "missing" means the anchors no longer match (this build's
-// stylesheet does not look the way the rule assumes), "unpatched" that the
-// block is absent or stale (Apply writes the current form), "patched" that the
-// current form is present.
-function chatCssCoreStatus(css: string): { label: string; state: FeatureState }[] {
-  const pristine = stripChatCss(css);
-  return CHAT_CSS_CORE.map((key) => {
-    const desired = chatCssBlock(key, pristine);
-    const current = chatCssBlockRe(key).exec(css)?.[0] ?? "";
-    const state: FeatureState = !desired
-      ? "missing"
-      : current === desired
-      ? "patched"
-      : "unpatched";
-    return { label: FEATURE_LABELS[key], state };
-  });
-}
-
-// A reconcile pass's effect on the core blocks, in the shape the apply and
-// restore commands report the bundles in.
-function chatCssResult(
-  changed: Record<ChatCssBlockKey, boolean>,
-  mode: "apply" | "restore"
-): PatchResult {
-  const moved = CHAT_CSS_CORE.filter((key) => changed[key]).map(
-    (key) => FEATURE_LABELS[key]
+  return reconcileBlocks(
+    path.join(extPath, "dist", CHAT_STYLE_FILE),
+    CHAT_CSS_BLOCKS,
+    (key, pristine, current) =>
+      isChatCssCore(key)
+        ? core
+          ? core[key]
+            ? chatCssBlock(key, pristine)
+            : ""
+          : current
+        : chatCssBlock(key, pristine)
   );
-  return {
-    filename: CHAT_STYLE_FILE,
-    applied: mode === "apply" ? moved : [],
-    skipped: [],
-    reverted: mode === "restore" ? moved : [],
-    noChanges: moved.length === 0,
-  };
+}
+
+// The stylesheet's core rows for the status view.
+function chatCssCoreStatus(css: string): { label: string; state: FeatureState }[] {
+  return blockCoreStatus(css, CHAT_CSS_CORE, stripChatCss, chatCssBlock);
 }
 
 // Whether the stylesheet already carries exactly what the settings ask for, for
@@ -2650,7 +2819,26 @@ function chatCssApplied(extPath: string, key: ChatCssBlockKey): boolean {
   if (!fs.existsSync(cssPath)) return false;
   const content = fs.readFileSync(cssPath, "utf8");
   const desired = chatCssBlock(key, stripChatCss(content));
-  return (chatCssBlockRe(key).exec(content)?.[0] ?? "") === desired;
+  return (patchBlockRe(key).exec(content)?.[0] ?? "") === desired;
+}
+
+// Write (Apply) or remove (Restore) the core script blocks. Nothing else has a
+// say on this file's blocks: the bundle's bonuses are splices elsewhere in it,
+// and a splice neither sees nor moves an appended block.
+function reconcileChatScript(
+  extPath: string,
+  on: boolean
+): Record<ChatScriptBlockKey, boolean> {
+  return reconcileBlocks(
+    path.join(extPath, "dist", CHAT_SCRIPT_FILE),
+    CHAT_SCRIPT_BLOCKS,
+    (key, pristine) => (on ? chatScriptBlock(key, pristine) : "")
+  );
+}
+
+// The bundle's core block rows for the status view, listed with its splices.
+function chatScriptCoreStatus(js: string): { label: string; state: FeatureState }[] {
+  return blockCoreStatus(js, CHAT_SCRIPT_CORE, stripChatScript, chatScriptBlock);
 }
 
 // Which bonus files a reconcile pass actually rewrote. Anything true here is a
@@ -2965,11 +3153,22 @@ async function runPatch(
     }
   }
 
-  // The core stylesheet block is applied with the bundle patches (and removed
-  // with them below); the bonus blocks in the same file follow the settings.
+  // The core blocks are applied with the bundle splices (and removed with them
+  // below); the bonus blocks in the stylesheet follow the settings.
   if (mode === "apply") {
     results.push(
-      chatCssResult(reconcileChatStyle(extPath, coreCssDecision(true)), "apply")
+      blockResult(
+        CHAT_STYLE_FILE,
+        CHAT_CSS_CORE,
+        reconcileChatStyle(extPath, coreCssDecision(true)),
+        "apply"
+      ),
+      blockResult(
+        CHAT_SCRIPT_FILE,
+        CHAT_SCRIPT_CORE,
+        reconcileChatScript(extPath, true),
+        "apply"
+      )
     );
   }
 
@@ -2990,7 +3189,15 @@ async function runPatch(
       if (reconcileMathRendering(extPath)) bonusReverted++;
       const css = reconcileChatStyle(extPath, coreCssDecision(false));
       if (css.typography || css.math) bonusReverted++;
-      results.push(chatCssResult(css, "restore"));
+      results.push(
+        blockResult(CHAT_STYLE_FILE, CHAT_CSS_CORE, css, "restore"),
+        blockResult(
+          CHAT_SCRIPT_FILE,
+          CHAT_SCRIPT_CORE,
+          reconcileChatScript(extPath, false),
+          "restore"
+        )
+      );
     } finally {
       suspendReconcile = false;
     }
@@ -3097,13 +3304,18 @@ export function activate(context: vscode.ExtensionContext): void {
     chatCssCoreStatus(fs.readFileSync(cssPath, "utf8")).some(
       (f) => f.state === "unpatched"
     );
+  const scriptNeedsPatching =
+    content !== "" &&
+    chatScriptCoreStatus(content).some((f) => f.state === "unpatched");
   const needsPatching =
     PATCHES[0].patches.some(
       (p) =>
         !content.includes(p.patched) &&
         (content.includes(p.original) ||
           (p.previous && content.includes(p.previous)))
-    ) || cssNeedsPatching;
+    ) ||
+    cssNeedsPatching ||
+    scriptNeedsPatching;
 
   if (!needsPatching) {
     notifyBonusReload(startupBonuses);
@@ -3158,7 +3370,17 @@ export const __test = {
   CHAT_STYLE_FILE,
   CHAT_CSS_BLOCKS,
   stripChatCss,
-  chatCssBlockRe,
+  patchBlockRe,
+  CHAT_SCRIPT_FILE,
+  CHAT_SCRIPT_BLOCKS,
+  CHAT_SCRIPT_CORE,
+  stripChatScript,
+  CHAT_SCROLL_SCRIPT_ANCHORS,
+  readScrollThreshold,
+  chatScrollScript,
+  chatScriptBlock,
+  reconcileChatScript,
+  chatScriptCoreStatus,
   CHAT_STYLE_ANCHORS,
   KATEX_DEFAULT_EM,
   readChatStyleValues,

@@ -468,11 +468,13 @@ const MATH_RULE = {
 // in src at all. The typography bonus reads three font-size declarations out
 // of Kilo's stylesheet at reconcile time, and a build that restructured any of
 // them would silently emit fewer rules than the settings asked for. The core
-// chat-scroll block applies only while Kilo's textarea rule still looks the way
-// it assumes, and a build where that anchor moved would read "missing" in the
-// status view while stock behavior returned. Reporting both here turns either
-// into a retarget failure instead. A probe reads its own file and, for a
-// cross-file check, the other pristine bundles.
+// chat-scroll patch's two blocks apply only while Kilo still looks the way
+// they assume (the stylesheet rule for the textarea, the templates and the
+// controller threshold for the script), and a build where an anchor moved
+// would read "missing" in the status view while stock behavior returned.
+// Reporting all of it here turns any of it into a retarget failure instead. A
+// probe reads its own file and, for a cross-file check, the other pristine
+// bundles; a patch with a block in each file has a probe in each.
 const PROBES = [
   {
     key: "chat-style",
@@ -587,6 +589,49 @@ const PROBES = [
         };
       }
       return { values: { ...sizing, scriptCapSites: caps.length } };
+    },
+  },
+  {
+    key: "chat-scroll",
+    file: "webview.js",
+    describe: "what the chat-scroll script block assumes about the chat view",
+    read(content, test) {
+      // The script reaches the DOM through three class names and mirrors the
+      // controller's default threshold. Each must occur exactly once, which is
+      // also what the extension requires before writing the block, so a build
+      // that fails here would read "missing" in the status view rather than
+      // carry a script that finds nothing. The anchors come from the extension
+      // itself so the two cannot drift.
+      const ambiguous = Object.entries(test.CHAT_SCROLL_SCRIPT_ANCHORS)
+        .map(([label, re]) => [
+          label,
+          (content.match(new RegExp(re.source, "g")) ?? []).length,
+        ])
+        .filter(([, count]) => count !== 1);
+      if (ambiguous.length > 0) {
+        return {
+          error:
+            "not exactly one match for: " +
+            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
+        };
+      }
+      const threshold = test.readScrollThreshold(content);
+      if (threshold === undefined) {
+        return { error: "anchors matched but the threshold could not be read" };
+      }
+      // The chat view creates its controller without a threshold of its own,
+      // so the default is the one in force. A call site that passed one would
+      // leave the script and the controller disagreeing on what "at the
+      // bottom" means, which is a decision for a human.
+      const overridden = (content.match(/bottomThreshold:/g) ?? []).length;
+      if (overridden > 0) {
+        return {
+          error:
+            `${overridden} controller call site(s) pass a bottomThreshold of their own; ` +
+            "the script mirrors the default only",
+        };
+      }
+      return { values: { threshold } };
     },
   },
 ];

@@ -27,6 +27,12 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.23.1
+
+- The chat history stays at the bottom after a backspace that empties the last line of a multi-line draft; since 1.22.1 that keystroke left it one line short until the line count next changed
+- Part of the core chat-scroll patch: **Apply Patches** adds it, **Restore Originals** removes it, and there is no setting
+- Applies on every Kilo Code release checked, 7.4.17 through 7.5.16, and needs no re-targeting when Kilo Code re-minifies
+
 ## 1.23.0
 
 - Support Kilo Code 7.5.16, re-targeting every keyboard patch (chat input, chat Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

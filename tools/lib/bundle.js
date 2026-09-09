@@ -83,9 +83,11 @@ function unpatched(content, filename, test) {
       }
     }
   }
-  // The stylesheet blocks, the core chat-scroll patch and the bonuses alike,
-  // are appended, so reversing them is a delete rather than a substitution.
+  // The appended blocks, the core chat-scroll patch's two halves and the
+  // stylesheet bonuses alike, are reversed by a delete rather than a
+  // substitution.
   if (filename === test.CHAT_STYLE_FILE) out = test.stripChatCss(out);
+  if (filename === test.CHAT_SCRIPT_FILE) out = test.stripChatScript(out);
   return out;
 }
 
@@ -114,10 +116,10 @@ const PATCH_MARKERS = [
   // prefix, and Kilo names none of its own that way, so one marker covers all
   // three and every release's variant of them.
   'name:"kbpKatex',
-  // Every stylesheet block, core or bonus, opens with this prefix. The blocks
-  // are keyed (`/* kilo-code-kb-patch:<key>:begin */`), so the bare
-  // `kilo-code-kb-patch:begin` an earlier draft of the marker looked for
-  // never matched a shipped block.
+  // Every appended block, core or bonus, stylesheet or script, opens with
+  // this prefix. The blocks are keyed (`/* kilo-code-kb-patch:<key>:begin */`),
+  // so the bare `kilo-code-kb-patch:begin` an earlier draft of the marker
+  // looked for never matched a shipped block.
   "/* kilo-code-kb-patch:",
   // Two attach-button fingerprints: forms shipped before 1.18.0 (now carried
   // in previous[]) and the pre-7.4.17 entries caption via Kilo's
@@ -155,10 +157,11 @@ function assertPristine(bundles) {
   );
 }
 
-// Every dist/ file the patch set touches: the bundles named in PATCHES plus the
-// stylesheet the chat-scroll patch and the two stylesheet bonuses append to.
-// Kept as one list so the pristine readers, the marker scan and the leakage
-// check all cover the same set.
+// Every dist/ file the patch set touches: the bundles named in PATCHES (one of
+// which also takes the chat-scroll script block) plus the stylesheet the
+// chat-scroll rule and the two stylesheet bonuses append to. Kept as one list
+// so the pristine readers, the marker scan and the leakage check all cover the
+// same set.
 function patchedFilenames(test) {
   return [...test.PATCHES.map((fp) => fp.filename), test.CHAT_STYLE_FILE];
 }

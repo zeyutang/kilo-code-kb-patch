@@ -6,7 +6,7 @@
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/zeyutang/kilo-code-kb-patch)](https://open-vsx.org/extension/zeyutang/kilo-code-kb-patch)
 
 Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd/Ctrl+Enter` sends, `Cmd/Ctrl+Up` and `Cmd/Ctrl+Down` recall earlier messages, and permission prompts stop hijacking your keystrokes while you are typing.
-It also keeps the chat history scrolled to the bottom while you type, and makes `Escape` dismiss the `@` mention menu for good.
+It also keeps the chat history scrolled to the bottom while you type, stops the mouse cursor macOS hides while you type from highlighting menus and buttons, and makes `Escape` dismiss the `@` mention menu for good.
 
 ## Supported versions (latest three)
 
@@ -47,6 +47,12 @@ Earlier Kilo Code releases end a query at the first space and need no such patch
 
 Native Kilo Code lets the chat history jump up a couple of lines while you type or delete in the chat box, then snap back on a later keystroke.
 Patched, the history stays scrolled to the bottom while you type.
+
+### Hover
+
+macOS hides the mouse cursor while you type, but Kilo Code's webview still treats its last position as pointed at.
+When a layout change moves something under that spot, it reacts as if you had moved the mouse there: the `@` menu highlights that row instead of the top pick (and `Enter` then picks it), and a button such as **New Worktree** shows its tooltip once a growing chat box pushes it there.
+Patched, menus and tooltips ignore the hidden cursor until you move the mouse.
 
 ### Bonus
 

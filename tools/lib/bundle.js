@@ -83,9 +83,9 @@ function unpatched(content, filename, test) {
       }
     }
   }
-  // The appended blocks, the core chat-scroll patch's two halves and the
-  // stylesheet bonuses alike, are reversed by a delete rather than a
-  // substitution.
+  // The appended blocks, the core blocks (chat-scroll's two halves and the
+  // hover guard) and the stylesheet bonuses alike, are reversed by a delete
+  // rather than a substitution.
   if (filename === test.CHAT_STYLE_FILE) out = test.stripChatCss(out);
   if (filename === test.CHAT_SCRIPT_FILE) out = test.stripChatScript(out);
   return out;
@@ -162,8 +162,8 @@ function assertPristine(bundles) {
 }
 
 // Every dist/ file the patch set touches: the bundles named in PATCHES (one of
-// which also takes the chat-scroll script block) plus the stylesheet the
-// chat-scroll rule and the two stylesheet bonuses append to. Kept as one list
+// which also takes the core script blocks) plus the stylesheet the chat-scroll
+// rule and the two stylesheet bonuses append to. Kept as one list
 // so the pristine readers, the marker scan and the leakage check all cover the
 // same set.
 function patchedFilenames(test) {

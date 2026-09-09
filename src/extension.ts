@@ -1409,6 +1409,7 @@ const FEATURE_ORDER = [
   "mention-escape",
   "chat-history",
   "chat-scroll",
+  "hover-guard",
   "perm-keys",
   "perm-escape",
   "perm-approve",
@@ -1428,6 +1429,7 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
   "mention-escape": "Mention menu Escape: stays closed while you keep typing",
   "chat-history": "Chat history: Cmd/Ctrl+Up/Down, not bare Up/Down",
   "chat-scroll": "Chat scroll: history stays at the bottom while you type",
+  "hover-guard": "Hover guard: the hidden cursor highlights nothing while you type",
   "perm-keys": "Permission prompt: typing keys stay in the input",
   "perm-escape": "Permission Escape: rejects only when the input is empty",
   "perm-approve": "Permission approve: Cmd/Ctrl+Enter always, Space when empty",
@@ -2354,8 +2356,8 @@ function reconcileMathRendering(extPath: string): boolean {
 }
 
 // --- Appended blocks ---------------------------------------------------------
-// One core patch and two bonuses are applied by appending a delimited block to
-// one of Kilo's own dist/ files instead of splicing into a bundle's code. That
+// Two core patches and two bonuses are applied by appending a delimited block
+// to one of Kilo's own dist/ files instead of splicing into a bundle's code. That
 // buys what a splice cannot: no minified identifier is involved, so nothing
 // here needs re-targeting on a re-minify, and removal is exact, since an append
 // is reversed by deleting the block. A block's markers are CSS comments, which
@@ -2369,6 +2371,11 @@ function reconcileMathRendering(extPath: string): boolean {
 //                keep the history at the bottom while typing. Apply Patches
 //                writes them, Restore Originals removes them, and each feeds
 //                the verdict like a keyboard patch.
+//   hover-guard  core, webview.js: while the cursor macOS hid for typing stays
+//                hidden, the enter events the engine synthesizes for a layout
+//                change under the pointer are stopped, so a menu row or a
+//                tooltip that lands there no longer reacts (see
+//                hoverGuardScript). Applied and removed with chat-scroll.
 //   typography   bonus, webview.css: the agent's reply is scaled and optionally
 //                re-fonted
 //   math         bonus, webview.css: rendered math is sized, which is part of
@@ -2398,11 +2405,11 @@ function reconcileMathRendering(extPath: string): boolean {
 const CHAT_STYLE_FILE = "webview.css";
 const CHAT_SCRIPT_FILE = "webview.js";
 
-// One block per patch and file, in the order they are appended: a core patch
-// first, keyed by its FEATURE_ORDER name, then the bonuses.
+// One block per patch and file, in the order they are appended: the core
+// patches first, keyed by their FEATURE_ORDER names, then the bonuses.
 const CHAT_CSS_BLOCKS = ["chat-scroll", "typography", "math"] as const;
 type ChatCssBlockKey = (typeof CHAT_CSS_BLOCKS)[number];
-const CHAT_SCRIPT_BLOCKS = ["chat-scroll"] as const;
+const CHAT_SCRIPT_BLOCKS = ["chat-scroll", "hover-guard"] as const;
 type ChatScriptBlockKey = (typeof CHAT_SCRIPT_BLOCKS)[number];
 type PatchBlockKey = ChatCssBlockKey | ChatScriptBlockKey;
 
@@ -2416,6 +2423,7 @@ const CHAT_CSS_CORE = [
 type ChatCssCoreKey = (typeof CHAT_CSS_CORE)[number];
 const CHAT_SCRIPT_CORE = [
   "chat-scroll",
+  "hover-guard",
 ] as const satisfies readonly (ChatScriptBlockKey & FeatureKey)[];
 
 function isChatCssCore(key: ChatCssBlockKey): key is ChatCssCoreKey {
@@ -2752,12 +2760,16 @@ const CHAT_SCROLL_SCRIPT_ANCHORS: Record<string, RegExp> = {
 
 // Kilo's own "at the bottom" distance in px, or undefined when any anchor is
 // missing or ambiguous.
+// Whether every anchor matches exactly once, which is what makes a value read
+// through one a fact about this build rather than a guess.
+function anchorsEachOnce(js: string, anchors: Record<string, RegExp>): boolean {
+  return Object.values(anchors).every(
+    (re) => (js.match(new RegExp(re.source, "g")) ?? []).length === 1,
+  );
+}
+
 function readScrollThreshold(js: string): number | undefined {
-  for (const re of Object.values(CHAT_SCROLL_SCRIPT_ANCHORS)) {
-    if ((js.match(new RegExp(re.source, "g")) ?? []).length !== 1) {
-      return undefined;
-    }
-  }
+  if (!anchorsEachOnce(js, CHAT_SCROLL_SCRIPT_ANCHORS)) return undefined;
   const threshold = Number(
     CHAT_SCROLL_SCRIPT_ANCHORS["bottom threshold"].exec(js)?.[1],
   );
@@ -2793,9 +2805,111 @@ function chatScrollScript(threshold: number): string {
   ].join("\n");
 }
 
+// --- hover-guard, a script block ---------------------------------------------
+// While you type, macOS hides the mouse cursor: Chromium's Cocoa view hides it
+// on every key down without Command while a text field has focus, until the
+// mouse moves. The renderer is never told (the page's cursor-visible flag is
+// only ever fed on Windows and Linux), so after every layout it still
+// re-hovers whatever now sits under the pointer's last known position, sending
+// pointerover, pointerenter, mouseover and mouseenter to it (and the out and
+// leave side to what it left), at the old coordinates and with no move event.
+// Kilo's menus and tooltips act on exactly those: the @-mention and slash
+// menus highlight a row on mouseenter, so a row the opening menu puts under
+// the hidden pointer becomes the selection Enter picks, and every tooltip
+// trigger opens on pointerenter, so a button that a growing chat box pushes
+// under the pointer shows its tooltip (reported on 7.5.16 with "New Worktree").
+//
+// So this block notes, on each key down that hides the cursor (the Cocoa
+// view's own rule: a trusted key down in the chat textarea, not a bare
+// modifier, without Command), that the cursor is hidden, and while it is,
+// stops the enter events that sit exactly where the previous event of their
+// kind did, in the capture phase on window, ahead of every handler of Kilo's,
+// Solid's document-level delegate included. Any pointer or mouse event from a
+// new position means the mouse moved and the cursor is back, and passes. Out
+// and leave events are never stopped: they only ever close something. Pointer
+// and mouse events round their coordinates differently (a pointer event keeps
+// the fraction a mouse event truncates), so each family is compared with its
+// own predecessor rather than with a shared position. Nothing is prevented,
+// the engine's :hover state is untouched (no script can stop it, so a button
+// under the hidden pointer keeps its hover color), and no Kilo symbol is
+// involved.
+//
+// Verified in the same headless Chromium, driven with real key and mouse
+// events: with the pointer parked above the session actions row, the third
+// Enter moved "New Worktree" under it and stock fired pointerenter on the
+// button; typing "@" then opened the menu with its fifth row under the pointer
+// and stock fired mouseenter on that row, making it the selection. With this
+// block both are stopped and the top row stays selected; a real move onto
+// another row while the cursor is hidden still selects that row (its enter
+// events carry new coordinates), and re-opening the menu under the still
+// pointer is stopped again.
+//
+// What the block assumes about Kilo: the two class names it reaches the chat
+// textarea through, each in exactly one template, shared with the chat-scroll
+// script. A build that renamed either reads as "missing" in the status view
+// and keeps stock behavior.
+const HOVER_GUARD_ANCHORS: Record<string, RegExp> = {
+  "chat-view template": CHAT_SCROLL_SCRIPT_ANCHORS["chat-view template"],
+  "prompt-input template": CHAT_SCROLL_SCRIPT_ANCHORS["prompt-input template"],
+};
+
+function hoverGuardAnchorsPresent(js: string): boolean {
+  return anchorsEachOnce(js, HOVER_GUARD_ANCHORS);
+}
+
+// The block's body, plain source like the chat-scroll script's.
+function hoverGuardScript(): string {
+  return [
+    "(() => {",
+    "  // Kilo Code KB Patch: while you type, macOS hides the mouse cursor, but the",
+    "  // page is never told, and the browser keeps re-hovering whatever a layout",
+    "  // change moves under the pointer's last position: a menu row highlights, a",
+    "  // tooltip opens. Those updates arrive as enter events at the pointer's old",
+    "  // coordinates, with no move event, so while the cursor is hidden they are",
+    "  // stopped before any handler sees them. The first event from a new",
+    "  // position means the mouse moved and the cursor is back.",
+    '  const MODIFIERS = new Set(["Alt", "AltGraph", "CapsLock", "Control", "Fn", "FnLock", "Hyper", "Meta", "NumLock", "ScrollLock", "Shift", "Super", "Symbol", "SymbolLock"]);',
+    '  const ENTER = ["pointerover", "pointerenter", "mouseover", "mouseenter"];',
+    '  const OTHER = ["pointermove", "mousemove", "pointerout", "pointerleave", "mouseout", "mouseleave", "pointerdown", "mousedown", "pointerup", "mouseup"];',
+    "  const last = { pointer: null, mouse: null };",
+    "  let hidden = false;",
+    "  // Pointer and mouse events round their coordinates differently, so each",
+    "  // family is compared with its own last event.",
+    "  const still = (e) => {",
+    '    const kind = e.type.startsWith("pointer") ? "pointer" : "mouse";',
+    "    const prev = last[kind];",
+    "    last[kind] = [e.screenX, e.screenY];",
+    "    if (prev && prev[0] === e.screenX && prev[1] === e.screenY) return true;",
+    "    hidden = false;",
+    "    return false;",
+    "  };",
+    '  window.addEventListener("keydown", (e) => {',
+    "    if (!e.isTrusted || e.metaKey || MODIFIERS.has(e.key)) return;",
+    "    const t = e.target;",
+    '    if (t instanceof HTMLTextAreaElement && t.matches("textarea.prompt-input") && t.closest(".chat-view")) hidden = true;',
+    "  }, true);",
+    "  for (const type of ENTER) {",
+    "    window.addEventListener(type, (e) => {",
+    "      if (e.isTrusted && still(e) && hidden) e.stopImmediatePropagation();",
+    "    }, true);",
+    "  }",
+    "  for (const type of OTHER) {",
+    "    window.addEventListener(type, (e) => {",
+    "      if (e.isTrusted) still(e);",
+    "    }, true);",
+    "  }",
+    "})();",
+  ].join("\n");
+}
+
 // The block for one key, or "" when this build does not look the way the
 // script assumes, which leaves the bundle byte-identical to Kilo's.
 function chatScriptBlock(key: ChatScriptBlockKey, pristineJs: string): string {
+  if (key === "hover-guard") {
+    return hoverGuardAnchorsPresent(pristineJs)
+      ? patchBlock(key, hoverGuardScript())
+      : "";
+  }
   const threshold = readScrollThreshold(pristineJs);
   return threshold === undefined
     ? ""
@@ -3472,6 +3586,9 @@ export const __test = {
   CHAT_SCROLL_SCRIPT_ANCHORS,
   readScrollThreshold,
   chatScrollScript,
+  HOVER_GUARD_ANCHORS,
+  hoverGuardAnchorsPresent,
+  hoverGuardScript,
   chatScriptBlock,
   reconcileChatScript,
   chatScriptCoreStatus,

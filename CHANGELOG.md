@@ -27,6 +27,12 @@
 | 7.3.50-54         | 1.1.x            |
 | 7.3.46            | 1.0.x            |
 
+## 1.23.3
+
+- While the mouse cursor is hidden for typing, menus and tooltips no longer react to its last position: the `@` mention and slash menus keep the top pick highlighted when they open under it, and a button a growing chat box pushes there no longer opens its tooltip (it keeps its hover color)
+- The cursor counts as visible again as soon as the mouse moves
+- Part of the core patches: **Apply Patches** adds it, **Restore Originals** removes it, and there is no setting; applies on every Kilo Code release checked, 7.4.17 through 7.5.16, and needs no re-targeting when Kilo Code re-minifies
+
 ## 1.23.2
 
 - `Escape` in the `@` mention menu now keeps the menu closed while you type on; since Kilo Code 7.5.11 the menu came back on the next keystroke, and `Enter` could then replace your text with the highlighted file

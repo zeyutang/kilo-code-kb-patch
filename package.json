@@ -1,7 +1,7 @@
 {
   "name": "kilo-code-kb-patch",
   "displayName": "Kilo Code KB Patch",
-  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, Cmd+Up/Down to recall earlier messages, smarter permission prompt key routing, Escape that keeps the @ mention menu closed. Keeps the chat history scrolled to the bottom while you type. Optional extras for chat math rendering and response typography.",
+  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, Cmd+Up/Down to recall earlier messages, smarter permission prompt key routing, Escape that keeps the @ mention menu closed. Keeps the chat history scrolled to the bottom while you type, and keeps menus and tooltips from reacting to the hidden mouse cursor. Optional extras for chat math rendering and response typography.",
   "version": "1.23.2",
   "publisher": "zeyutang",
   "license": "MIT",

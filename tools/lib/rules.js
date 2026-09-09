@@ -722,6 +722,45 @@ const PROBES = [
       return { values: { threshold } };
     },
   },
+  {
+    key: "hover-guard",
+    file: "webview.js",
+    describe: "what the hover-guard script block assumes about the chat view",
+    read(content, test) {
+      // The script reaches the chat textarea through the same two templates
+      // as the chat-scroll script and asks nothing else of Kilo: it stops
+      // events the engine synthesizes, not anything Kilo dispatches. Each must
+      // occur exactly once, which is also what the extension requires before
+      // writing the block. The counts reported alongside are the handler sites
+      // the guard is there for (rows that highlight on mouseenter, tooltip and
+      // list-item triggers on pointerenter), so a Kilo that moved its menus or
+      // tooltips off enter events shows up in the log without failing the
+      // probe: the block is harmless where it has nothing to stop.
+      const ambiguous = Object.entries(test.HOVER_GUARD_ANCHORS)
+        .map(([label, re]) => [
+          label,
+          (content.match(new RegExp(re.source, "g")) ?? []).length,
+        ])
+        .filter(([, count]) => count !== 1);
+      if (ambiguous.length > 0) {
+        return {
+          error:
+            "not exactly one match for: " +
+            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
+        };
+      }
+      if (!test.hoverGuardAnchorsPresent(content)) {
+        return { error: "anchors matched but the extension would not write the block" };
+      }
+      const occurrences = (needle) => content.split(needle).length - 1;
+      return {
+        values: {
+          mouseenterListeners: occurrences('addEventListener("mouseenter"'),
+          pointerEnterProps: occurrences("onPointerEnter:"),
+        },
+      };
+    },
+  },
 ];
 
 module.exports = {

@@ -1715,14 +1715,59 @@ interface FileStatus {
   features: { label: string; state: FeatureState }[];
 }
 
+// What the running session needs before a change on disk shows. Kilo's webview
+// bundle and stylesheet are fetched afresh when its sidebar view is rebuilt,
+// and an extension-host restart does that: the view is torn down with the host
+// and re-resolved once Kilo registers it again, and the webview's resource
+// cache revalidates by mtime and size, so a rewritten file is not served stale.
+// Its manifest is not re-read: the workbench keeps the description it scanned
+// at window startup, and a host restart re-adds extensions from that same
+// in-memory copy. So the editor-title bonus needs the window and everything
+// else the lighter restart, which leaves editors, terminals and the layout in
+// place. (A chat opened with "Open in Tab" is a webview panel, which a host
+// restart neither closes nor rebuilds; it shows the new bundle when reopened.)
+type RestartScope = "extensions" | "window";
+
+// "Restart Extensions" is the label VS Code puts on its own restart button.
+const RESTART_OFFERS: Record<
+  RestartScope,
+  { verb: string; label: string; command: string }
+> = {
+  extensions: {
+    verb: "Restart extensions",
+    label: "Restart Extensions",
+    command: "workbench.action.restartExtensionHost",
+  },
+  window: {
+    verb: "Reload window",
+    label: "Reload Window",
+    command: "workbench.action.reloadWindow",
+  },
+};
+
+// One notification with the one button that applies `scope`. The message ends
+// with the instruction, so callers pass the sentence before it.
+function offerRestart(message: string, scope: RestartScope): void {
+  const offer = RESTART_OFFERS[scope];
+  vscode.window
+    .showInformationMessage(`${message} ${offer.verb} to apply.`, offer.label)
+    .then((choice) => {
+      if (choice === offer.label) {
+        vscode.commands.executeCommand(offer.command);
+      }
+    });
+}
+
 // Bonus (opt-in) items are reported in their own status section and never feed
 // the verdict. "on": enabled and applied. "off": not enabled, drawn as a neutral
-// white circle. "pending": enabled but the file does not reflect it yet (reload
-// to apply). "unavailable": enabled but this Kilo build has no matching code.
+// white circle. "pending": enabled but the file does not reflect it yet.
+// "unavailable": enabled but this Kilo build has no matching code. `needs` is
+// the restart that shows a change to the item's file; the pending hint names it.
 type BonusState = "on" | "off" | "pending" | "unavailable";
 interface BonusStatus {
   label: string;
   state: BonusState;
+  needs: RestartScope;
 }
 
 // Collapse a file's per-version patch variants into one state per logical
@@ -1915,7 +1960,8 @@ function showStatusPanel(
   > = {
     on: { mark: "✓", cls: "ok", hint: "" },
     off: { mark: "○", cls: "off", hint: "" },
-    pending: { mark: "○", cls: "warn", hint: "reload to apply" },
+    // The pending hint names the restart the row needs, so it is built below.
+    pending: { mark: "○", cls: "warn", hint: "" },
     unavailable: {
       mark: "✗",
       cls: "bad",
@@ -1925,9 +1971,11 @@ function showStatusPanel(
   const bonusRows = bonuses
     .map((b) => {
       const m = bonusMarks[b.state];
-      const hint = m.hint
-        ? `<span class="hint">${escapeHtml(m.hint)}</span>`
-        : "";
+      const text =
+        b.state === "pending"
+          ? `${RESTART_OFFERS[b.needs].verb.toLowerCase()} to apply`
+          : m.hint;
+      const hint = text ? `<span class="hint">${escapeHtml(text)}</span>` : "";
       return `<div class="row"><span class="mark ${
         m.cls
       }">${m.mark}</span><span class="label">${escapeHtml(
@@ -2140,7 +2188,48 @@ function reconcileOpenInTabTitle(extPath: string): boolean {
   );
   if (updated === content) return false;
   fs.writeFileSync(pkgPath, updated, "utf8");
+  invalidateExtensionScannerCache();
   return true;
+}
+
+// VS Code reads every installed extension's manifest at window startup from a
+// cache, <user data>/CachedProfilesData/<profile>/extensions.user.cache, and
+// rescans the folders only when that file is missing or the extension list
+// changed. A few seconds later it compares the cache with the disk regardless,
+// and where they differ it deletes the cache and asks for another reload
+// ("Extensions have been modified on disk"). A rewritten manifest would thus
+// cost two reloads, so the cache goes with the write, for every profile: the
+// scanner treats a missing cache as routine and rebuilds it on the next launch.
+//
+// The user data folder is found from this extension's own global storage,
+// which sits below it (User/globalStorage/<id> on the default profile,
+// User/profiles/<id>/globalStorage/<id> on any other). Fails safe: an
+// unrecognized layout, or the offline harness's context without storage,
+// deletes nothing, and the editor's own second prompt still covers the change.
+function invalidateExtensionScannerCache(): void {
+  const storage = extensionContext?.globalStorageUri?.fsPath;
+  if (!storage) return;
+  const parts = storage.split(path.sep);
+  const at = parts.lastIndexOf("globalStorage");
+  const user = at < 0 ? -1 : parts.lastIndexOf("User", at);
+  if (user < 1) return;
+  const cacheRoot = path.join(
+    parts.slice(0, user).join(path.sep),
+    "CachedProfilesData",
+  );
+  let profiles: string[];
+  try {
+    profiles = fs.readdirSync(cacheRoot);
+  } catch {
+    return;
+  }
+  for (const profile of profiles) {
+    try {
+      fs.rmSync(path.join(cacheRoot, profile, "extensions.user.cache"), {
+        force: true,
+      });
+    } catch {}
+  }
 }
 
 // --- Bonus: attach-file "+" button ------------------------------------------
@@ -3347,7 +3436,8 @@ function chatScriptCoreStatus(
 }
 
 // Which bonus files a reconcile pass actually rewrote. Anything true here is a
-// change the running session does not reflect until the window reloads.
+// change the running session does not reflect until the restart it needs (see
+// RestartScope): the window for `title`, the extension host for the rest.
 interface BonusChanges {
   title: boolean;
   attach: boolean;
@@ -3384,13 +3474,19 @@ function reconcileBonuses(extPath: string): BonusChanges {
   return { title, attach, math, typography };
 }
 
-// Offer the reload that pending bonus changes still need, as one notification
+// The restart a set of bonus changes needs: the manifest is the one file only
+// a window reload re-reads.
+function bonusRestartScope(changed: BonusChanges): RestartScope {
+  return changed.title ? "window" : "extensions";
+}
+
+// Offer the restart that pending bonus changes still need, as one notification
 // however many items changed. Callers decide when: right away on a settings
 // change, but at activation only after the apply-patches prompt (if any) is
-// settled. A bare "Reload Window" button shown next to that prompt invites
-// reloading first, which restarts the extension host before the keyboard
-// patches were ever applied.
-function notifyBonusReload(changed: BonusChanges): void {
+// settled. A bare restart button shown next to that prompt invites restarting
+// first, which re-activates this extension before the keyboard patches were
+// ever applied.
+function notifyBonusRestart(changed: BonusChanges): void {
   const items = [
     ...(changed.title ? ["editor title icon"] : []),
     ...(changed.attach ? ["attach-file button"] : []),
@@ -3403,16 +3499,10 @@ function notifyBonusReload(changed: BonusChanges): void {
     items.length <= 2
       ? items.join(" and ")
       : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-  vscode.window
-    .showInformationMessage(
-      `Kilo Code KB Patch: ${list} updated. Reload window to apply.`,
-      "Reload Window",
-    )
-    .then((choice) => {
-      if (choice === "Reload Window") {
-        vscode.commands.executeCommand("workbench.action.reloadWindow");
-      }
-    });
+  offerRestart(
+    `Kilo Code KB Patch: ${list} updated.`,
+    bonusRestartScope(changed),
+  );
 }
 
 // Every bonus setting paired with the value that means "off" for it. Restore
@@ -3517,12 +3607,25 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   }
 
   return [
-    { label: "Prompt toolbar: + button opens the file picker", state: attach },
-    { label: 'Editor title: group the "Open in Tab" icon', state: openInTab },
-    { label: "Chat: render $...$ and \\[...\\] math", state: math },
+    {
+      label: "Prompt toolbar: + button opens the file picker",
+      state: attach,
+      needs: "extensions",
+    },
+    {
+      label: 'Editor title: group the "Open in Tab" icon',
+      state: openInTab,
+      needs: "window",
+    },
+    {
+      label: "Chat: render $...$ and \\[...\\] math",
+      state: math,
+      needs: "extensions",
+    },
     {
       label: "Chat history: size and font of the agent's response",
       state: typography,
+      needs: "extensions",
     },
   ];
 }
@@ -3970,11 +4073,14 @@ function restorePatches(
   };
 }
 
-// Resolves to whether a Reload Window offer was shown (something was applied
-// or restored), so activation's Apply path knows if the held bonus-reload
+// Resolves to whether a restart offer was shown (something was applied or
+// restored), so activation's Apply path knows if the held bonus-restart
 // notification is already covered by this one or must still be surfaced.
+// `pending` is what that held notification would have said: those files moved
+// earlier in this session, so the offer here must be strong enough for them.
 async function runPatch(
   mode: "apply" | "restore" | "status",
+  pending?: BonusChanges,
 ): Promise<boolean> {
   const extPath = findLatestKiloExt();
   if (!extPath) {
@@ -4092,6 +4198,9 @@ async function runPatch(
   // from re-applying them). The listener is suspended so its own reconcile
   // cannot double-fire mid-batch; the final settings and files agree.
   let bonusReverted = 0;
+  // Only the manifest needs the window: Apply never touches it, Restore does
+  // when it puts the editor-title rename back.
+  let manifestChanged = pending?.title ?? false;
   if (mode === "restore") {
     suspendReconcile = true;
     try {
@@ -4099,7 +4208,10 @@ async function runPatch(
         await forceSettingOff(key, off);
       }
       if (reconcileAttachFileButton(extPath)) bonusReverted++;
-      if (reconcileOpenInTabTitle(extPath)) bonusReverted++;
+      if (reconcileOpenInTabTitle(extPath)) {
+        bonusReverted++;
+        manifestChanged = true;
+      }
       if (reconcileMathRendering(extPath)) bonusReverted++;
       const css = reconcileChatStyle(extPath, coreCssDecision(false));
       if (css.typography || css.math) bonusReverted++;
@@ -4129,16 +4241,10 @@ async function runPatch(
   const verb = mode === "apply" ? "Patched" : "Restored";
 
   if (totalApplied > 0) {
-    vscode.window
-      .showInformationMessage(
-        `Kilo Code KB Patch: ${verb} ${totalApplied} patch(es) on v${version}. Reload window to take effect.`,
-        "Reload Window",
-      )
-      .then((choice) => {
-        if (choice === "Reload Window") {
-          vscode.commands.executeCommand("workbench.action.reloadWindow");
-        }
-      });
+    offerRestart(
+      `Kilo Code KB Patch: ${verb} ${totalApplied} patch(es) on v${version}.`,
+      manifestChanged ? "window" : "extensions",
+    );
     return true;
   }
   // Nothing changed. Report it in terms of this build's features, not the raw
@@ -4336,7 +4442,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (suspendReconcile) return;
       if (!e.affectsConfiguration("kiloCodeKbPatch")) return;
-      notifyBonusReload(reconcileBonuses(extPath));
+      notifyBonusRestart(reconcileBonuses(extPath));
       markSettled(extPath);
     }),
   );
@@ -4350,8 +4456,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // the files) and whenever one of our settings changes. The settings are
   // registered in package.json, so affectsConfiguration reports them reliably and
   // limits the reconcile (which reads the webview bundle) to relevant changes.
-  // On the settings path the reload offer shows right away; the startup result
-  // is held until the apply-patches decision below is settled.
+  // On the settings path the restart offer shows right away; the startup
+  // result is held until the apply-patches decision below is settled.
   const startupBonuses = reconcileBonuses(extPath);
 
   // Read after the bonus reconcile, which may itself rewrite webview.js, so the
@@ -4383,17 +4489,17 @@ export function activate(context: vscode.ExtensionContext): void {
     // The full check just ran and found nothing left to do, which is the one
     // place that claim can be recorded.
     markSettled(extPath);
-    notifyBonusReload(startupBonuses);
+    notifyBonusRestart(startupBonuses);
     return;
   }
 
   // A Kilo update resets every patched file at once, so the apply prompt and
-  // the bonus reload offer would land together, and the bonus "Reload Window"
-  // button clicked first reloads a window whose keyboard patches were never
+  // the bonus restart offer would land together, and the bonus restart button
+  // clicked first restarts a session whose keyboard patches were never
   // applied. Show only the Apply/Ignore prompt now. Apply's completion
-  // notification carries the reload, which picks up the bonus changes too; on
-  // Ignore or dismissal those changes still need their reload, so the held
-  // offer surfaces then.
+  // notification carries the restart, sized for the bonus changes too (the
+  // manifest among them needs the window); on Ignore or dismissal those
+  // changes still need their restart, so the held offer surfaces then.
   vscode.window
     .showInformationMessage(
       `Kilo Code KB Patch: v${extractVersion(extPath)} detected, apply patches?`,
@@ -4402,11 +4508,11 @@ export function activate(context: vscode.ExtensionContext): void {
     )
     .then((choice) => {
       if (choice === "Apply") {
-        runPatch("apply").then((offeredReload) => {
-          if (!offeredReload) notifyBonusReload(startupBonuses);
+        runPatch("apply", startupBonuses).then((offered) => {
+          if (!offered) notifyBonusRestart(startupBonuses);
         });
       } else {
-        notifyBonusReload(startupBonuses);
+        notifyBonusRestart(startupBonuses);
       }
     });
 }

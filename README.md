@@ -49,8 +49,9 @@ Patched, menus and tooltips ignore the hidden cursor until you move the mouse.
 ### Bonus
 
 Optional extras, all off by default.
-Enable them from the Settings UI (search "Kilo Code KB Patch") or in your `settings.json`, then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`).
-To turn one off, put it back to its default (or run **Restore Originals**, which switches every extra off) and reload.
+Enable them from the Settings UI (search "Kilo Code KB Patch") or in your `settings.json`, then accept the restart KB Patch offers (or run `Cmd+Shift+P` → `Developer: Restart Extension Host`).
+The editor-title rename is the one extra that needs a window reload instead, and its offer says so.
+To turn one off, put it back to its default (or run **Restore Originals**, which switches every extra off) and restart the same way.
 
 - **Attach-file button.**
   Adds a `+` button to the prompt toolbar that opens Kilo Code's file picker directly, instead of typing `@` and choosing "Browse files...".
@@ -107,7 +108,9 @@ The extension detects an unpatched Kilo Code and offers to apply. Three commands
 - **Restore Originals** (also switches the bonus settings off)
 - **Show Status**
 
-Reload the window after applying KB Patch: `Cmd+Shift+P` → `Developer: Reload Window`.
+Restart extensions after applying KB Patch: accept the offer in the notification, or run `Cmd+Shift+P` → `Developer: Restart Extension Host`.
+A window reload works too, and is what the editor-title rename needs.
+A chat opened with **Open in Tab** shows the change once reopened.
 
 ## How keystrokes are routed
 
@@ -148,7 +151,7 @@ Model and mode pickers, confirmations, `@`-mentions. The patch leaves these alon
 
 ## Troubleshooting
 
-- **No effect:** reload the VS Code window after applying.
-- **Stopped working after a Kilo Code update:** updates overwrite the patched files. KB Patch offers to re-apply on the next window reload, and you can run it yourself with `Cmd+Shift+P` → `Kilo Code KB Patch: Apply Patches`.
+- **No effect:** restart extensions (`Developer: Restart Extension Host`) or reload the window after applying.
+- **Stopped working after a Kilo Code update:** updates overwrite the patched files. KB Patch offers to re-apply on the next launch or restart, and you can run it yourself with `Cmd+Shift+P` → `Kilo Code KB Patch: Apply Patches`.
 - **"Could not find a kilocode.kilo-code-\* install":** Kilo Code is not installed in this editor (the message lists every folder searched).
   Install Kilo Code first, then re-run **Apply Patches**.

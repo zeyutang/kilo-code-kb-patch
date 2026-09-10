@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import * as vm from "vm";
 
 const KILO_EXT_ID = "kilocode.kilo-code";
 
@@ -19,6 +20,30 @@ const KNOWN_EXT_DIRS = [
   ".vscode-server/extensions", // VS Code remote server
   ".vscodium-server/extensions", // VSCodium remote server
 ];
+
+// src/rules.js states each patch point as a shape over identifier placeholders
+// and rebuilds the edit from the symbols it captures, which is how every
+// literal in PATCHES above was produced. It is plain JS because the offline
+// harness loads the same file, so its surface is declared here rather than
+// inferred.
+interface DeriveResult {
+  original?: string;
+  patched?: string;
+  symbols?: Record<string, string>;
+  matches?: number;
+  error?: string;
+  legacy?: { original: string; patched: string };
+}
+
+interface ShapeRule {
+  key: string;
+  file: string;
+  description: (version: string) => string;
+  derive: (content: string) => DeriveResult;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const RULES: ShapeRule[] = require("./rules").RULES;
 
 interface PatchDef {
   // Which logical behavior this pattern implements. Declared rather than
@@ -1764,10 +1789,15 @@ function computeVerdict(files: FileStatus[]): Verdict {
   return "partially patched";
 }
 
+// `version` brings in the derivations recorded for this build, without which a
+// feature patched by one would read as "missing" here while working fine.
 function computeStatus(distDir: string): {
   files: FileStatus[];
   verdict: Verdict;
 } {
+  // One record covers every file, and it lives in the bundle, so it is read
+  // once here rather than per file.
+  const record = readDerivedRecordAt(distDir);
   const files: FileStatus[] = [];
   for (const fp of PATCHES) {
     const fpath = path.join(distDir, fp.filename);
@@ -1779,7 +1809,8 @@ function computeStatus(distDir: string): {
     // A core block has no PatchDef: it is derived from the build at reconcile
     // time, so its row comes from that same derivation, and it takes its place
     // in FEATURE_ORDER among the file's splices.
-    const features = statusForFile(content, fp.patches);
+    const derived = recordedFor(record, fp.filename, content).map(asPatchDef);
+    const features = statusForFile(content, [...derived, ...fp.patches]);
     if (fp.filename === CHAT_SCRIPT_FILE) {
       features.push(...chatScriptCoreStatus(content));
     }
@@ -2673,7 +2704,12 @@ const CHAT_CSS_BLOCKS = ["chat-scroll", "typography", "math"] as const;
 type ChatCssBlockKey = (typeof CHAT_CSS_BLOCKS)[number];
 const CHAT_SCRIPT_BLOCKS = ["chat-scroll", "hover-guard"] as const;
 type ChatScriptBlockKey = (typeof CHAT_SCRIPT_BLOCKS)[number];
-type PatchBlockKey = ChatCssBlockKey | ChatScriptBlockKey;
+// The derived-pattern record (see readDerivedRecord) is a block too, so that
+// stripping it is the same operation as stripping the others, but it is not a
+// feature: nothing reconciles it and it never appears in the status view.
+const DERIVED_BLOCK = "derived" as const;
+
+type PatchBlockKey = ChatCssBlockKey | ChatScriptBlockKey | "derived";
 
 // The core blocks: written by Apply, removed by Restore, listed in the status
 // view under their file and counted in the verdict. Typed against both lists,
@@ -2727,8 +2763,12 @@ function stripChatCss(css: string): string {
   return stripBlocks(css, CHAT_CSS_BLOCKS);
 }
 
+// Every block this extension appends to the bundle, including the record,
+// which is what returns the file to the bytes Kilo shipped.
+const CHAT_SCRIPT_STRIPPABLE = [...CHAT_SCRIPT_BLOCKS, DERIVED_BLOCK] as const;
+
 function stripChatScript(js: string): string {
-  return stripBlocks(js, CHAT_SCRIPT_BLOCKS);
+  return stripBlocks(js, CHAT_SCRIPT_STRIPPABLE);
 }
 
 // Rewrite one file's appended blocks and report which changed. `desired` gives
@@ -3495,7 +3535,347 @@ interface PatchResult {
   noChanges: boolean;
 }
 
-function applyPatches(filePath: string, patches: PatchDef[]): PatchResult {
+// --- Apply-time derivation ---------------------------------------------------
+//
+// Every shipped pattern above was produced by a shape rule in src/rules.js,
+// re-derived from the build it targets. Those rules also run here, so a Kilo
+// release that only re-minifies is patched on the spot instead of waiting for a
+// kb-patch release: of the twelve retargets between 7.4.20 and 7.6.1, nine
+// changed nothing but these literals.
+//
+// The shipped literals stay the fast path, and they are the reviewed one: a
+// build someone has actually tested gets the bytes that were tested. Derivation
+// only answers for a feature no shipped variant recognizes, which before this
+// was the state that left a user on stock Kilo until a release landed.
+//
+// What a derivation has to satisfy before it is allowed to write, standing in
+// for the human who used to read every pattern before it shipped:
+//   - its shape matches exactly once in the whole bundle (src/rules.js), and
+//     the derived original then occurs exactly once as literal bytes
+//   - every symbol it reports appears inside the text it matched, so the edit
+//     cannot name something the build binds elsewhere; this is the 7.4.22
+//     aliasing failure stated as a property rather than a review step
+//   - the feature's gate agrees the build has the behavior being fixed
+//   - the assembled file parses
+//   - re-applying is a no-op and reversing reproduces the original bytes
+// The attach button is deliberately excluded: it names five symbols from
+// outside its matched span, so only a MISMATCH read by a human guards it.
+const DERIVABLE: readonly FeatureKey[] = [
+  "chat-input",
+  "chat-escape",
+  "mention-escape",
+  "chat-history",
+  "perm-keys",
+  "perm-escape",
+  "perm-approve",
+  "doc-escape",
+  "kiloclaw-edit",
+  "kiloclaw-chat",
+];
+
+interface DerivedPatch {
+  feature: FeatureKey;
+  filename: string;
+  original: string;
+  patched: string;
+  description: string;
+}
+
+// Derivations are recorded in the bundle they patch, as one more appended
+// block, so the record cannot be separated from the thing it describes: it
+// survives a kb-patch reinstall, a new profile and a machine move, and Restore
+// removes it with the edits. globalState was the obvious home and the wrong
+// one, since losing it leaves an install patched by bytes nothing can name,
+// and Restore then reverts nothing.
+//
+// The payload is base64 so the patched text never appears verbatim in the
+// file. A second literal copy would break both the guard's "landed exactly
+// once" check and the replace() that Restore does.
+//
+// One record, in webview.js, covering every file: kiloclaw.js has no block
+// machinery of its own, and the harness already strips webview.js's blocks to
+// recover pristine bytes.
+function derivedRecordBlock(patches: DerivedPatch[]): string {
+  const payload = Buffer.from(JSON.stringify(patches), "utf8").toString(
+    "base64",
+  );
+  return patchBlock(
+    DERIVED_BLOCK,
+    `/* Patterns this extension derived for this build, so Restore can reverse
+` +
+      `   them. Remove with "Kilo Code KB Patch: Restore Originals". */
+` +
+      `/* ${payload} */`,
+  );
+}
+
+function readDerivedRecordAt(distDir: string): DerivedPatch[] {
+  try {
+    return readDerivedRecord(
+      fs.readFileSync(path.join(distDir, CHAT_SCRIPT_FILE), "utf8"),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function readDerivedRecord(js: string): DerivedPatch[] {
+  const block = patchBlockRe(DERIVED_BLOCK).exec(js)?.[0];
+  if (!block) return [];
+  const payload = /\/\* ([A-Za-z0-9+/=]+) \*\//.exec(block)?.[1];
+  if (!payload) return [];
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+    return Array.isArray(parsed) ? (parsed as DerivedPatch[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function asPatchDef(p: DerivedPatch): PatchDef {
+  return {
+    feature: p.feature,
+    original: p.original,
+    patched: p.patched,
+    description: p.description,
+  };
+}
+
+// The recorded derivations that apply to one file, keeping only those the file
+// still carries the text for, so a record that outlives what it describes is
+// inert rather than wrong.
+function recordedFor(
+  record: DerivedPatch[],
+  filename: string,
+  content: string,
+): DerivedPatch[] {
+  return record.filter(
+    (p) =>
+      p.filename === filename &&
+      (content.includes(p.patched) || content.includes(p.original)),
+  );
+}
+
+// A feature is unresolved when nothing known names a site for it in this
+// build: no variant's original, patched or previous text is present. That is
+// the same reading statusForFile calls "missing", and the only state
+// derivation is allowed to answer.
+function resolveFeatures(
+  content: string,
+  patches: PatchDef[],
+): { resolved: Map<FeatureKey, PatchDef>; unresolved: Set<FeatureKey> } {
+  // Grouped and short-circuited per feature. Asking every variant separately
+  // is the O(variants) x 21 MB scan that cost activation 500 ms before 1.24.1,
+  // and it would land on the apply path here; the array is newest-first, so
+  // the variant that answers sits at index 0 or 1 on a recognized build.
+  const byFeature = new Map<FeatureKey, PatchDef[]>();
+  for (const p of patches) {
+    const variants = byFeature.get(p.feature);
+    if (variants) variants.push(p);
+    else byFeature.set(p.feature, [p]);
+  }
+  const resolved = new Map<FeatureKey, PatchDef>();
+  const unresolved = new Set<FeatureKey>();
+  for (const [key, variants] of byFeature) {
+    const answer = variants.find(
+      (p) =>
+        content.includes(p.patched) ||
+        content.includes(p.original) ||
+        (p.previous !== undefined && content.includes(p.previous)),
+    );
+    if (answer) resolved.set(key, answer);
+    else unresolved.add(key);
+  }
+  return { resolved, unresolved };
+}
+
+function unresolvedFeatures(
+  content: string,
+  patches: PatchDef[],
+): Set<FeatureKey> {
+  return resolveFeatures(content, patches).unresolved;
+}
+
+function occurrences(haystack: string, needle: string): number {
+  let count = 0;
+  let at = 0;
+  while ((at = haystack.indexOf(needle, at)) !== -1) {
+    count++;
+    at += needle.length;
+  }
+  return count;
+}
+
+// One rule's output, admitted only if it satisfies every property above that
+// can be judged from the rule alone. The file-level ones (parses, reverses)
+// are checked once on the assembled result by deriveFor.
+function admissible(
+  rule: { key: string; derive: (c: string) => DeriveResult },
+  content: string,
+): { original: string; patched: string } | undefined {
+  const gate = FEATURE_GATES[rule.key as FeatureKey];
+  if (gate && !gate(content)) return undefined;
+
+  let result: DeriveResult;
+  try {
+    result = rule.derive(content);
+  } catch {
+    return undefined;
+  }
+  if (
+    result.original === undefined ||
+    result.patched === undefined ||
+    result.patched === result.original
+  ) {
+    return undefined;
+  }
+  if (occurrences(content, result.original) !== 1) return undefined;
+  if (content.includes(result.patched)) return undefined;
+  // Self-containment: an edit that only rearranges what its own anchor matched
+  // cannot bind a symbol this build spells differently elsewhere.
+  for (const symbol of Object.values(result.symbols ?? {})) {
+    if (typeof symbol === "string" && !result.original.includes(symbol)) {
+      return undefined;
+    }
+  }
+  return { original: result.original, patched: result.patched };
+}
+
+// Derived patterns for one file: what the rules can add for features no
+// shipped or remembered variant recognizes. The whole set is proved on an
+// in-memory copy before any of it is offered, so a bundle is never written in a
+// state no one has checked.
+function deriveFor(
+  filename: string,
+  content: string,
+  version: string,
+  known: PatchDef[],
+  // The caller has usually resolved this already; recomputing it costs a
+  // second pass over every stale variant, which on an unrecognized build is
+  // the single most expensive thing here.
+  wantedFeatures?: Set<FeatureKey>,
+): DerivedPatch[] {
+  const wanted = wantedFeatures ?? unresolvedFeatures(content, known);
+  if (wanted.size === 0) return [];
+
+  const found: DerivedPatch[] = [];
+  for (const rule of RULES) {
+    if (rule.file !== filename) continue;
+    if (!DERIVABLE.includes(rule.key as FeatureKey)) continue;
+    if (!wanted.has(rule.key as FeatureKey)) continue;
+    const edit = admissible(rule, content);
+    if (!edit) continue;
+    found.push({
+      feature: rule.key as FeatureKey,
+      filename,
+      original: edit.original,
+      patched: edit.patched,
+      description: `${rule.description(version)} [derived]`,
+    });
+  }
+  if (found.length === 0) return [];
+
+  // Invertibility, which is what Restore depends on, without a second pass
+  // over 21 MB: each edit rewrites bytes that occur once, so reversing it is
+  // exact as long as the text it leaves behind is also unique and does not
+  // collide with another edit's.
+  const texts = new Set<string>();
+  for (const p of found) {
+    if (occurrences(content, p.patched) !== 0) return [];
+    if (texts.has(p.original) || texts.has(p.patched)) return [];
+    texts.add(p.original);
+    texts.add(p.patched);
+  }
+  // Whether the assembled file parses is checked on the bytes applyPatches is
+  // about to write, so that assembly happens once. See derivedGuard.
+  return found;
+}
+
+// The gate applyPatches runs before writing a file any derivation touched: the
+// result has to parse, and each derived edit has to have landed exactly once so
+// Restore can reverse it. A splice can be unique and still leave the bundle
+// unparseable, which is not worth discovering on a user's install.
+function derivedGuard(
+  filename: string,
+  derived: DerivedPatch[],
+): (modified: string) => boolean {
+  return (modified) => {
+    for (const p of derived) {
+      if (occurrences(modified, p.patched) !== 1) return false;
+    }
+    try {
+      new vm.Script(modified, { filename });
+    } catch {
+      return false;
+    }
+    return true;
+  };
+}
+
+// The patterns to hand apply/restore for one file: everything shipped, plus
+// what earlier runs derived and this file still shows, plus anything newly
+// derivable. Deriving is skipped for restore, which only ever needs to
+// recognize what is already there.
+function patchSetFor(
+  filename: string,
+  filePath: string,
+  version: string,
+  shipped: PatchDef[],
+  mode: "apply" | "restore",
+  record: DerivedPatch[] = [],
+): {
+  patches: PatchDef[];
+  derived: DerivedPatch[];
+  remembered: DerivedPatch[];
+} {
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return { patches: shipped, derived: [], remembered: [] };
+  }
+
+  const remembered = recordedFor(record, filename, content);
+  // Remembered first, for the same reason as in webviewNeedsPatching: on a
+  // build only derivation can answer for, the stored variants are 21 MB of
+  // scanning each that cannot match.
+  const known = [...remembered.map(asPatchDef), ...shipped];
+  // Only the variant that answers for each feature is passed on. The stored
+  // array holds every release's variant of every behavior, and at most one of
+  // them can match a given build (the invariant the per-release aliasing sweep
+  // proves and applyPatches already rests on), so handing over all 128 makes
+  // the applier re-scan 21 MB for 118 patterns that cannot match.
+  const { resolved, unresolved } = resolveFeatures(content, known);
+  const fresh =
+    mode === "apply" && unresolved.size > 0
+      ? deriveFor(filename, content, version, known, unresolved)
+      : [];
+  return {
+    patches: [...resolved.values(), ...fresh.map(asPatchDef)],
+    derived: fresh,
+    // What the rewritten record has to keep: entries still doing a job here.
+    remembered,
+  };
+}
+
+// Put `record` into the bundle, replacing whatever record was there, or take
+// the block out entirely when there is nothing left to record.
+function withDerivedRecord(js: string, record: DerivedPatch[]): string {
+  const stripped = js.replace(patchBlockRe(DERIVED_BLOCK), "");
+  return record.length > 0 ? stripped + derivedRecordBlock(record) : stripped;
+}
+
+// `guard`, when given, sees the assembled bytes and can refuse the write. It is
+// how a derived edit earns its way onto disk; a reviewed pattern needs no such
+// gate and is not charged for one.
+function applyPatches(
+  filePath: string,
+  patches: PatchDef[],
+  guard?: (modified: string) => boolean,
+  // Runs on the assembled bytes before the guard sees them, so the derived
+  // record lands in the same write as the edits it describes.
+  finalize?: (modified: string) => string,
+): PatchResult {
   const content = fs.readFileSync(filePath, "utf8");
   let modified = content;
   const applied: string[] = [];
@@ -3519,6 +3899,21 @@ function applyPatches(filePath: string, patches: PatchDef[]): PatchResult {
     skipped.push(`${p.description} (pattern not found)`);
   }
 
+  if (finalize) modified = finalize(modified);
+
+  if (modified !== content && guard && !guard(modified)) {
+    return {
+      filename: path.basename(filePath),
+      applied: [],
+      skipped: [
+        ...skipped,
+        ...applied.map((a) => `${a} (rejected before write)`),
+      ],
+      reverted: [],
+      noChanges: true,
+    };
+  }
+
   if (modified !== content) {
     fs.writeFileSync(filePath, modified, "utf8");
   }
@@ -3532,7 +3927,11 @@ function applyPatches(filePath: string, patches: PatchDef[]): PatchResult {
   };
 }
 
-function restorePatches(filePath: string, patches: PatchDef[]): PatchResult {
+function restorePatches(
+  filePath: string,
+  patches: PatchDef[],
+  finalize?: (modified: string) => string,
+): PatchResult {
   const content = fs.readFileSync(filePath, "utf8");
   let modified = content;
   const reverted: string[] = [];
@@ -3555,6 +3954,8 @@ function restorePatches(filePath: string, patches: PatchDef[]): PatchResult {
     }
     skipped.push(`${p.description} (neither pattern found)`);
   }
+
+  if (finalize) modified = finalize(modified);
 
   if (modified !== content) {
     fs.writeFileSync(filePath, modified, "utf8");
@@ -3593,6 +3994,8 @@ async function runPatch(
   const distDir = path.join(extPath, "dist");
 
   if (mode === "status") {
+    // Status always does the real work: it is what someone runs precisely
+    // when they doubt the state, so it must not read a cached claim about it.
     const { files, verdict } = computeStatus(distDir);
     showStatusPanel(version, verdict, files, computeBonusStatus(extPath));
     return false;
@@ -3600,6 +4003,17 @@ async function runPatch(
 
   const results: PatchResult[] = [];
 
+  // The record lives in webview.js but covers every file, so nothing is
+  // written until the whole set is known: webview.js cannot carry a record of
+  // kiloclaw.js's derivations that have not been worked out yet.
+  const record = readDerivedRecordAt(distDir);
+  const plans: {
+    fp: FilePatches;
+    fpath: string;
+    patches: PatchDef[];
+    derived: DerivedPatch[];
+    remembered: DerivedPatch[];
+  }[] = [];
   for (const fp of PATCHES) {
     const fpath = path.join(distDir, fp.filename);
     if (!fs.existsSync(fpath)) {
@@ -3612,11 +4026,44 @@ async function runPatch(
       });
       continue;
     }
+    plans.push({
+      fp,
+      fpath,
+      ...patchSetFor(fp.filename, fpath, version, fp.patches, mode, record),
+    });
+  }
 
+  // Apply keeps every derivation still doing a job and adds the new ones;
+  // Restore keeps none, so the block goes with the edits.
+  const nextRecord =
+    mode === "apply"
+      ? plans.flatMap((p) => [...p.remembered, ...p.derived])
+      : [];
+  const recordWriter = (filename: string) =>
+    filename === CHAT_SCRIPT_FILE
+      ? (modified: string) => withDerivedRecord(modified, nextRecord)
+      : undefined;
+
+  for (const plan of plans) {
     if (mode === "apply") {
-      results.push(applyPatches(fpath, fp.patches));
+      results.push(
+        applyPatches(
+          plan.fpath,
+          plan.patches,
+          plan.derived.length > 0
+            ? derivedGuard(plan.fp.filename, plan.derived)
+            : undefined,
+          recordWriter(plan.fp.filename),
+        ),
+      );
     } else {
-      results.push(restorePatches(fpath, fp.patches));
+      results.push(
+        restorePatches(
+          plan.fpath,
+          plan.patches,
+          recordWriter(plan.fp.filename),
+        ),
+      );
     }
   }
 
@@ -3669,6 +4116,11 @@ async function runPatch(
       suspendReconcile = false;
     }
   }
+
+  // Apply leaves the install in the state activation would otherwise re-derive
+  // from scratch; Restore leaves it in one we make no claim about.
+  if (mode === "apply") markSettled(extPath);
+  else clearSettled();
 
   const totalApplied =
     results.reduce((s, r) => s + r.applied.length + r.reverted.length, 0) +
@@ -3744,21 +4196,119 @@ async function runPatch(
 // and a feature whose match reads "already patched" is finished. The aliasing
 // sweep run each release proves the stronger property this rests on, that
 // exactly one variant of each feature matches any given build.
-function webviewNeedsPatching(content: string): boolean {
+function webviewNeedsPatching(
+  content: string,
+  extra: PatchDef[] = [],
+): boolean {
+  // Remembered derivations come first. On a build patched by derivation none
+  // of the stored variants can match, so consulting them first makes every
+  // launch re-scan 21 MB for ~240 patterns that cannot answer: 543 ms rather
+  // than 14 ms, measured on 7.6.2, which is the pre-1.24.1 regression aimed at
+  // exactly the users this path exists for. At most one variant of a feature
+  // matches a build, so which one is looked at first is free.
   const byFeature = new Map<FeatureKey, PatchDef[]>();
-  for (const patch of PATCHES[0].patches) {
+  for (const patch of [...extra, ...PATCHES[0].patches]) {
     const variants = byFeature.get(patch.feature);
     if (variants) variants.push(patch);
     else byFeature.set(patch.feature, [patch]);
   }
-  for (const variants of byFeature.values()) {
+  // A feature nothing here names a site for at all is the state a re-minify
+  // leaves behind, and it is collected from this same loop rather than a
+  // second pass: asking each variant separately would put the O(variants)
+  // scan back on the activation path.
+  const unresolved = new Set<FeatureKey>();
+  for (const [key, variants] of byFeature) {
+    let resolved = false;
     for (const p of variants) {
-      if (content.includes(p.patched)) break;
+      if (content.includes(p.patched)) {
+        resolved = true;
+        break;
+      }
       if (content.includes(p.original)) return true;
       if (p.previous && content.includes(p.previous)) return true;
     }
+    if (!resolved) unresolved.add(key);
+  }
+
+  // Before derivation this state was silent: no variant matched, so nothing
+  // reported work and the user stayed on stock Kilo until a release landed.
+  // Deriving to answer it costs about 200 ms, paid only on a build no shipped
+  // variant recognizes, which is also the only build that can reach here.
+  for (const key of unresolved) {
+    if (!DERIVABLE.includes(key)) continue;
+    const rule = RULES.find(
+      (r) => r.key === key && r.file === PATCHES[0].filename,
+    );
+    if (rule && admissible(rule, content)) return true;
   }
   return false;
+}
+
+// --- Settled-state fingerprint -----------------------------------------------
+//
+// Everything activation does is one question: is this install already in the
+// state our patches and settings imply? Answering it reads Kilo's 21 MB bundle
+// four times and scans it for anchors and variants, which is 148 ms of
+// synchronous work on the extension host at every launch, and the answer is
+// "yes, nothing to do" every time after the first.
+//
+// The answer can only change if Kilo's files changed, our settings changed, or
+// kb-patch itself changed. All three are readable without opening a bundle:
+// three stat() calls, the settings we contribute, and our own version. When
+// that fingerprint matches the one recorded the last time the question was
+// answered in full, the answer is still the same.
+//
+// This is a cache, not a source of truth. Anything that does not match falls
+// through to the full check, so the worst case is what activation costs today,
+// and Show Status never consults it at all.
+const SETTLED_KEY = "settledFingerprint.v1";
+const FINGERPRINT_FILES = ["webview.js", "kiloclaw.js", CHAT_STYLE_FILE];
+
+function installFingerprint(extPath: string): string | undefined {
+  const parts: string[] = [
+    extensionContext?.extension?.packageJSON?.version ?? "?",
+    path.basename(extPath),
+  ];
+  for (const name of FINGERPRINT_FILES) {
+    try {
+      const s = fs.statSync(path.join(extPath, "dist", name));
+      parts.push(`${name}:${s.size}:${s.mtimeMs}`);
+    } catch {
+      // A file we cannot stat means we cannot claim the install is settled.
+      return undefined;
+    }
+  }
+  // The bonus settings decide what the reconcilers would write, so a change to
+  // one of them has to invalidate the record even though no file moved.
+  // BONUS_SETTING_DEFAULTS keys are bare, as every other reader here expects,
+  // so the section has to be named or each lookup misses and a settings change
+  // leaves the record standing.
+  const config = vscode.workspace.getConfiguration("kiloCodeKbPatch");
+  for (const [key, off] of BONUS_SETTING_DEFAULTS) {
+    parts.push(`${key}=${String(config.get(key, off))}`);
+  }
+  return parts.join("|");
+}
+
+function isSettled(extPath: string): boolean {
+  const now = installFingerprint(extPath);
+  return (
+    now !== undefined &&
+    now === extensionContext?.globalState.get<string>(SETTLED_KEY)
+  );
+}
+
+// Recorded only where the full check has just run and found nothing left to
+// do. Recording it anywhere else would be a claim we have not verified.
+function markSettled(extPath: string): void {
+  const now = installFingerprint(extPath);
+  if (now !== undefined) {
+    void extensionContext?.globalState.update(SETTLED_KEY, now);
+  }
+}
+
+function clearSettled(): void {
+  void extensionContext?.globalState.update(SETTLED_KEY, undefined);
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -3780,6 +4330,22 @@ export function activate(context: vscode.ExtensionContext): void {
   const extPath = findLatestKiloExt();
   if (!extPath) return;
 
+  // Registered before the fingerprint check below, so a settings change is
+  // still honoured on a launch that skipped the startup reconcile.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (suspendReconcile) return;
+      if (!e.affectsConfiguration("kiloCodeKbPatch")) return;
+      notifyBonusReload(reconcileBonuses(extPath));
+      markSettled(extPath);
+    }),
+  );
+
+  // Nothing Kilo owns has moved, our settings are the same, and we are the
+  // same build: the full check ran on an earlier launch and found nothing to
+  // do, and none of its inputs have changed since.
+  if (isSettled(extPath)) return;
+
   // Reconcile the bonus knobs on startup (self-heals after a Kilo update resets
   // the files) and whenever one of our settings changes. The settings are
   // registered in package.json, so affectsConfiguration reports them reliably and
@@ -3787,13 +4353,6 @@ export function activate(context: vscode.ExtensionContext): void {
   // On the settings path the reload offer shows right away; the startup result
   // is held until the apply-patches decision below is settled.
   const startupBonuses = reconcileBonuses(extPath);
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (suspendReconcile) return;
-      if (!e.affectsConfiguration("kiloCodeKbPatch")) return;
-      notifyBonusReload(reconcileBonuses(extPath));
-    }),
-  );
 
   // Read after the bonus reconcile, which may itself rewrite webview.js, so the
   // needs-patching check sees the reconciled bundle.
@@ -3811,9 +4370,19 @@ export function activate(context: vscode.ExtensionContext): void {
     content !== "" &&
     chatScriptCoreStatus(content).some((f) => f.state === "unpatched");
   const needsPatching =
-    webviewNeedsPatching(content) || cssNeedsPatching || scriptNeedsPatching;
+    webviewNeedsPatching(
+      content,
+      recordedFor(readDerivedRecord(content), PATCHES[0].filename, content).map(
+        asPatchDef,
+      ),
+    ) ||
+    cssNeedsPatching ||
+    scriptNeedsPatching;
 
   if (!needsPatching) {
+    // The full check just ran and found nothing left to do, which is the one
+    // place that claim can be recorded.
+    markSettled(extPath);
     notifyBonusReload(startupBonuses);
     return;
   }
@@ -3825,10 +4394,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // notification carries the reload, which picks up the bonus changes too; on
   // Ignore or dismissal those changes still need their reload, so the held
   // offer surfaces then.
-  const version = extractVersion(extPath);
   vscode.window
     .showInformationMessage(
-      `Kilo Code KB Patch: v${version} detected, apply patches?`,
+      `Kilo Code KB Patch: v${extractVersion(extPath)} detected, apply patches?`,
       "Apply",
       "Ignore",
     )
@@ -3849,6 +4417,11 @@ export function deactivate(): void {}
 // exports, so this has no effect at runtime.
 export const __test = {
   PATCHES,
+  // The offline harness has no extension host, so it supplies its own context
+  // to exercise the derivation record that Apply writes and Restore reads.
+  setExtensionContext(context: vscode.ExtensionContext | undefined) {
+    extensionContext = context;
+  },
   webviewNeedsPatching,
   FEATURE_LABELS,
   FEATURE_GATES,
@@ -3900,6 +4473,22 @@ export const __test = {
   forceSettingOff,
   BONUS_SETTING_DEFAULTS,
   computeBonusStatus,
+  DERIVABLE,
+  RULES,
+  installFingerprint,
+  isSettled,
+  markSettled,
+  clearSettled,
+  admissible,
+  unresolvedFeatures,
+  deriveFor,
+  derivedGuard,
+  readDerivedRecord,
+  readDerivedRecordAt,
+  withDerivedRecord,
+  recordedFor,
+  patchSetFor,
+  resolveFeatures,
   parseKiloVersion,
   compareKiloVersions,
   candidateExtensionRoots,

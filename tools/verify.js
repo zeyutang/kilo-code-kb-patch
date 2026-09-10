@@ -31,7 +31,7 @@ const {
   assertPristine,
   countOccurrences,
 } = require("./lib/bundle");
-const { RULES, PROBES } = require("./lib/rules");
+const { RULES, PROBES, longestLiteral, ID } = require("./lib/rules");
 
 let failures = 0;
 function check(condition, label, detail) {
@@ -1248,6 +1248,345 @@ function main() {
           `node --check ${filename}`,
           String(err.stderr || err.message).trim(),
         );
+      }
+    }
+
+    // The state a Kilo re-minify leaves the extension in: withhold exactly the
+    // variants this build matches, so nothing shipped recognizes it, and
+    // require the derivation layer to answer with the same bytes the reviewed
+    // release shipped. This is the claim that a pure re-minify needs no
+    // release, checked per build rather than argued.
+    // The extractor that decides which literal nominates candidate sites. The
+    // retarget equivalence proof covers it for the shapes that exist today;
+    // these pin the two ways it silently went wrong while being written, both
+    // of which widen a run to text that is not guaranteed to be there.
+    console.log("\nshape literal extraction (what prefilters a scan)");
+    {
+      const cases = [
+        [`(${ID})\\.key==="Escape"`, '.key==="Escape"', "a plain run"],
+        [
+          `(${ID})=!!(${ID})\\?\\.closest\\("textarea\\.prompt-input"\\)`,
+          '?.closest("textarea.prompt-input")',
+          "escaped punctuation is literal (\\? is a ?), a class body is not",
+        ],
+        [`ab?cdef`, "cdef", "a quantified character is dropped from its run"],
+        [`abcd\\d+efghi`, "efghi", "a character class escape ends the run"],
+        [`(${ID})x\\1yzwv`, "yzwv", "a backreference ends the run"],
+        [`ab{2,3}cdefg`, "cdefg", "a counted quantifier ends the run"],
+        [`(${ID})`, "", "an all-placeholder shape yields nothing"],
+      ];
+      for (const [source, want, why] of cases) {
+        const got = longestLiteral(source);
+        check(
+          got === want,
+          `${why}`,
+          `wanted ${JSON.stringify(want)}, got ${JSON.stringify(got)}`,
+        );
+      }
+    }
+
+    console.log("\nderivation (the release that need not happen)");
+    {
+      const version = source.version;
+      const box = path.join(sandbox, "derive");
+      fs.mkdirSync(box, { recursive: true });
+      for (const [name, body] of Object.entries(pristine)) {
+        fs.writeFileSync(path.join(box, name), body);
+      }
+
+      // The same shape runPatch uses: plan every file, then write, so the
+      // record in webview.js can cover kiloclaw.js too.
+      const plan = (mode) => {
+        const record = test.readDerivedRecordAt(box);
+        return test.PATCHES.filter(
+          (fp) => pristine[fp.filename] !== undefined,
+        ).map((fp) => ({
+          fp,
+          fpath: path.join(box, fp.filename),
+          withheld: fp.patches.filter(
+            (p) => !pristine[fp.filename].includes(p.original),
+          ),
+          ...test.patchSetFor(
+            fp.filename,
+            path.join(box, fp.filename),
+            version,
+            fp.patches.filter(
+              (p) => !pristine[fp.filename].includes(p.original),
+            ),
+            mode,
+            record,
+          ),
+        }));
+      };
+      const write = (plans, mode) => {
+        const next =
+          mode === "apply"
+            ? plans.flatMap((p) => [...p.remembered, ...p.derived])
+            : [];
+        const writer = (filename) =>
+          filename === test.CHAT_SCRIPT_FILE
+            ? (m) => test.withDerivedRecord(m, next)
+            : undefined;
+        return plans.map((p) =>
+          mode === "apply"
+            ? test.applyPatches(
+                p.fpath,
+                p.patches,
+                p.derived.length > 0
+                  ? test.derivedGuard(p.fp.filename, p.derived)
+                  : undefined,
+                writer(p.fp.filename),
+              )
+            : test.restorePatches(p.fpath, p.patches, writer(p.fp.filename)),
+        );
+      };
+
+      const first = plan("apply");
+      let derivedTotal = 0;
+      for (const p of first) {
+        derivedTotal += p.derived.length;
+        const covering = p.fp.patches.filter((x) =>
+          pristine[p.fp.filename].includes(x.original),
+        );
+        const byFeature = new Map(p.derived.map((d) => [d.feature, d]));
+        for (const shipped of covering) {
+          if (!test.DERIVABLE.includes(shipped.feature)) continue;
+          const d = byFeature.get(shipped.feature);
+          check(
+            d !== undefined &&
+              d.original === shipped.original &&
+              d.patched === shipped.patched,
+            `${p.fp.filename}: ${shipped.feature} derives the shipped bytes`,
+            d === undefined ? "nothing derived" : "derived text differs",
+          );
+        }
+      }
+      const applied = write(first, "apply");
+      check(derivedTotal > 0, `${derivedTotal} pattern(s) derived in total`);
+      for (const [i, p] of first.entries()) {
+        const covering = p.fp.patches.filter((x) =>
+          pristine[p.fp.filename].includes(x.original),
+        );
+        check(
+          applied[i].applied.length === covering.length,
+          `${p.fp.filename}: derived apply lands ${covering.length} edit(s)`,
+          `applied ${applied[i].applied.length}`,
+        );
+      }
+
+      // The record has to be in the bundle, not anywhere this process holds.
+      const onDisk = test.readDerivedRecordAt(box);
+      check(
+        onDisk.length === derivedTotal,
+        `the bundle carries all ${derivedTotal} derived pattern(s)`,
+        `found ${onDisk.length}`,
+      );
+      check(
+        onDisk.some((p) => p.filename === "kiloclaw.js"),
+        "webview.js's record covers kiloclaw.js too",
+      );
+      const rawJs = fs.readFileSync(path.join(box, "webview.js"), "utf8");
+      // The record is base64 precisely so it does not reproduce the patched
+      // text: a second literal copy would break both the guard's
+      // "landed exactly once" check and the replace() Restore does.
+      check(
+        onDisk.every(
+          (p) =>
+            rawJs.split(p.patched).length ===
+            (p.filename === "webview.js" ? 2 : 1),
+        ),
+        "the record reproduces no patched text verbatim",
+      );
+
+      for (const filename of Object.keys(pristine).filter((f) =>
+        f.endsWith(".js"),
+      )) {
+        try {
+          execFileSync(
+            process.execPath,
+            ["--check", path.join(box, filename)],
+            { stdio: "pipe" },
+          );
+          check(true, `node --check ${filename} (derived)`);
+        } catch (err) {
+          check(
+            false,
+            `node --check ${filename} (derived)`,
+            String(err.stderr || err.message).trim(),
+          );
+        }
+      }
+
+      const afterApply = Object.keys(pristine).map((n) =>
+        fs.readFileSync(path.join(box, n), "utf8"),
+      );
+      write(plan("apply"), "apply");
+      check(
+        Object.keys(pristine).every(
+          (n, i) =>
+            fs.readFileSync(path.join(box, n), "utf8") === afterApply[i],
+        ),
+        "re-applying a derived patch set changes nothing",
+      );
+
+      // Restore reads the record out of the bundle, which is the whole point
+      // of putting it there: nothing this process remembers is involved.
+      write(plan("restore"), "restore");
+      for (const [name, body] of Object.entries(pristine)) {
+        if (!name.endsWith(".js")) continue;
+        check(
+          fs.readFileSync(path.join(box, name), "utf8") === body,
+          `${name}: pristine again after restoring a derived patch set`,
+        );
+      }
+      check(
+        test.readDerivedRecordAt(box).length === 0,
+        "restore takes the record away with the edits",
+      );
+
+      // What a launch sees in the two states derivation creates.
+      const live = test.PATCHES.find((g) => g.filename === "webview.js");
+      const kept = live.patches.slice();
+      const withheldJs = kept.filter(
+        (p) => !pristine["webview.js"].includes(p.original),
+      );
+      try {
+        live.patches.splice(0, live.patches.length, ...withheldJs);
+        const fresh = test.deriveFor(
+          "webview.js",
+          pristine["webview.js"],
+          version,
+          withheldJs,
+        );
+        let derivedJs = pristine["webview.js"];
+        for (const d of fresh)
+          derivedJs = derivedJs.replace(d.original, d.patched);
+        derivedJs = test.withDerivedRecord(derivedJs, fresh);
+
+        check(
+          test.webviewNeedsPatching(pristine["webview.js"]) === true,
+          "an unrecognized build reports that it needs patching",
+        );
+        const started = process.hrtime.bigint();
+        const settled = test.webviewNeedsPatching(
+          derivedJs,
+          test
+            .recordedFor(
+              test.readDerivedRecord(derivedJs),
+              "webview.js",
+              derivedJs,
+            )
+            .map((p) => ({
+              feature: p.feature,
+              original: p.original,
+              patched: p.patched,
+              description: p.description,
+            })),
+        );
+        const launchMs = Number(process.hrtime.bigint() - started) / 1e6;
+        check(
+          settled === false,
+          "a derivation-patched build reports nothing left to do",
+        );
+        check(
+          launchMs < 200,
+          `that reading costs ${launchMs.toFixed(0)} ms, not a full-array scan`,
+        );
+      } finally {
+        live.patches.splice(0, live.patches.length, ...kept);
+      }
+    }
+
+    console.log("\nsettled fingerprint (what invalidates the launch shortcut)");
+    {
+      const memory = new Map();
+      const ctx = (kbVersion) => ({
+        extension: { packageJSON: { version: kbVersion } },
+        extensionUri: { fsPath: path.join(sandbox, "kb", "x") },
+        globalState: {
+          get: (k, d) => (memory.has(k) ? memory.get(k) : d),
+          update: (k, v) => {
+            if (v === undefined) memory.delete(k);
+            else memory.set(k, v);
+            return Promise.resolve();
+          },
+        },
+      });
+      // A directory laid out like an install, so stat() has something to read
+      // and moving a file cannot touch the real one.
+      const fake = path.join(sandbox, "settled");
+      fs.mkdirSync(path.join(fake, "dist"), { recursive: true });
+      for (const name of ["webview.js", "kiloclaw.js", test.CHAT_STYLE_FILE]) {
+        fs.writeFileSync(path.join(fake, "dist", name), `// ${name}\n`);
+      }
+      test.setExtensionContext(ctx("1.0.0"));
+      shim.setConfig(Object.fromEntries(test.BONUS_SETTING_DEFAULTS));
+      try {
+        test.markSettled(fake);
+        check(
+          test.isSettled(fake) === true,
+          "a recorded install reads settled",
+        );
+
+        shim.setConfig({
+          ...Object.fromEntries(test.BONUS_SETTING_DEFAULTS),
+          chatMathRendering: true,
+        });
+        check(
+          test.isSettled(fake) === false,
+          "a bonus setting change invalidates it",
+        );
+        shim.setConfig(Object.fromEntries(test.BONUS_SETTING_DEFAULTS));
+        check(
+          test.isSettled(fake) === true,
+          "putting the setting back restores it",
+        );
+
+        test.setExtensionContext(ctx("1.0.1"));
+        check(
+          test.isSettled(fake) === false,
+          "a kb-patch version change invalidates it",
+        );
+        test.setExtensionContext(ctx("1.0.0"));
+
+        const target = path.join(fake, "dist", "webview.js");
+        const before = fs.statSync(target);
+        fs.appendFileSync(target, "// touched\n");
+        check(
+          test.isSettled(fake) === false,
+          "a changed bundle invalidates it (a Kilo update)",
+        );
+        // Rewriting the same bytes does not bring the record back, because
+        // mtimeMs carries sub-millisecond precision that utimes cannot
+        // reproduce. That is the safe direction: the shortcut is given up and
+        // the full check runs, rather than a changed install reading settled.
+        fs.writeFileSync(target, "// webview.js\n");
+        fs.utimesSync(target, before.atime, before.mtime);
+        check(
+          test.isSettled(fake) === false,
+          "rewriting a bundle keeps it invalid, even byte-for-byte",
+        );
+        test.markSettled(fake);
+        check(
+          test.isSettled(fake) === true,
+          "recording again after the write restores it",
+        );
+
+        test.clearSettled();
+        check(
+          test.isSettled(fake) === false,
+          "clearSettled invalidates it (what Restore does)",
+        );
+
+        fs.rmSync(path.join(fake, "dist", "kiloclaw.js"));
+        test.markSettled(fake);
+        check(
+          test.isSettled(fake) === false,
+          "an install missing a file is never recorded as settled",
+        );
+      } finally {
+        test.setExtensionContext(undefined);
+        shim.setConfig(Object.fromEntries(test.BONUS_SETTING_DEFAULTS));
       }
     }
 

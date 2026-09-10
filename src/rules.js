@@ -27,8 +27,145 @@ function esc(literal) {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// --- Candidate prefiltering --------------------------------------------------
+//
+// Most shapes open on an identifier placeholder, so the engine has to retry
+// every offset of a 21 MB bundle: about 1.25 s per rule, 13.7 s for the set,
+// which is affordable offline but not on an apply path. Every shape also
+// contains literal text the minifier cannot touch, and by construction that
+// text sits inside every match of the shape, so it can nominate candidate
+// offsets and the shape then runs only in a window around each. Measured on
+// pristine 7.6.2: 1250 ms to 5 ms per rule, byte-identical results.
+//
+// The literal is extracted from the shape rather than written next to it. A
+// hand-written one would be exactly the latent hardcode the 7.4.21 lesson
+// warns about, free to drift from the shape it is meant to summarize and
+// silently narrow the search; an extracted one cannot disagree with its shape.
+const CANDIDATE_WINDOW = 8192;
+
+// Regex-source constructs that end a literal run, because what follows is not
+// a plain character: groups, alternation, classes, backreferences and the
+// character escapes that stand for a set rather than a character.
+const NOT_LITERAL = new Set(["(", ")", "|", "]", ".", "^", "$"]);
+const QUANTIFIER = new Set(["?", "*", "+", "{"]);
+const CLASS_ESCAPE = new Set(["d", "D", "s", "S", "w", "W", "b", "B"]);
+
+// The longest run of literal characters in a regex source, or "" when the
+// shape is all placeholders. Only used to nominate candidates, so a run this
+// misjudges as shorter than it is costs a little speed, never correctness; a
+// run it misjudged as literal when it is not would narrow the search, which is
+// why every construct not proven to be a plain character ends the run.
+function longestLiteral(source) {
+  let best = "";
+  let run = "";
+  const keep = () => {
+    if (run.length > best.length) best = run;
+    run = "";
+  };
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i];
+    // A quantifier makes the character before it optional or repeatable, so
+    // that character cannot be counted on to appear.
+    if (QUANTIFIER.has(c)) {
+      const held = run.slice(0, -1);
+      if (held.length > best.length) best = held;
+      run = "";
+      if (c === "{") while (i < source.length && source[i] !== "}") i++;
+      continue;
+    }
+    // A character class stands for one of a set, so neither the class nor the
+    // characters spelling it out belong to a literal run. ID is written as two
+    // classes, so missing this reads the class body "A-Za-z_$" as text.
+    if (c === "[") {
+      keep();
+      i++;
+      while (i < source.length && source[i] !== "]") {
+        if (source[i] === "\\") i++;
+        i++;
+      }
+      continue;
+    }
+    if (c === "\\") {
+      const next = source[++i];
+      if (next === undefined) break;
+      // \1..\9 is a backreference and \d and friends are sets; everything else
+      // escaped here is the literal character itself.
+      if (CLASS_ESCAPE.has(next) || /[0-9]/.test(next)) keep();
+      else run += next;
+      continue;
+    }
+    if (NOT_LITERAL.has(c)) keep();
+    else run += c;
+  }
+  keep();
+  return best;
+}
+
+const literalCache = new Map();
+function shapeLiteral(source) {
+  let lit = literalCache.get(source);
+  if (lit === undefined) {
+    lit = longestLiteral(source);
+    literalCache.set(source, lit);
+  }
+  return lit;
+}
+
+// Every match of `source` in `content`, with absolute `.index` values: rules
+// read that offset to slice the bundle and to measure the gap between two
+// hops, so a window-relative one would corrupt both.
+// Prefiltering is a shortcut, so the harness has to be able to take the long
+// way and compare: `retarget` re-derives every rule with this off and requires
+// byte-identical output, which is what keeps the extraction honest per build
+// rather than per review.
+let prefilterEnabled = true;
+function withoutPrefilter(fn) {
+  prefilterEnabled = false;
+  try {
+    return fn();
+  } finally {
+    prefilterEnabled = true;
+  }
+}
+
 function findAll(content, source) {
-  return [...content.matchAll(new RegExp(source, "g"))];
+  const literal = prefilterEnabled ? shapeLiteral(source) : "";
+  // Short of two windows there is nothing to save, and slices this size are
+  // where the two-hop rules do their local scans.
+  if (literal.length < 4 || content.length <= CANDIDATE_WINDOW * 2) {
+    return [...content.matchAll(new RegExp(source, "g"))];
+  }
+
+  const found = new Map();
+  let at = 0;
+  while ((at = content.indexOf(literal, at)) !== -1) {
+    // Widen on the rare chance that a match reaches a window edge, so the
+    // window can never truncate one into a miss or a short match.
+    let span = CANDIDATE_WINDOW;
+    for (;;) {
+      const from = Math.max(0, at - span);
+      const to = Math.min(content.length, at + literal.length + span);
+      const slice = content.slice(from, to);
+      const hits = [...slice.matchAll(new RegExp(source, "g"))];
+      const abuts = hits.some(
+        (m) =>
+          (from > 0 && m.index === 0) ||
+          (to < content.length && m.index + m[0].length === slice.length),
+      );
+      if (abuts) {
+        span *= 2;
+        continue;
+      }
+      for (const m of hits) {
+        m.index += from;
+        m.input = content;
+        if (!found.has(m.index)) found.set(m.index, m);
+      }
+      break;
+    }
+    at += literal.length;
+  }
+  return [...found.values()].sort((a, b) => a.index - b.index);
 }
 
 // Occurrences of a literal inside a span, for a rule that has to know where
@@ -465,14 +602,19 @@ function attachLabelExpression(content, i18n) {
 // that builds the `#opencode-icon-<name>` href. Walk back from that reference to
 // the enclosing function declaration to get its minified name.
 function deriveIconComponent(content) {
-  const builder = content.match(
-    new RegExp("(" + ID + ")=(" + ID + ")=>`opencode-icon-\\$\\{\\2\\}`"),
-  );
+  // findAll rather than String.match so these two scans are prefiltered like
+  // every other; taking the first hit of an ordered list is what an unanchored
+  // match() returns anyway.
+  const builder = findAll(
+    content,
+    "(" + ID + ")=(" + ID + ")=>`opencode-icon-\\$\\{\\2\\}`",
+  )[0];
   if (!builder) return undefined;
 
-  const use = content.match(
-    new RegExp("\\$\\{" + esc(builder[1]) + "\\(" + ID + "\\.name\\)\\}"),
-  );
+  const use = findAll(
+    content,
+    "\\$\\{" + esc(builder[1]) + "\\(" + ID + "\\.name\\)\\}",
+  )[0];
   if (!use) return undefined;
 
   const before = content.slice(Math.max(0, use.index - 3000), use.index);
@@ -873,4 +1015,6 @@ module.exports = {
   mathExtensions,
   ID,
   esc,
+  withoutPrefilter,
+  longestLiteral,
 };

@@ -9,6 +9,7 @@ Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `
 It also keeps the chat history scrolled to the bottom while you type, stops the mouse cursor macOS hides while you type from highlighting menus and buttons, and makes `Escape` dismiss the `@` mention menu for good.
 
 Each patch release keeps the earlier versions' patterns, so a newer patch still works on an older Kilo Code.
+When a Kilo Code update renames the code these patches target, KB Patch works out the new target from the updated build and offers to apply.
 
 ## What it does
 
@@ -148,6 +149,6 @@ Model and mode pickers, confirmations, `@`-mentions. The patch leaves these alon
 ## Troubleshooting
 
 - **No effect:** reload the VS Code window after applying.
-- **Stopped working after a Kilo Code update:** updates overwrite the patched files and can rename Kilo Code's internal code. Re-apply by `Cmd+Shift+P` → `Kilo Code KB Patch: Apply Patches`.
+- **Stopped working after a Kilo Code update:** updates overwrite the patched files. KB Patch offers to re-apply on the next window reload, and you can run it yourself with `Cmd+Shift+P` → `Kilo Code KB Patch: Apply Patches`.
 - **"Could not find a kilocode.kilo-code-\* install":** Kilo Code is not installed in this editor (the message lists every folder searched).
   Install Kilo Code first, then re-run **Apply Patches**.

@@ -35,13 +35,20 @@ const {
   assertPristine,
   countOccurrences,
 } = require("./lib/bundle");
-const { RULES, ATTACH_RULE, MATH_RULE, PROBES } = require("./lib/rules");
+const {
+  RULES,
+  ATTACH_RULE,
+  MATH_RULE,
+  PROBES,
+  withoutPrefilter,
+} = require("./lib/rules");
 
 function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--ext") args.ext = argv[++i];
     else if (argv[i] === "--vsix") args.vsix = argv[++i];
+    else if (argv[i] === "--fast") args.fast = true;
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
     else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
   }
@@ -53,7 +60,9 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
-    console.log("usage: node tools/retarget.js [--ext <path> | --vsix <path>]");
+    console.log(
+      "usage: node tools/retarget.js [--ext <path> | --vsix <path>] [--fast]",
+    );
     return 0;
   }
 
@@ -181,8 +190,6 @@ function main() {
   run(ATTACH_RULE, true);
   run(MATH_RULE, true);
 
-  // Probes assert a runtime derivation still works; they store nothing in src,
-  // so there is never anything to paste, only "still readable" or not.
   for (const probe of PROBES) {
     const content = bundles[probe.file];
     if (content === undefined) {
@@ -204,6 +211,40 @@ function main() {
       `  covered    ${probe.key} (${probe.file}) ${JSON.stringify(outcome.values)}`,
     );
   }
+
+  // Rules nominate candidate sites from a literal extracted out of their own
+  // shape and run the shape only near those, which is what makes a derivation
+  // cost milliseconds instead of 1.25 s per rule. That shortcut is only sound
+  // while it finds what an unfiltered scan of the whole bundle finds, so prove
+  // the two agree on this build rather than trusting the extractor. Costs
+  // about what deriving alone used to, and this tool runs once per release.
+  if (!args.fast) {
+    let disagreed = 0;
+    for (const rule of [...RULES, ATTACH_RULE, MATH_RULE]) {
+      const content = bundles[rule.file];
+      if (content === undefined) continue;
+      const quick = JSON.stringify(rule.derive(content) ?? null);
+      const full = JSON.stringify(
+        withoutPrefilter(() => rule.derive(content)) ?? null,
+      );
+      if (quick !== full) {
+        console.log(
+          `  PREFILTER  ${rule.key}: prefiltered derivation differs from the full scan` +
+            `\n             prefiltered: ${quick}\n             full scan:   ${full}`,
+        );
+        disagreed++;
+      }
+    }
+    unclear += disagreed;
+    if (disagreed === 0) {
+      console.log(
+        `\n  prefilters proven: all ${RULES.length + 2} rules derive identically without them`,
+      );
+    }
+  }
+
+  // Probes assert a runtime derivation still works; they store nothing in src,
+  // so there is never anything to paste, only "still readable" or not.
 
   if (proposals.length > 0) {
     console.log(`\n${"=".repeat(76)}`);

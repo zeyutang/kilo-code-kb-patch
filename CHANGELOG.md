@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Work out the patch sites from Kilo Code build and applies them instead of storing seen patterns
+- **Restore Originals** reverses those patches as expected
+- Faster startup and **Apply Patches**
+
 ## 1.25.0
 
 - Support Kilo Code 7.6.1, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

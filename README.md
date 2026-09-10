@@ -30,7 +30,7 @@ Applies to the chat input, the permission prompt, and the KiloClaw edit/chat pan
 Native Kilo Code recalls a message when a bare `Up` or `Down` reaches the start or end of what you typed, which is why holding the key can jump away mid-edit.
 Patched, recall moves to `Cmd/Ctrl+Up` / `Down` and works from anywhere in the chat box, and stepping forward past the newest message brings your unsent draft back.
 
-Since Kilo Code 7.5.11 an `@` mention query may contain spaces, so ordinary prose typed after a mention can bring the menu back on every keystroke, `Escape` only closes it until the next key, and `Enter` then replaces your text with the highlighted file ([Kilo-Org/kilocode#13961](https://github.com/Kilo-Org/kilocode/issues/13961)).
+Since Kilo Code 7.5.11 an `@` mention query may contain spaces, so ordinary prose typed after a mention can bring the menu back on every keystroke, `Escape` only closes it until the next key, and `Enter` then replaces your text with the highlighted file.
 Patched, `Escape` dismisses the query you were looking at: the menu stays closed while you type on, and comes back when you edit back into a shorter query or retype the `@`.
 Earlier Kilo Code releases end a query at the first space and need no such patch, which the status view reports as "not needed".
 

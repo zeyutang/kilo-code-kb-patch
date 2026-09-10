@@ -1,31 +1,10 @@
 # Changelog
 
-## Version compatibility
+## 1.24.0
 
-| Kilo Code Release | KB Patch Version |
-| ----------------- | ---------------- |
-| 7.5.16+           | 1.23.x           |
-| 7.5.11-15         | 1.21.x           |
-| 7.5.8-9           | 1.20.x           |
-| 7.5.6             | 1.19.x           |
-| 7.5.4-5           | 1.18.x           |
-| 7.5.0             | 1.17.x           |
-| 7.4.23            | 1.16.x           |
-| 7.4.22            | 1.15.x           |
-| 7.4.21            | 1.14.x           |
-| 7.4.20            | 1.13.x           |
-| 7.4.17            | 1.11.x           |
-| 7.4.16            | 1.10.x           |
-| 7.4.15            | 1.9.x            |
-| 7.4.13            | 1.8.x            |
-| 7.4.11            | 1.7.x            |
-| 7.4.9             | 1.6.x            |
-| 7.4.8             | 1.5.x            |
-| 7.4.7             | 1.4.x            |
-| 7.4.0-6           | 1.3.x            |
-| 7.3.63            | 1.2.x            |
-| 7.3.50-54         | 1.1.x            |
-| 7.3.46            | 1.0.x            |
+- Support Kilo Code 7.6.0, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes
+- Re-target the opt-in attach-file `+` button and the opt-in chat math rendering to 7.6.0 and later
+- Keep all earlier versions' patterns, so 1.24.x still applies on older Kilo Code releases
 
 ## 1.23.3
 

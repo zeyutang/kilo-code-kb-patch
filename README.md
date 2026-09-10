@@ -8,15 +8,6 @@
 Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `Enter` starts a new line, `Cmd/Ctrl+Enter` sends, `Cmd/Ctrl+Up` and `Cmd/Ctrl+Down` recall earlier messages, and permission prompts stop hijacking your keystrokes while you are typing.
 It also keeps the chat history scrolled to the bottom while you type, stops the mouse cursor macOS hides while you type from highlighting menus and buttons, and makes `Escape` dismiss the `@` mention menu for good.
 
-## Supported versions (latest three)
-
-| Kilo Code | KB Patch |
-| --------- | -------- |
-| 7.5.16+   | 1.23.x   |
-| 7.5.11-15 | 1.21.x   |
-| 7.5.8-9   | 1.20.x   |
-| (prev.)   | (prev.)  |
-
 Each patch release keeps the earlier versions' patterns, so a newer patch still works on an older Kilo Code.
 
 ## What it does

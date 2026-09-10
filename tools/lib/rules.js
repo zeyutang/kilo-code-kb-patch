@@ -71,6 +71,35 @@ function shapeRule({ key, file, shape, names, build, description }) {
   };
 }
 
+// Some patch points change *shape*, not just symbols. 7.6.0 folded the chat
+// Escape handling into one ternary-chain helper where 7.5.16 and older ran two
+// consecutive `if` statements, and both forms are live across the supported
+// range. Such a rule carries one template per form and takes the form that
+// matches exactly once. Two forms matching at once is an aliasing hazard, so it
+// is reported as ambiguous rather than resolved by list order, the same
+// contract shapeRule holds for two matches of one shape.
+function formsRule({ key, file, forms, description }) {
+  return {
+    key,
+    file,
+    description,
+    derive(content) {
+      const live = forms
+        .map((form) => ({ form, matches: findAll(content, form.shape) }))
+        .filter((hit) => hit.matches.length > 0);
+      const total = live.reduce((n, hit) => n + hit.matches.length, 0);
+      if (total !== 1) return { matches: total };
+      const { form, matches } = live[0];
+      const m = matches[0];
+      return {
+        original: m[0],
+        patched: form.build(m),
+        symbols: symbolMap(form.names, m),
+      };
+    },
+  };
+}
+
 // Chat input and KiloClaw chat share one shape: an Enter-check helper guarding a
 // send call, suppressed by Shift. The edit swaps "not Shift" for "Meta".
 const ENTER_SEND_SHAPE = `(${ID})\\((${ID})\\)&&!\\2\\.shiftKey&&\\(\\2\\.preventDefault\\(\\),(${ID})\\(\\)\\)`;
@@ -87,13 +116,42 @@ const RULES = [
     description: (v) => `Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v${v}+)`,
   }),
 
-  shapeRule({
+  // The chat textarea's Escape. Through 7.5.16 this was two consecutive `if`
+  // statements, a ghost-text dismiss followed by the abort, and only the abort
+  // was patched. 7.6.0 hoisted both into one helper and added a third case, the
+  // goal-mode cancel that arrived with `/goal`, so the whole triage is now one
+  // ternary chain: popup-selector open, then ghost text, then goal mode, then
+  // abort. The edit still gates the abort alone and leaves the two Kilo-owned
+  // dismissals to fire whatever the textarea holds, so the shipped contract is
+  // unchanged; only the expression it has to be spliced into moved.
+  formsRule({
     key: "chat-escape",
     file: "webview.js",
-    shape: `if\\((${ID})\\.key==="Escape"&&(${ID})\\(\\)\\)\\{\\1\\.preventDefault\\(\\),\\1\\.stopPropagation\\(\\),(${ID})\\.abort\\(\\);return\\}`,
-    names: ["event", "guard", "store"],
-    build: (m) =>
-      `if(${m[1]}.key==="Escape"&&${m[2]}()&&(${m[1]}.shiftKey||!${m[1]}.target?.value?.trim())){${m[1]}.preventDefault(),${m[1]}.stopPropagation(),${m[3]}.abort();return}`,
+    forms: [
+      // v7.6.0+: one helper, with `busy` last in the bail-out test. Adding our
+      // guard as an alternative to `!busy()` is what keeps the two earlier
+      // branches reachable, and a bail returns !1 without consuming the event,
+      // exactly as the unmatched `if` used to fall through to the
+      // document-level handler that doc-escape guards.
+      {
+        shape:
+          `(${ID})\\.key!=="Escape"\\?!1:(${ID})\\(\\)\\?!0:` +
+          `!(${ID})\\.text\\(\\)&&!(${ID})\\.active\\(\\)&&!(${ID})\\(\\)\\?!1:` +
+          `\\(\\1\\.preventDefault\\(\\),\\1\\.stopPropagation\\(\\),` +
+          `\\3\\.text\\(\\)\\?\\3\\.dismiss\\(\\):` +
+          `\\4\\.active\\(\\)\\?\\4\\.cancel\\(\\):(${ID})\\.abort\\(\\),!0\\)`,
+        names: ["event", "popup", "ghost", "goal", "busy", "store"],
+        build: (m) =>
+          `${m[1]}.key!=="Escape"?!1:${m[2]}()?!0:!${m[3]}.text()&&!${m[4]}.active()&&(!${m[5]}()||!${m[1]}.shiftKey&&${m[1]}.target?.value?.trim())?!1:(${m[1]}.preventDefault(),${m[1]}.stopPropagation(),${m[3]}.text()?${m[3]}.dismiss():${m[4]}.active()?${m[4]}.cancel():${m[6]}.abort(),!0)`
+      },
+      // v7.4.17 through v7.5.16: the standalone abort statement.
+      {
+        shape: `if\\((${ID})\\.key==="Escape"&&(${ID})\\(\\)\\)\\{\\1\\.preventDefault\\(\\),\\1\\.stopPropagation\\(\\),(${ID})\\.abort\\(\\);return\\}`,
+        names: ["event", "guard", "store"],
+        build: (m) =>
+          `if(${m[1]}.key==="Escape"&&${m[2]}()&&(${m[1]}.shiftKey||!${m[1]}.target?.value?.trim())){${m[1]}.preventDefault(),${m[1]}.stopPropagation(),${m[3]}.abort();return}`
+      }
+    ],
     description: (v) =>
       `Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v${v}+)`,
   }),
@@ -306,13 +364,23 @@ const RULES = [
       `Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v${v}+)`,
   }),
 
+  // The document-level Escape. Kilo's "nothing to abort" test grows a conjunct
+  // whenever it gains something abortable (7.6.0 added `&&!p()?.active` for the
+  // goal composed by `/goal`), and the splice references neither that test nor
+  // anything inside it, only the event and the store. So the test is captured
+  // as a span and reproduced verbatim, pinned at its head by the
+  // minifier-immune .submitting()/.status()/"idle" surface and by the store
+  // backreference the abort call shares. Spelling the conjuncts out instead
+  // would re-break the rule on the next thing Kilo makes abortable, while
+  // widening the span cannot bind a symbol wrongly: the two the edit names sit
+  // outside it.
   shapeRule({
     key: "doc-escape",
     file: "webview.js",
-    shape: `(${ID})\\.key!=="Escape"\\|\\|!(${ID})\\.submitting\\(\\)&&\\2\\.status\\(\\)==="idle"\\|\\|\\1\\.defaultPrevented\\|\\|\\(\\1\\.preventDefault\\(\\),\\2\\.abort\\(\\)\\)`,
-    names: ["event", "store"],
+    shape: `(${ID})\\.key!=="Escape"\\|\\|(!(${ID})\\.submitting\\(\\)&&\\3\\.status\\(\\)==="idle"[^|]{0,80})\\|\\|\\1\\.defaultPrevented\\|\\|\\(\\1\\.preventDefault\\(\\),\\3\\.abort\\(\\)\\)`,
+    names: ["event", "nothingToAbort", "store"],
     build: (m) =>
-      `${m[1]}.key!=="Escape"||!${m[2]}.submitting()&&${m[2]}.status()==="idle"||${m[1]}.defaultPrevented||!${m[1]}.shiftKey&&${m[1]}.target?.value?.trim()||(${m[1]}.preventDefault(),${m[2]}.abort())`,
+      `${m[1]}.key!=="Escape"||${m[2]}||${m[1]}.defaultPrevented||!${m[1]}.shiftKey&&${m[1]}.target?.value?.trim()||(${m[1]}.preventDefault(),${m[3]}.abort())`,
     description: (v) =>
       `Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v${v}+)`,
   }),

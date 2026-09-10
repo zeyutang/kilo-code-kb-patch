@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.25.0
+
+- Support Kilo Code 7.6.1, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes
+- Re-target the opt-in attach-file `+` button and the opt-in chat math rendering to 7.6.1 and later
+- Keep all earlier versions' patterns, so 1.25.x still applies on older Kilo Code releases
+
 ## 1.24.1
 
 - Faster startup: the patch check now stops at the pattern that matches each behavior instead of testing every stored pattern

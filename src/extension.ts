@@ -3616,6 +3616,42 @@ async function runPatch(
   return false;
 }
 
+// Whether any core webview.js patch is still waiting to be applied.
+//
+// Grouped by feature and stopped per feature rather than run flat over the
+// array, because each test is one full scan of a ~20 MB bundle and the array
+// grows by about six variants every time Kilo re-minifies. Flat, a *fully
+// patched* install is the worst case rather than the cheapest: no entry
+// reports work, so nothing short-circuits and every variant is scanned. That
+// was 236 scans and ~520 ms of the ~620 ms activation by v1.24.0, against
+// ~190 ms when the array held 40 variants, and it grew about 30 ms per
+// release with no ceiling. Per feature the scan stops at the variant that
+// matches, so the cost tracks the number of behaviors (which changes when one
+// is added) instead of the number of variants (which changes every retarget).
+//
+// Stopping there is the rule applyPatches already follows: it takes the first
+// variant that matches and leaves the rest alone. So once a feature's match is
+// found, later variants of that feature cannot describe work Apply would do,
+// and a feature whose match reads "already patched" is finished. The aliasing
+// sweep run each release proves the stronger property this rests on, that
+// exactly one variant of each feature matches any given build.
+function webviewNeedsPatching(content: string): boolean {
+  const byFeature = new Map<FeatureKey, PatchDef[]>();
+  for (const patch of PATCHES[0].patches) {
+    const variants = byFeature.get(patch.feature);
+    if (variants) variants.push(patch);
+    else byFeature.set(patch.feature, [patch]);
+  }
+  for (const variants of byFeature.values()) {
+    for (const p of variants) {
+      if (content.includes(p.patched)) break;
+      if (content.includes(p.original)) return true;
+      if (p.previous && content.includes(p.previous)) return true;
+    }
+  }
+  return false;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   extensionContext = context;
 
@@ -3666,14 +3702,7 @@ export function activate(context: vscode.ExtensionContext): void {
     content !== "" &&
     chatScriptCoreStatus(content).some((f) => f.state === "unpatched");
   const needsPatching =
-    PATCHES[0].patches.some(
-      (p) =>
-        !content.includes(p.patched) &&
-        (content.includes(p.original) ||
-          (p.previous && content.includes(p.previous))),
-    ) ||
-    cssNeedsPatching ||
-    scriptNeedsPatching;
+    webviewNeedsPatching(content) || cssNeedsPatching || scriptNeedsPatching;
 
   if (!needsPatching) {
     notifyBonusReload(startupBonuses);
@@ -3711,6 +3740,7 @@ export function deactivate(): void {}
 // exports, so this has no effect at runtime.
 export const __test = {
   PATCHES,
+  webviewNeedsPatching,
   FEATURE_LABELS,
   FEATURE_GATES,
   MENTION_SPACED_TRIGGER,

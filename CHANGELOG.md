@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.24.1
+
+- Faster startup: the patch check now stops at the pattern that matches each behavior instead of testing every stored pattern
+- Startup no longer gets slower as more Kilo Code versions are supported
+
 ## 1.24.0
 
 - Support Kilo Code 7.6.0, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

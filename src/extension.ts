@@ -1557,7 +1557,8 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
   "mention-escape": "Mention menu Escape: stays closed while you keep typing",
   "chat-history": "Chat history: Cmd/Ctrl+Up/Down, not bare Up/Down",
   "chat-scroll": "Chat scroll: history stays at the bottom while you type",
-  "hover-guard": "Hover guard: the hidden cursor highlights nothing while you type",
+  "hover-guard":
+    "Hover guard: the hidden cursor highlights nothing while you type",
   "perm-keys": "Permission prompt: typing keys stay in the input",
   "perm-escape": "Permission Escape: rejects only when the input is empty",
   "perm-approve": "Permission approve: Cmd/Ctrl+Enter always, Space when empty",

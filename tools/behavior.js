@@ -69,7 +69,8 @@ function parseArgs(argv) {
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
     else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
   }
-  if (args.ext && args.vsix) throw new Error("pass either --ext or --vsix, not both");
+  if (args.ext && args.vsix)
+    throw new Error("pass either --ext or --vsix, not both");
   return args;
 }
 
@@ -93,10 +94,12 @@ function block(content, at) {
 // from inside it: the factory and Solid's createSignal.
 function historyModule(content) {
   const keyAt = content.indexOf('"kilo.prompt-history.v1"');
-  if (keyAt === -1) throw new Error("no prompt-history storage key in this build");
+  if (keyAt === -1)
+    throw new Error("no prompt-history storage key in this build");
   const start = content.lastIndexOf("var ", keyAt);
   const navAt = content.indexOf("return{navigate:", keyAt);
-  if (navAt === -1) throw new Error("no navigate() export in the history module");
+  if (navAt === -1)
+    throw new Error("no navigate() export in the history module");
 
   // The factory's own reset() is declared before the returned object literal, so
   // walk back through declarations until one's body actually encloses it.
@@ -269,9 +272,10 @@ const WALK = [
 // two bundled copies apart.
 function markedInstance(content) {
   const init = new RegExp(
-    `let (${ID})=(${ID})\\.use\\((${ID}),\\{renderer:\\{link\\(\\{href:`
+    `let (${ID})=(${ID})\\.use\\((${ID}),\\{renderer:\\{link\\(\\{href:`,
   ).exec(content);
-  if (!init) throw new Error("no marked.use() call with Kilo's renderer overrides");
+  if (!init)
+    throw new Error("no marked.use() call with Kilo's renderer overrides");
   return init[2];
 }
 
@@ -282,7 +286,7 @@ function markedModule(content, instance) {
     `${esc(instance)}\\.parse=${esc(instance)};var (${ID})=${esc(instance)}\\.options,` +
       `(${ID})=${esc(instance)}\\.setOptions,(${ID})=${esc(instance)}\\.use,` +
       `(${ID})=${esc(instance)}\\.walkTokens,(${ID})=${esc(instance)}\\.parseInline;` +
-      `var (${ID})=(${ID})\\.parse,(${ID})=(${ID})\\.lex;`
+      `var (${ID})=(${ID})\\.parse,(${ID})=(${ID})\\.lex;`,
   ).exec(content);
   if (!tail) throw new Error("no marked re-export block for this instance");
   const end = tail.index + tail[0].length;
@@ -290,9 +294,10 @@ function markedModule(content, instance) {
   const defaults = findAll(
     content.slice(0, end),
     `function (${ID})\\(\\)\\{return\\{async:!1,breaks:!1,extensions:null,gfm:!0,` +
-      `hooks:null,pedantic:!1,renderer:null,silent:!1,tokenizer:null,walkTokens:null\\}\\}`
+      `hooks:null,pedantic:!1,renderer:null,silent:!1,tokenizer:null,walkTokens:null\\}\\}`,
   );
-  if (defaults.length === 0) throw new Error("no marked defaults factory before the re-exports");
+  if (defaults.length === 0)
+    throw new Error("no marked defaults factory before the re-exports");
   const start = defaults[defaults.length - 1].index;
   return content.slice(start, end);
 }
@@ -305,20 +310,24 @@ function katexHelpers(content) {
   if (!start) throw new Error("no $$-block regex in this build");
   const render = new RegExp(
     `function (${ID})\\((${ID}),(${ID})\\)\\{return\`<span dir="auto">` +
-      `\\$\\{(${ID})\\.renderToString\\(\\2,\\3\\)\\}</span>\`\\}`
+      `\\$\\{(${ID})\\.renderToString\\(\\2,\\3\\)\\}</span>\`\\}`,
   ).exec(content);
   if (!render) throw new Error("no katex render helper in this build");
   const tailShape = new RegExp(
     `function (${ID})\\((${ID})\\)\\{return ${esc(render[1])}\\(typeof \\2\\.text=="string"\\?\\2\\.text:"",` +
-      `\\{displayMode:\\2\\.displayMode===!0,throwOnError:!1\\}\\)\\}`
+      `\\{displayMode:\\2\\.displayMode===!0,throwOnError:!1\\}\\)\\}`,
   ).exec(content);
   if (!tailShape) throw new Error("no inlineKatex renderer in this build");
-  const inlinePack = new RegExp(`(${ID})=\\{extensions:\\[\\{name:"inlineKatex"`).exec(content);
+  const inlinePack = new RegExp(
+    `(${ID})=\\{extensions:\\[\\{name:"inlineKatex"`,
+  ).exec(content);
   if (!inlinePack) throw new Error("no inlineKatex pack in this build");
 
   return {
     // `var` because the run starts mid-declaration-list in the bundle.
-    source: "var " + content.slice(start.index, tailShape.index + tailShape[0].length),
+    source:
+      "var " +
+      content.slice(start.index, tailShape.index + tailShape[0].length),
     katex: render[4],
     inlinePack: inlinePack[1],
   };
@@ -366,11 +375,26 @@ const MATH_CASES = [
   { md: "inline \\(x^2\\) here", stock: "1i0d", patched: "1i0d" },
   { md: "\\[x^2\\]", stock: "0i0d", patched: "0i1d" },
   { md: "inline \\[x^2\\] here", stock: "0i0d", patched: "0i1d" },
-  { md: "price is $5 and $10 total", stock: "0i0d", patched: "0i0d", keeps: "$5 and $10" },
+  {
+    md: "price is $5 and $10 total",
+    stock: "0i0d",
+    patched: "0i0d",
+    keeps: "$5 and $10",
+  },
   { md: "a $ b $ c", stock: "0i0d", patched: "0i0d", keeps: "a $ b $ c" },
   { md: "costs $20$30", stock: "0i0d", patched: "0i0d", keeps: "$20$30" },
-  { md: "`$x$` in code", stock: "0i0d", patched: "0i0d", keeps: "<code>$x$</code>" },
-  { md: "```\n$x$\n```", stock: "0i0d", patched: "0i0d", keeps: "$x$\n</code>" },
+  {
+    md: "`$x$` in code",
+    stock: "0i0d",
+    patched: "0i0d",
+    keeps: "<code>$x$</code>",
+  },
+  {
+    md: "```\n$x$\n```",
+    stock: "0i0d",
+    patched: "0i0d",
+    keeps: "$x$\n</code>",
+  },
   { md: "$x\ny$ spans lines", stock: "0i0d", patched: "0i0d", keeps: "$x" },
 ];
 
@@ -383,7 +407,9 @@ function signature(html) {
 function runMath(test, content) {
   const rule = MATH_RULE.derive(content);
   if (!rule.original) {
-    console.log(`  FAIL  math-rendering does not derive here: ${JSON.stringify(rule)}`);
+    console.log(
+      `  FAIL  math-rendering does not derive here: ${JSON.stringify(rule)}`,
+    );
     failures++;
     return;
   }
@@ -397,7 +423,7 @@ function runMath(test, content) {
   check(
     entry.original === rule.original && entry.patched === rule.patched,
     "the math entry that applies here is the one the shape rule derives",
-    "shipped and derived text differ; run retarget"
+    "shipped and derived text differ; run retarget",
   );
 
   const instance = markedInstance(content);
@@ -412,7 +438,7 @@ function runMath(test, content) {
 
   console.log(
     `markdown (marked ${instance}, katex ${helpers.katex}, ` +
-      `render ${rule.symbols.render}, ${module_.length} bytes sliced)`
+      `render ${rule.symbols.render}, ${module_.length} bytes sliced)`,
   );
   for (const c of MATH_CASES) {
     const before = signature(stock(c.md));
@@ -423,7 +449,9 @@ function runMath(test, content) {
       before === c.stock && after === c.patched && kept,
       `${JSON.stringify(c.md)}: ${c.stock} -> ${c.patched}`,
       `stock ${before}, patched ${after}` +
-        (kept ? "" : `, lost ${JSON.stringify(c.keeps)} from ${JSON.stringify(afterHtml)}`)
+        (kept
+          ? ""
+          : `, lost ${JSON.stringify(c.keeps)} from ${JSON.stringify(afterHtml)}`),
     );
   }
 }
@@ -448,36 +476,60 @@ function runMath(test, content) {
 // The region, as raw bytes, plus the names the runner has to bind around it.
 function mentionModule(content, test) {
   const trigger = content.indexOf(test.MENTION_SPACED_TRIGGER);
-  if (trigger === -1) throw new Error("no spaced mention trigger in this build");
+  if (trigger === -1)
+    throw new Error("no spaced mention trigger in this build");
   const start = content.lastIndexOf("var ", trigger);
   const exportAt = content.indexOf("mentionResults:", trigger);
-  if (exportAt === -1) throw new Error("no mentionResults export after the trigger");
+  if (exportAt === -1)
+    throw new Error("no mentionResults export after the trigger");
 
   // Walk back through declarations until one's body encloses the export.
   let factoryAt = exportAt;
   for (;;) {
     factoryAt = content.lastIndexOf("function ", factoryAt - 1);
     if (factoryAt === -1 || factoryAt < start) {
-      throw new Error("no declaration enclosing the mention controller's exports");
+      throw new Error(
+        "no declaration enclosing the mention controller's exports",
+      );
     }
     if (factoryAt + block(content, factoryAt).length > exportAt) break;
   }
-  const source = content.slice(start, factoryAt + block(content, factoryAt).length);
+  const source = content.slice(
+    start,
+    factoryAt + block(content, factoryAt).length,
+  );
   const factory = /^function (\w+)\(/.exec(content.slice(factoryAt))[1];
 
   const bind = (label, re, haystack) => {
     const found = new RegExp(re).exec(haystack);
-    if (!found) throw new Error(`could not bind ${label} for the mention controller`);
+    if (!found)
+      throw new Error(`could not bind ${label} for the mention controller`);
     return found[1];
   };
   return {
     source,
     factory,
     terminal: bind("the terminal constant", `var (${ID})="terminal",`, content),
-    changes: bind("the git-changes constant", `var (${ID})="git-changes",`, content),
-    signal: bind("createSignal", `let\\[${ID},${ID}\\]=(${ID})\\(new Set\\)`, source),
-    effect: bind("createEffect", `;(${ID})\\(\\(\\)=>\\{${ID}\\(\\)\\|\\|\\(`, source),
-    cleanup: bind("onCleanup", `;(${ID})\\(\\(\\)=>\\{${ID}\\(\\),${ID}&&clearTimeout`, source),
+    changes: bind(
+      "the git-changes constant",
+      `var (${ID})="git-changes",`,
+      content,
+    ),
+    signal: bind(
+      "createSignal",
+      `let\\[${ID},${ID}\\]=(${ID})\\(new Set\\)`,
+      source,
+    ),
+    effect: bind(
+      "createEffect",
+      `;(${ID})\\(\\(\\)=>\\{${ID}\\(\\)\\|\\|\\(`,
+      source,
+    ),
+    cleanup: bind(
+      "onCleanup",
+      `;(${ID})\\(\\(\\)=>\\{${ID}\\(\\),${ID}&&clearTimeout`,
+      source,
+    ),
     fuzzy: bind("the fuzzy matcher", `(${ID})\\.default\\.single\\(`, source),
   };
 }
@@ -538,15 +590,25 @@ return (ctx) => ({ controller: ${module_.factory}(ctx, undefined, () => false, u
     },
     key(name) {
       const handled = controller.onKeyDown(
-        { key: name, isComposing: false, preventDefault() {}, stopPropagation() {} },
+        {
+          key: name,
+          isComposing: false,
+          preventDefault() {},
+          stopPropagation() {},
+        },
         textarea,
         setText,
-        () => {}
+        () => {},
       );
       return `${open()}, ${handled ? "handled" : "fell-through"}`;
     },
     select(file) {
-      controller.selectMention({ type: "file", value: file }, textarea, setText, () => {});
+      controller.selectMention(
+        { type: "file", value: file },
+        textarea,
+        setText,
+        () => {},
+      );
       return textarea.value;
     },
     draft: () => textarea.value,
@@ -557,10 +619,30 @@ return (ctx) => ({ controller: ${module_.factory}(ctx, undefined, () => false, u
 // menu does afterwards in the stock form and in the patched one; the two agree
 // everywhere except where Escape's record is what decides, which is the point.
 const MENTION_STEPS = [
-  { label: "type @docs/f", run: (s) => s.type("@docs/f"), stock: "open", patched: "open" },
-  { label: "Escape", run: (s) => s.key("Escape"), stock: "closed, handled", patched: "closed, handled" },
-  { label: "type on: @docs/fi", run: (s) => s.type("@docs/fi"), stock: "open", patched: "closed" },
-  { label: "edit back to a shorter query: @docs/", run: (s) => s.type("@docs/"), stock: "open", patched: "open" },
+  {
+    label: "type @docs/f",
+    run: (s) => s.type("@docs/f"),
+    stock: "open",
+    patched: "open",
+  },
+  {
+    label: "Escape",
+    run: (s) => s.key("Escape"),
+    stock: "closed, handled",
+    patched: "closed, handled",
+  },
+  {
+    label: "type on: @docs/fi",
+    run: (s) => s.type("@docs/fi"),
+    stock: "open",
+    patched: "closed",
+  },
+  {
+    label: "edit back to a shorter query: @docs/",
+    run: (s) => s.type("@docs/"),
+    stock: "open",
+    patched: "open",
+  },
   {
     label: "choose docs/file.md from the menu, then type h after it",
     run: (s) => s.type(s.select("docs/file.md") + "h"),
@@ -579,20 +661,60 @@ const MENTION_STEPS = [
     stock: "open",
     patched: "open",
   },
-  { label: "Escape", run: (s) => s.key("Escape"), stock: "closed, handled", patched: "closed, handled" },
+  {
+    label: "Escape",
+    run: (s) => s.key("Escape"),
+    stock: "closed, handled",
+    patched: "closed, handled",
+  },
   {
     label: "type on: ...hel",
     run: (s) => s.type("Summarize @docs/file.md hel"),
     stock: "open",
     patched: "closed",
   },
-  { label: "a new draft: type @", run: (s) => s.type("@"), stock: "open", patched: "open" },
-  { label: "Escape on the empty query", run: (s) => s.key("Escape"), stock: "closed, handled", patched: "closed, handled" },
-  { label: "type on: @f", run: (s) => s.type("@f"), stock: "open", patched: "closed" },
-  { label: "a second @ later on the line: @f bar @", run: (s) => s.type("@f bar @"), stock: "open", patched: "open" },
-  { label: "delete the whole draft", run: (s) => s.type(""), stock: "closed", patched: "closed" },
-  { label: "retype @", run: (s) => s.type("@"), stock: "open", patched: "open" },
-  { label: "type plain prose", run: (s) => s.type("plain"), stock: "closed", patched: "closed" },
+  {
+    label: "a new draft: type @",
+    run: (s) => s.type("@"),
+    stock: "open",
+    patched: "open",
+  },
+  {
+    label: "Escape on the empty query",
+    run: (s) => s.key("Escape"),
+    stock: "closed, handled",
+    patched: "closed, handled",
+  },
+  {
+    label: "type on: @f",
+    run: (s) => s.type("@f"),
+    stock: "open",
+    patched: "closed",
+  },
+  {
+    label: "a second @ later on the line: @f bar @",
+    run: (s) => s.type("@f bar @"),
+    stock: "open",
+    patched: "open",
+  },
+  {
+    label: "delete the whole draft",
+    run: (s) => s.type(""),
+    stock: "closed",
+    patched: "closed",
+  },
+  {
+    label: "retype @",
+    run: (s) => s.type("@"),
+    stock: "open",
+    patched: "open",
+  },
+  {
+    label: "type plain prose",
+    run: (s) => s.type("plain"),
+    stock: "closed",
+    patched: "closed",
+  },
   {
     label: "Escape with the menu closed",
     run: (s) => s.key("Escape"),
@@ -604,18 +726,24 @@ const MENTION_STEPS = [
 function runMention(test, content) {
   console.log("mention menu Escape (stock -> patched)");
   if (!test.FEATURE_GATES["mention-escape"](content)) {
-    console.log("  n/a   this build predates the spaced mention query the patch answers");
+    console.log(
+      "  n/a   this build predates the spaced mention query the patch answers",
+    );
     return;
   }
   const rule = RULES.find((r) => r.key === "mention-escape");
   const derived = rule.derive(content);
   if (!derived.original) {
-    console.log(`  FAIL  mention-escape does not derive here: ${JSON.stringify(derived)}`);
+    console.log(
+      `  FAIL  mention-escape does not derive here: ${JSON.stringify(derived)}`,
+    );
     failures++;
     return;
   }
-  const entry = test.PATCHES.find((f) => f.filename === "webview.js").patches.find(
-    (p) => p.feature === "mention-escape" && content.includes(p.original)
+  const entry = test.PATCHES.find(
+    (f) => f.filename === "webview.js",
+  ).patches.find(
+    (p) => p.feature === "mention-escape" && content.includes(p.original),
   );
   if (!entry) {
     console.log("  FAIL  no shipped mention-escape entry matches this build");
@@ -625,20 +753,22 @@ function runMention(test, content) {
   check(
     entry.original === derived.original && entry.patched === derived.patched,
     "the mention-escape entry that applies here is the one the shape rule derives",
-    "shipped and derived text differ; run retarget"
+    "shipped and derived text differ; run retarget",
   );
 
   const module_ = mentionModule(content, test);
   const patchedSource = module_.source.replace(entry.original, entry.patched);
   if (patchedSource === module_.source) {
-    console.log("  FAIL  the shipped mention-escape site is not inside the sliced controller");
+    console.log(
+      "  FAIL  the shipped mention-escape site is not inside the sliced controller",
+    );
     failures++;
     return;
   }
   const stock = mentionSession(module_);
   const patched = mentionSession({ ...module_, source: patchedSource });
   console.log(
-    `  (controller ${module_.factory}, signal ${module_.signal}, ${module_.source.length} bytes sliced)`
+    `  (controller ${module_.factory}, signal ${module_.signal}, ${module_.source.length} bytes sliced)`,
   );
   for (const step of MENTION_STEPS) {
     const before = step.run(stock);
@@ -646,7 +776,7 @@ function runMention(test, content) {
     check(
       before === step.stock && after === step.patched,
       `${step.label}: ${step.stock} -> ${step.patched}`,
-      `stock "${before}", patched "${after}"`
+      `stock "${before}", patched "${after}"`,
     );
   }
 }
@@ -662,7 +792,7 @@ function main() {
   const source = resolveBundleSource(test, args);
   console.log(
     `Kilo Code v${source.version}\n  ${source.label}` +
-      `${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`
+      `${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`,
   );
   assertPristine(source.bundles);
 
@@ -672,7 +802,9 @@ function main() {
   const rule = RULES.find((r) => r.key === "chat-history");
   const derived = rule.derive(content);
   if (!derived.original) {
-    console.log(`  FAIL  chat-history does not derive here: ${JSON.stringify(derived)}`);
+    console.log(
+      `  FAIL  chat-history does not derive here: ${JSON.stringify(derived)}`,
+    );
     return 1;
   }
   const symbols = derived.symbols;
@@ -680,8 +812,10 @@ function main() {
   // Exercise what ships, not what the rule rebuilds, since the shipped entry is
   // what applies on a user's machine. retarget compares the two; if they have
   // drifted, say so here rather than testing a pattern nobody runs.
-  const entry = test.PATCHES.find((f) => f.filename === "webview.js").patches.find(
-    (p) => p.feature === "chat-history" && content.includes(p.original)
+  const entry = test.PATCHES.find(
+    (f) => f.filename === "webview.js",
+  ).patches.find(
+    (p) => p.feature === "chat-history" && content.includes(p.original),
   );
   if (!entry) {
     console.log("  FAIL  no shipped chat-history entry matches this build");
@@ -690,23 +824,28 @@ function main() {
   check(
     entry.original === derived.original,
     "the chat-history entry that applies here is the one the shape rule derives",
-    "shipped and derived anchors differ; run retarget"
+    "shipped and derived anchors differ; run retarget",
   );
 
   const module_ = historyModule(content);
   const stockStatement = block(content, content.indexOf(entry.original));
   const patchedBundle = content.replace(entry.original, entry.patched);
-  const patchedStatement = block(patchedBundle, patchedBundle.indexOf(entry.patched));
+  const patchedStatement = block(
+    patchedBundle,
+    patchedBundle.indexOf(entry.patched),
+  );
 
   // Past the anchor the statement binds two more locals, the text setter and the
   // auto-resize. Every interpolated symbol is escaped: "$e" is a real spelling.
   const tail = new RegExp(
     `if\\(${esc(symbols.result)}!==null\\)\\{if\\(${esc(symbols.event)}\\.preventDefault\\(\\),` +
       `(${ID})\\(${esc(symbols.result)}\\),${esc(symbols.textarea)}\\)\\{` +
-      `${esc(symbols.textarea)}\\.value=${esc(symbols.result)},(${ID})\\(\\)`
+      `${esc(symbols.textarea)}\\.value=${esc(symbols.result)},(${ID})\\(\\)`,
   ).exec(patchedStatement);
   if (!tail) {
-    console.log("  FAIL  could not bind the setter/resize locals from the statement tail");
+    console.log(
+      "  FAIL  could not bind the setter/resize locals from the statement tail",
+    );
     return 1;
   }
   const tailSymbols = { setter: tail[1], resize: tail[2] };
@@ -715,11 +854,16 @@ function main() {
   // which the runner reports as "guard-return"; every other exit is explicit.
   const label = (s) => s.replace(/return\}\}$/, 'return"handled"}}');
   const stock = runner(module_, label(stockStatement), symbols, tailSymbols);
-  const patched = runner(module_, label(patchedStatement), symbols, tailSymbols);
+  const patched = runner(
+    module_,
+    label(patchedStatement),
+    symbols,
+    tailSymbols,
+  );
 
   console.log(
     `keystrokes (event ${symbols.event}, history ${symbols.history}, ` +
-      `text ${symbols.text}, textarea ${symbols.textarea})`
+      `text ${symbols.text}, textarea ${symbols.textarea})`,
   );
   for (const c of CASES) {
     const before = stock(SENT, DRAFT)(c.press);
@@ -727,18 +871,20 @@ function main() {
     check(
       before.outcome === c.stock && after.outcome === c.patched,
       `${c.label}: ${c.stock} -> ${c.patched}`,
-      `stock "${before.outcome}", patched "${after.outcome}"`
+      `stock "${before.outcome}", patched "${after.outcome}"`,
     );
   }
 
-  console.log("\ndraft stash (one navigator, Cmd+Up twice then Cmd+Down twice)");
+  console.log(
+    "\ndraft stash (one navigator, Cmd+Up twice then Cmd+Down twice)",
+  );
   const session = patched(SENT, "my draft");
   for (const step of WALK) {
     const r = session({ key: step.key, meta: true, caret: 3 });
     check(
       r.outcome === "handled" && r.text === step.text,
       `Cmd+${step.key.replace("Arrow", "")} recalls ${JSON.stringify(step.text)}`,
-      `got "${r.outcome}" with ${JSON.stringify(r.text)}`
+      `got "${r.outcome}" with ${JSON.stringify(r.text)}`,
     );
   }
 

@@ -113,7 +113,8 @@ const RULES = [
     shape: ENTER_SEND_SHAPE,
     names: ["enterCheck", "event", "send"],
     build: enterSendBuild,
-    description: (v) => `Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v${v}+)`,
+    description: (v) =>
+      `Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v${v}+)`,
   }),
 
   // The chat textarea's Escape. Through 7.5.16 this was two consecutive `if`
@@ -142,15 +143,15 @@ const RULES = [
           `\\4\\.active\\(\\)\\?\\4\\.cancel\\(\\):(${ID})\\.abort\\(\\),!0\\)`,
         names: ["event", "popup", "ghost", "goal", "busy", "store"],
         build: (m) =>
-          `${m[1]}.key!=="Escape"?!1:${m[2]}()?!0:!${m[3]}.text()&&!${m[4]}.active()&&(!${m[5]}()||!${m[1]}.shiftKey&&${m[1]}.target?.value?.trim())?!1:(${m[1]}.preventDefault(),${m[1]}.stopPropagation(),${m[3]}.text()?${m[3]}.dismiss():${m[4]}.active()?${m[4]}.cancel():${m[6]}.abort(),!0)`
+          `${m[1]}.key!=="Escape"?!1:${m[2]}()?!0:!${m[3]}.text()&&!${m[4]}.active()&&(!${m[5]}()||!${m[1]}.shiftKey&&${m[1]}.target?.value?.trim())?!1:(${m[1]}.preventDefault(),${m[1]}.stopPropagation(),${m[3]}.text()?${m[3]}.dismiss():${m[4]}.active()?${m[4]}.cancel():${m[6]}.abort(),!0)`,
       },
       // v7.4.17 through v7.5.16: the standalone abort statement.
       {
         shape: `if\\((${ID})\\.key==="Escape"&&(${ID})\\(\\)\\)\\{\\1\\.preventDefault\\(\\),\\1\\.stopPropagation\\(\\),(${ID})\\.abort\\(\\);return\\}`,
         names: ["event", "guard", "store"],
         build: (m) =>
-          `if(${m[1]}.key==="Escape"&&${m[2]}()&&(${m[1]}.shiftKey||!${m[1]}.target?.value?.trim())){${m[1]}.preventDefault(),${m[1]}.stopPropagation(),${m[3]}.abort();return}`
-      }
+          `if(${m[1]}.key==="Escape"&&${m[2]}()&&(${m[1]}.shiftKey||!${m[1]}.target?.value?.trim())){${m[1]}.preventDefault(),${m[1]}.stopPropagation(),${m[3]}.abort();return}`,
+      },
     ],
     description: (v) =>
       `Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v${v}+)`,
@@ -186,7 +187,7 @@ const RULES = [
           String.raw`if\(!\1\)\{(${ID})\(\);return\}let (${ID})=\1\[1\]\?\?"";` +
           String.raw`if\((${ID})=\(\1\.index\?\?0\)\+\(/\^\\s/\.test\(\1\[0\]\)\?1:0\),` +
           String.raw`(${ID})\(\6,(${ID})\.get\(\7\),(${ID})\(\)\)\)\{\5\(\);return\}` +
-          String.raw`if\((${ID})&&\11\.at===\7&&\6\.startsWith\(\11\.query\)\)\{\5\(\);return\}`
+          String.raw`if\((${ID})&&\11\.at===\7&&\6\.startsWith\(\11\.query\)\)\{\5\(\);return\}`,
       );
       if (heads.length !== 1) return { matches: heads.length };
       const head = heads[0];
@@ -198,29 +199,41 @@ const RULES = [
           String.raw`&&/\\s/\.test\(\1\)&&!(${ID})\(\1\)\?!1:\((${ID})\.preventDefault\(\),` +
           String.raw`(${ID})&&(${ID})\(\3,\6,(${ID}),(${ID})\),!0\)\}` +
           String.raw`return \5\.key==="Escape"\?\(\5\.preventDefault\(\),\5\.stopPropagation\(\),` +
-          String.raw`(${ID})\(\),!0\):!1\}`
+          String.raw`(${ID})\(\),!0\):!1\}`,
       );
       if (tails.length !== 1) return { matches: tails.length };
       const tail = tails[0];
       const mentionQuery = tail[2];
       if (tail[10] !== close) {
-        return { error: "onKeyDown's Escape closes with a different function than onInput" };
+        return {
+          error:
+            "onKeyDown's Escape closes with a different function than onInput",
+        };
       }
       if (tail.index <= head.index || tail.index - head.index > 4000) {
-        return { error: "onKeyDown's Escape branch is not just after onInput's trigger test" };
+        return {
+          error:
+            "onKeyDown's Escape branch is not just after onInput's trigger test",
+        };
       }
 
       const original = content.slice(head.index, tail.index + tail[0].length);
       const closeReturn = `if(!${match}){${close}();return}`;
       const escapeTail = `${close}(),!0):!1}`;
-      if (countIn(original, closeReturn) !== 1 || !original.endsWith(escapeTail)) {
-        return { error: "the trigger's close or the Escape tail is not where the shape expects" };
+      if (
+        countIn(original, closeReturn) !== 1 ||
+        !original.endsWith(escapeTail)
+      ) {
+        return {
+          error:
+            "the trigger's close or the Escape tail is not where the shape expects",
+        };
       }
       const patched =
         original
           .replace(
             closeReturn,
-            `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`
+            `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`,
           )
           .slice(0, -escapeTail.length) +
         `${dead}={at:${at},query:${mentionQuery}()??""},${escapeTail}`;
@@ -295,21 +308,24 @@ const RULES = [
     derive(content) {
       const guards = findAll(
         content,
-        `(${ID})=!!(${ID})\\?\\.closest\\("textarea\\.prompt-input"\\)`
+        `(${ID})=!!(${ID})\\?\\.closest\\("textarea\\.prompt-input"\\)`,
       );
       if (guards.length !== 1) return { matches: guards.length };
       const [, guard, arg] = guards[0];
 
       const tails = findAll(
         content,
-        `${esc(guard)}\\?!1:(${ID})\\(${esc(arg)}\\)`
+        `${esc(guard)}\\?!1:(${ID})\\(${esc(arg)}\\)`,
       );
       if (tails.length !== 1) return { matches: tails.length };
       const helper = tails[0][1];
 
       // The event parameter is not in the tail; take it from the sibling branch
       // of the same ternary chain, which tests the shortcut key.
-      const before = content.slice(Math.max(0, tails[0].index - 400), tails[0].index);
+      const before = content.slice(
+        Math.max(0, tails[0].index - 400),
+        tails[0].index,
+      );
       const events = findAll(before, `(${ID})\\.key==="Enter"`);
       if (events.length === 0) {
         return { error: "event parameter not found near the skip-predicate" };
@@ -392,7 +408,8 @@ const RULES = [
     names: ["enterCheck", "event", "save", "cancel"],
     build: (m) =>
       `${m[1]}(${m[2]})&&(${m[2]}.metaKey||${m[2]}.ctrlKey)?(${m[2]}.preventDefault(),${m[3]}()):${m[2]}.key==="Escape"&&${m[4]}()`,
-    description: (v) => `KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v${v}+)`,
+    description: (v) =>
+      `KiloClaw edit: Enter→newline, Cmd/Ctrl+Enter→save (v${v}+)`,
   }),
 
   shapeRule({
@@ -401,7 +418,8 @@ const RULES = [
     shape: ENTER_SEND_SHAPE,
     names: ["enterCheck", "event", "send"],
     build: enterSendBuild,
-    description: (v) => `KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v${v}+)`,
+    description: (v) =>
+      `KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v${v}+)`,
   }),
 ];
 
@@ -448,12 +466,12 @@ function attachLabelExpression(content, i18n) {
 // the enclosing function declaration to get its minified name.
 function deriveIconComponent(content) {
   const builder = content.match(
-    new RegExp("(" + ID + ")=(" + ID + ")=>`opencode-icon-\\$\\{\\2\\}`")
+    new RegExp("(" + ID + ")=(" + ID + ")=>`opencode-icon-\\$\\{\\2\\}`"),
   );
   if (!builder) return undefined;
 
   const use = content.match(
-    new RegExp("\\$\\{" + esc(builder[1]) + "\\(" + ID + "\\.name\\)\\}")
+    new RegExp("\\$\\{" + esc(builder[1]) + "\\(" + ID + "\\.name\\)\\}"),
   );
   if (!use) return undefined;
 
@@ -477,7 +495,7 @@ const ATTACH_RULE = {
     const anchors = findAll(
       content,
       `(${ID})\\((${ID}),(${ID})\\((${ID}),\\{get when\\(\\)\\{return (${ID})\\(\\)\\},` +
-        `get children\\(\\)\\{return \\3\\((${ID}),\\{get value\\(\\)\\{return (${ID})\\.status\\(\\)\\.message\\|\\|\\7\\.label\\(\\)\\}`
+        `get children\\(\\)\\{return \\3\\((${ID}),\\{get value\\(\\)\\{return (${ID})\\.status\\(\\)\\.message\\|\\|\\7\\.label\\(\\)\\}`,
     );
     if (anchors.length !== 1) return { matches: anchors.length };
     const [, insert, container, create, , , tooltip] = anchors[0];
@@ -486,9 +504,10 @@ const ATTACH_RULE = {
     // the four PromptInput locals the button needs.
     const mentions = findAll(
       content,
-      `(${ID})\\.selectMention\\((${ID}),(${ID}),(${ID}),(${ID})\\)`
+      `(${ID})\\.selectMention\\((${ID}),(${ID}),(${ID}),(${ID})\\)`,
     );
-    if (mentions.length !== 1) return { error: "selectMention call not unique" };
+    if (mentions.length !== 1)
+      return { error: "selectMention call not unique" };
     const [, controller, , textarea, setter, sync] = mentions[0];
 
     // The ghost button is taken from the indexing button that immediately
@@ -497,23 +516,31 @@ const ATTACH_RULE = {
     // would be a guess about an unrelated site.
     const ghosts = findAll(
       content,
-      `${esc(create)}\\((${ID}),\\{variant:"ghost",size:"small",onClick:`
+      `${esc(create)}\\((${ID}),\\{variant:"ghost",size:"small",onClick:`,
     ).filter((m) => m.index > anchors[0].index);
-    if (ghosts.length === 0) return { error: "ghost button component not found" };
+    if (ghosts.length === 0)
+      return { error: "ghost button component not found" };
     const ghost = ghosts[0][1];
 
     const icon = deriveIconComponent(content);
     if (!icon) return { error: "sprite icon component not found" };
 
-    const i18nMatches = findAll(content, `(${ID})\\.t\\("prompt\\.action\\.indexing"\\)`);
+    const i18nMatches = findAll(
+      content,
+      `(${ID})\\.t\\("prompt\\.action\\.indexing"\\)`,
+    );
     if (i18nMatches.length === 0) return { error: "i18n accessor not found" };
     const i18n = i18nMatches[0][1];
 
     // Icons are referenced dynamically, so a glyph only exists if the sprite map
     // declares it; check the map keys rather than a rendered reference.
-    const glyph = GLYPH_PREFERENCE.find((name) => hasSpriteGlyph(content, name));
+    const glyph = GLYPH_PREFERENCE.find((name) =>
+      hasSpriteGlyph(content, name),
+    );
     if (!glyph) {
-      return { error: `no ${GLYPH_PREFERENCE.join("/")} glyph in the sprite map` };
+      return {
+        error: `no ${GLYPH_PREFERENCE.join("/")} glyph in the sprite map`,
+      };
     }
 
     const label = attachLabelExpression(content, i18n);
@@ -591,7 +618,7 @@ const MATH_RULE = {
   derive(content) {
     const matches = findAll(
       content,
-      `renderer\\((${ID})\\)\\{return (${ID})\\(\\1\\.text,\\{displayMode:!0,throwOnError:!1\\}\\)\\}\\}\\]\\}\\);`
+      `renderer\\((${ID})\\)\\{return (${ID})\\(\\1\\.text,\\{displayMode:!0,throwOnError:!1\\}\\)\\}\\}\\]\\}\\);`,
     );
     if (matches.length !== 1) return { matches: matches.length };
     const [original, arg, render] = matches[0];
@@ -600,9 +627,7 @@ const MATH_RULE = {
     // extension array that happens to end the same way: the pack's first
     // extension is the block-level `$$` one and names the same helper.
     if (
-      !content.includes(
-        `{name:"doubleKatexBlock",level:"block"`
-      ) ||
+      !content.includes(`{name:"doubleKatexBlock",level:"block"`) ||
       !content.includes(`{name:"doubleKatexInline",level:"inline"`)
     ) {
       return { error: "the doubleKatex extension pack is not in this build" };
@@ -655,14 +680,15 @@ const PROBES = [
         };
       }
       const values = test.readChatStyleValues(content);
-      if (!values) return { error: "anchors matched but no value could be read" };
+      if (!values)
+        return { error: "anchors matched but no value could be read" };
 
       // The math knob never derives KaTeX's size, it states an absolute em and
       // treats one value as "leave it alone". That value has to be the one this
       // build actually uses, or the knob switches itself on for users who never
       // touched it, so the two are compared here rather than at runtime.
       const katexEm = Number(
-        test.CHAT_STYLE_ANCHORS["katex em size"].exec(content)?.[1]
+        test.CHAT_STYLE_ANCHORS["katex em size"].exec(content)?.[1],
       );
       if (katexEm !== test.KATEX_DEFAULT_EM) {
         return {
@@ -693,7 +719,8 @@ const PROBES = [
         };
       }
       const sizing = test.readPromptSizing(content);
-      if (!sizing) return { error: "anchors matched but the sizing could not be read" };
+      if (!sizing)
+        return { error: "anchors matched but the sizing could not be read" };
 
       // With the block in place Kilo's inline height is void, so the only cap
       // on the textarea is the stylesheet's max-height. Kilo's script caps its
@@ -713,7 +740,9 @@ const PROBES = [
       // match, so the templates are checked here where the bundle is at hand.
       const occurrences = (needle) => js.split(needle).length - 1;
       const templates = {
-        "textarea.prompt-input template": occurrences("<textarea class=prompt-input "),
+        "textarea.prompt-input template": occurrences(
+          "<textarea class=prompt-input ",
+        ),
         ".chat-view template": occurrences("class=chat-view"),
       };
       const moved = Object.entries(templates).filter(([, n]) => n !== 1);
@@ -726,7 +755,10 @@ const PROBES = [
       }
       const caps = [
         ...js.matchAll(
-          new RegExp(`(${ID})\\.style\\.height=\`\\$\\{Math\\.min\\(\\1\\.scrollHeight,(\\d+)\\)\\}px\``, "g")
+          new RegExp(
+            `(${ID})\\.style\\.height=\`\\$\\{Math\\.min\\(\\1\\.scrollHeight,(\\d+)\\)\\}px\``,
+            "g",
+          ),
         ),
       ].map((m) => `${m[2]}px`);
       if (caps.length === 0) {
@@ -818,7 +850,9 @@ const PROBES = [
         };
       }
       if (!test.hoverGuardAnchorsPresent(content)) {
-        return { error: "anchors matched but the extension would not write the block" };
+        return {
+          error: "anchors matched but the extension would not write the block",
+        };
       }
       const occurrences = (needle) => content.split(needle).length - 1;
       return {

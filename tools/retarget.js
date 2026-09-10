@@ -30,7 +30,11 @@
 // which makes this usable as a post-update check.
 const path = require("path");
 const { loadExtension } = require("./lib/load");
-const { resolveBundleSource, assertPristine, countOccurrences } = require("./lib/bundle");
+const {
+  resolveBundleSource,
+  assertPristine,
+  countOccurrences,
+} = require("./lib/bundle");
 const { RULES, ATTACH_RULE, MATH_RULE, PROBES } = require("./lib/rules");
 
 function parseArgs(argv) {
@@ -41,7 +45,8 @@ function parseArgs(argv) {
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
     else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
   }
-  if (args.ext && args.vsix) throw new Error("pass either --ext or --vsix, not both");
+  if (args.ext && args.vsix)
+    throw new Error("pass either --ext or --vsix, not both");
   return args;
 }
 
@@ -58,7 +63,9 @@ function main() {
   const version = source.version;
 
   console.log(`Kilo Code v${version}`);
-  console.log(`  ${source.label}${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`);
+  console.log(
+    `  ${source.label}${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`,
+  );
   assertPristine(bundles);
 
   // Every pattern currently shipped, keyed by original, so "already covered" is
@@ -67,13 +74,22 @@ function main() {
   // differently would otherwise pass silently, so the two are compared.
   const known = new Map();
   for (const fp of test.PATCHES) {
-    known.set(fp.filename, new Map(fp.patches.map((p) => [p.original, p.patched])));
+    known.set(
+      fp.filename,
+      new Map(fp.patches.map((p) => [p.original, p.patched])),
+    );
   }
   // The two webview.js bonuses keep their own variant lists rather than living
   // in PATCHES, so each is compared against its own list.
   const knownBonus = new Map([
-    [ATTACH_RULE.key, new Map(test.ATTACH_FILE_BUTTONS.map((b) => [b.original, b.patched]))],
-    [MATH_RULE.key, new Map(test.MATH_EXTENSIONS.map((m) => [m.original, m.patched]))],
+    [
+      ATTACH_RULE.key,
+      new Map(test.ATTACH_FILE_BUTTONS.map((b) => [b.original, b.patched])),
+    ],
+    [
+      MATH_RULE.key,
+      new Map(test.MATH_EXTENSIONS.map((m) => [m.original, m.patched])),
+    ],
   ]);
 
   const proposals = [];
@@ -82,7 +98,9 @@ function main() {
   const run = (rule, isBonus) => {
     const content = bundles[rule.file];
     if (content === undefined) {
-      console.log(`  ERROR      ${rule.key}: ${rule.file} not present in dist/`);
+      console.log(
+        `  ERROR      ${rule.key}: ${rule.file} not present in dist/`,
+      );
       unclear++;
       return;
     }
@@ -96,12 +114,14 @@ function main() {
     if (gate && !gate(content)) {
       if (result.original !== undefined) {
         console.log(
-          `  ERROR      ${rule.key}: its gate says this build does not need it, but the rule derives a site`
+          `  ERROR      ${rule.key}: its gate says this build does not need it, but the rule derives a site`,
         );
         unclear++;
         return;
       }
-      console.log(`  n/a        ${rule.key}: this build predates the Kilo behavior it fixes`);
+      console.log(
+        `  n/a        ${rule.key}: this build predates the Kilo behavior it fixes`,
+      );
       return;
     }
 
@@ -111,7 +131,8 @@ function main() {
       return;
     }
     if (result.matches !== undefined) {
-      const how = result.matches === 0 ? "no match" : `${result.matches} matches`;
+      const how =
+        result.matches === 0 ? "no match" : `${result.matches} matches`;
       console.log(`  AMBIGUOUS  ${rule.key}: ${how} for its shape`);
       unclear++;
       return;
@@ -142,7 +163,7 @@ function main() {
       if (shipped !== derivedPatched) {
         console.log(
           `  MISMATCH   ${rule.key}: this site already ships, but the rule rebuilds ` +
-            `the edit differently\n             shipped: ${shipped}\n             derived: ${derivedPatched}`
+            `the edit differently\n             shipped: ${shipped}\n             derived: ${derivedPatched}`,
         );
         unclear++;
         return;
@@ -165,18 +186,22 @@ function main() {
   for (const probe of PROBES) {
     const content = bundles[probe.file];
     if (content === undefined) {
-      console.log(`  ERROR      ${probe.key}: ${probe.file} not present in dist/`);
+      console.log(
+        `  ERROR      ${probe.key}: ${probe.file} not present in dist/`,
+      );
       unclear++;
       continue;
     }
     const outcome = probe.read(content, test, bundles);
     if (outcome.error) {
-      console.log(`  ERROR      ${probe.key} (${probe.file}): ${outcome.error}`);
+      console.log(
+        `  ERROR      ${probe.key} (${probe.file}): ${outcome.error}`,
+      );
       unclear++;
       continue;
     }
     console.log(
-      `  covered    ${probe.key} (${probe.file}) ${JSON.stringify(outcome.values)}`
+      `  covered    ${probe.key} (${probe.file}) ${JSON.stringify(outcome.values)}`,
     );
   }
 
@@ -201,7 +226,9 @@ function main() {
         console.log(`        feature: ${JSON.stringify(rule.key)},`);
         console.log(`        original: ${JSON.stringify(result.original)},`);
         console.log(`        patched: ${JSON.stringify(result.patched)},`);
-        console.log(`        description: ${JSON.stringify(rule.description(version))},`);
+        console.log(
+          `        description: ${JSON.stringify(rule.description(version))},`,
+        );
         console.log("      },");
       }
     }
@@ -211,7 +238,9 @@ function main() {
       [MATH_RULE.key]: "MATH_EXTENSIONS",
     };
     for (const { rule, result } of proposals.filter((p) => p.isBonus)) {
-      console.log(`\n// --- ${BONUS_ARRAYS[rule.key]}: prepend (newest first) ---`);
+      console.log(
+        `\n// --- ${BONUS_ARRAYS[rule.key]}: prepend (newest first) ---`,
+      );
       console.log(`// v${version}+ derived symbols:`);
       console.log(`//     ${JSON.stringify(result.symbols)}`);
       console.log("  {");
@@ -221,7 +250,7 @@ function main() {
     }
 
     console.log(
-      "\nAfter pasting, run `npm run compile && npm run verify` to prove the round-trip."
+      "\nAfter pasting, run `npm run compile && npm run verify` to prove the round-trip.",
     );
   }
 

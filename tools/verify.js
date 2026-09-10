@@ -26,7 +26,11 @@ const path = require("path");
 const vm = require("vm");
 const { execFileSync } = require("child_process");
 const { loadExtension, shim } = require("./lib/load");
-const { resolveBundleSource, assertPristine, countOccurrences } = require("./lib/bundle");
+const {
+  resolveBundleSource,
+  assertPristine,
+  countOccurrences,
+} = require("./lib/bundle");
 const { RULES, PROBES } = require("./lib/rules");
 
 let failures = 0;
@@ -48,7 +52,8 @@ function parseArgs(argv) {
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
     else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
   }
-  if (args.ext && args.vsix) throw new Error("pass either --ext or --vsix, not both");
+  if (args.ext && args.vsix)
+    throw new Error("pass either --ext or --vsix, not both");
   return args;
 }
 
@@ -64,7 +69,7 @@ function main() {
   const pristine = source.bundles;
   console.log(
     `Kilo Code v${source.version}\n  ${source.label}` +
-      `${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`
+      `${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`,
   );
   assertPristine(pristine);
 
@@ -85,16 +90,27 @@ function main() {
         // Most entries target other releases and are legitimately absent here;
         // only a pattern that this build actually matches must be unique.
         if (hits === 0) continue;
-        check(hits === 1, `${fp.filename}: unique original for "${p.description}"`, `occurs ${hits}x`);
+        check(
+          hits === 1,
+          `${fp.filename}: unique original for "${p.description}"`,
+          `occurs ${hits}x`,
+        );
       }
     }
 
     console.log("\napply");
     for (const fp of test.PATCHES) {
       if (pristine[fp.filename] === undefined) continue;
-      const result = test.applyPatches(path.join(dist, fp.filename), fp.patches);
-      check(result.applied.length > 0, `${fp.filename}: applied ${result.applied.length} patch(es)`);
-      for (const description of result.applied) console.log(`          + ${description}`);
+      const result = test.applyPatches(
+        path.join(dist, fp.filename),
+        fp.patches,
+      );
+      check(
+        result.applied.length > 0,
+        `${fp.filename}: applied ${result.applied.length} patch(es)`,
+      );
+      for (const description of result.applied)
+        console.log(`          + ${description}`);
     }
     // The core stylesheet block, the way Apply Patches writes it. The bonus
     // settings are still at their defaults here, so only the core block lands.
@@ -111,12 +127,19 @@ function main() {
     const scriptPath = path.join(dist, test.CHAT_SCRIPT_FILE);
     const scriptApplied = test.reconcileChatScript(sandbox, true);
     for (const key of test.CHAT_SCRIPT_CORE) {
-      check(scriptApplied[key], `${test.CHAT_SCRIPT_FILE}: applied "${key}" block`);
+      check(
+        scriptApplied[key],
+        `${test.CHAT_SCRIPT_FILE}: applied "${key}" block`,
+      );
     }
 
     console.log("\ncompleteness");
     const status = test.computeStatus(dist);
-    check(status.verdict === "fully patched", `verdict is "fully patched"`, `got "${status.verdict}"`);
+    check(
+      status.verdict === "fully patched",
+      `verdict is "fully patched"`,
+      `got "${status.verdict}"`,
+    );
     // A row may also read "unneeded", but only where the feature's gate says
     // this build predates the Kilo behavior it fixes; a label maps back to its
     // key through the extension's own label table.
@@ -130,11 +153,15 @@ function main() {
           check(
             gate !== undefined && gate(pristine[file.filename]) === false,
             `${file.filename}: ${feature.label} (not needed on this build)`,
-            "reads unneeded without a gate that says so"
+            "reads unneeded without a gate that says so",
           );
           continue;
         }
-        check(feature.state === "patched", `${file.filename}: ${feature.label}`, `state "${feature.state}"`);
+        check(
+          feature.state === "patched",
+          `${file.filename}: ${feature.label}`,
+          `state "${feature.state}"`,
+        );
       }
       // Every behavior the patch set declares must reach the status view, since
       // a feature that never renders is also absent from the verdict and would
@@ -144,16 +171,19 @@ function main() {
         file.filename === test.CHAT_STYLE_FILE
           ? test.CHAT_CSS_CORE
           : [
-              ...(test.PATCHES.find((f) => f.filename === file.filename)?.patches ?? []).map(
-                (p) => p.feature
-              ),
-              ...(file.filename === test.CHAT_SCRIPT_FILE ? test.CHAT_SCRIPT_CORE : []),
-            ]
+              ...(
+                test.PATCHES.find((f) => f.filename === file.filename)
+                  ?.patches ?? []
+              ).map((p) => p.feature),
+              ...(file.filename === test.CHAT_SCRIPT_FILE
+                ? test.CHAT_SCRIPT_CORE
+                : []),
+            ],
       );
       check(
         file.features.length === declared.size,
         `${file.filename}: all ${declared.size} declared feature(s) appear in the status view`,
-        `got ${file.features.length} row(s) for ${declared.size} declared feature(s)`
+        `got ${file.features.length} row(s) for ${declared.size} declared feature(s)`,
       );
 
       // The harness models the same behaviors as the extension; drift between
@@ -167,7 +197,7 @@ function main() {
       check(
         missing.length === 0,
         `${file.filename}: every declared feature has a shape rule`,
-        `no rule for: ${missing.join(", ")}`
+        `no rule for: ${missing.join(", ")}`,
       );
     }
 
@@ -176,10 +206,15 @@ function main() {
     // gate that opens where the rule finds no site would report "missing"
     // for a build that needs a retarget, and a gate that closes where the
     // rule derives would hide a site that is there to patch.
-    console.log("\ngates (features that fix a behavior this build may predate)");
+    console.log(
+      "\ngates (features that fix a behavior this build may predate)",
+    );
     for (const [key, gate] of Object.entries(test.FEATURE_GATES)) {
       const rule = RULES.find((r) => r.key === key);
-      if (!check(rule !== undefined, `${key}: the gated feature has a shape rule`)) continue;
+      if (
+        !check(rule !== undefined, `${key}: the gated feature has a shape rule`)
+      )
+        continue;
       const content = pristine[rule.file];
       if (content === undefined) continue;
       const wanted = gate(content);
@@ -188,7 +223,7 @@ function main() {
         wanted === derives,
         `${key}: the gate (${wanted ? "wanted" : "not needed"}) agrees with the rule (${
           derives ? "derives" : "no site"
-        })`
+        })`,
       );
     }
 
@@ -201,12 +236,12 @@ function main() {
     const cssAgain = test.reconcileChatStyle(sandbox, coreOn);
     check(
       test.CHAT_CSS_CORE.every((key) => !cssAgain[key]),
-      `${test.CHAT_STYLE_FILE}: re-apply is a no-op`
+      `${test.CHAT_STYLE_FILE}: re-apply is a no-op`,
     );
     const scriptAgain = test.reconcileChatScript(sandbox, true);
     check(
       test.CHAT_SCRIPT_CORE.every((key) => !scriptAgain[key]),
-      `${test.CHAT_SCRIPT_FILE}: re-apply of the block is a no-op`
+      `${test.CHAT_SCRIPT_FILE}: re-apply of the block is a no-op`,
     );
 
     // The core stylesheet block stores no per-release text: it is written when
@@ -226,47 +261,68 @@ function main() {
       check(
         sizing !== undefined,
         "Kilo's textarea sizing rule is readable",
-        JSON.stringify(sizing)
+        JSON.stringify(sizing),
       );
       const applied = fs.readFileSync(cssPath, "utf8");
       check(
-        countOccurrences(applied, "kilo-code-kb-patch:chat-scroll:begin") === 1 &&
+        countOccurrences(applied, "kilo-code-kb-patch:chat-scroll:begin") ===
+          1 &&
           countOccurrences(applied, "kilo-code-kb-patch:chat-scroll:end") === 1,
-        "exactly one chat-scroll block"
+        "exactly one chat-scroll block",
       );
-      check(applied.includes(test.CHAT_SCROLL_RULE), "the block carries the field-sizing rule");
+      check(
+        applied.includes(test.CHAT_SCROLL_RULE),
+        "the block carries the field-sizing rule",
+      );
       check(
         test.CHAT_SCROLL_RULE.startsWith("@supports (field-sizing: content)") &&
           test.CHAT_SCROLL_RULE.includes(".chat-view .prompt-input {") &&
           test.CHAT_SCROLL_RULE.includes("height: auto !important"),
-        "the rule is guarded by @supports, scoped to .chat-view, and overrides the inline height"
+        "the rule is guarded by @supports, scoped to .chat-view, and overrides the inline height",
       );
-      check(test.chatCssApplied(sandbox, "chat-scroll"), "the block reads as applied");
+      check(
+        test.chatCssApplied(sandbox, "chat-scroll"),
+        "the block reads as applied",
+      );
 
       shim.setConfig({ chatHistoryFontSizeEm: 1.3 });
       const withBonus = test.reconcileChatStyle(sandbox);
       check(
         !withBonus["chat-scroll"] &&
           fs.readFileSync(cssPath, "utf8").includes(test.CHAT_SCROLL_RULE),
-        "a bonus reconcile leaves the applied block in place"
+        "a bonus reconcile leaves the applied block in place",
       );
       // Presence is judged by the block marker: Kilo's own stylesheet contains
       // the substring "chat-scroll" (`--chat-scrollbar-width`).
       const hasBlock = () =>
-        fs.readFileSync(cssPath, "utf8").includes("kilo-code-kb-patch:chat-scroll:begin");
+        fs
+          .readFileSync(cssPath, "utf8")
+          .includes("kilo-code-kb-patch:chat-scroll:begin");
       const removed = test.reconcileChatStyle(sandbox, coreOff);
-      check(removed["chat-scroll"] && !hasBlock(), "restoring removes the block");
+      check(
+        removed["chat-scroll"] && !hasBlock(),
+        "restoring removes the block",
+      );
       shim.setConfig({ chatHistoryFontSizeEm: 1.4 });
       test.reconcileChatStyle(sandbox);
-      check(!hasBlock(), "a bonus reconcile does not apply the block on its own");
+      check(
+        !hasBlock(),
+        "a bonus reconcile does not apply the block on its own",
+      );
       const row = () =>
-        test.computeStatus(dist).files.find((f) => f.filename === test.CHAT_STYLE_FILE)
-          ?.features[0]?.state;
-      check(row() === "unpatched", 'an absent block reads "unpatched"', `got "${row()}"`);
+        test
+          .computeStatus(dist)
+          .files.find((f) => f.filename === test.CHAT_STYLE_FILE)?.features[0]
+          ?.state;
+      check(
+        row() === "unpatched",
+        'an absent block reads "unpatched"',
+        `got "${row()}"`,
+      );
       check(
         test.computeStatus(dist).verdict === "partially patched",
         "and the verdict counts it",
-        `got "${test.computeStatus(dist).verdict}"`
+        `got "${test.computeStatus(dist).verdict}"`,
       );
 
       // A stale form (an older kb-patch's text) is reported and rewritten
@@ -275,13 +331,18 @@ function main() {
         cssPath,
         fs.readFileSync(cssPath, "utf8") +
           "\n/* kilo-code-kb-patch:chat-scroll:begin */\n.stale {}\n/* kilo-code-kb-patch:chat-scroll:end */\n",
-        "utf8"
+        "utf8",
       );
-      check(row() === "unpatched", 'a stale block reads "unpatched"', `got "${row()}"`);
+      check(
+        row() === "unpatched",
+        'a stale block reads "unpatched"',
+        `got "${row()}"`,
+      );
       const stillStale = test.reconcileChatStyle(sandbox);
       check(
-        !stillStale["chat-scroll"] && fs.readFileSync(cssPath, "utf8").includes(".stale {}"),
-        "a bonus reconcile leaves a stale block for Apply"
+        !stillStale["chat-scroll"] &&
+          fs.readFileSync(cssPath, "utf8").includes(".stale {}"),
+        "a bonus reconcile leaves a stale block for Apply",
       );
       shim.setConfig({});
       const upgraded = test.reconcileChatStyle(sandbox, coreOn);
@@ -290,13 +351,17 @@ function main() {
         upgraded["chat-scroll"] &&
           !fresh.includes(".stale {}") &&
           countOccurrences(fresh, "kilo-code-kb-patch:chat-scroll:begin") === 1,
-        "Apply rewrites a stale block in place, exactly once"
+        "Apply rewrites a stale block in place, exactly once",
       );
-      check(row() === "patched", 'the fresh block reads "patched"', `got "${row()}"`);
+      check(
+        row() === "patched",
+        'the fresh block reads "patched"',
+        `got "${row()}"`,
+      );
       check(
         test.computeStatus(dist).verdict === "fully patched",
         "and the verdict is whole again",
-        `got "${test.computeStatus(dist).verdict}"`
+        `got "${test.computeStatus(dist).verdict}"`,
       );
     }
 
@@ -316,23 +381,28 @@ function main() {
       check(
         Number.isInteger(threshold),
         "Kilo's chat templates and scroll threshold are readable",
-        JSON.stringify({ threshold })
+        JSON.stringify({ threshold }),
       );
       const block = test.chatScriptBlock("chat-scroll", pristineJs);
       const scriptOn = () => fs.readFileSync(scriptPath, "utf8");
       const marker = "kilo-code-kb-patch:chat-scroll:begin";
       check(
         countOccurrences(scriptOn(), marker) === 1 &&
-          countOccurrences(scriptOn(), "kilo-code-kb-patch:chat-scroll:end") === 1,
-        "exactly one chat-scroll block"
+          countOccurrences(scriptOn(), "kilo-code-kb-patch:chat-scroll:end") ===
+            1,
+        "exactly one chat-scroll block",
       );
       // The core blocks sit together at the very end, in CHAT_SCRIPT_BLOCKS
       // order, so the tail of the file is their concatenation.
       const coreTail = () =>
-        test.CHAT_SCRIPT_CORE.map((key) => test.chatScriptBlock(key, pristineJs)).join("");
+        test.CHAT_SCRIPT_CORE.map((key) =>
+          test.chatScriptBlock(key, pristineJs),
+        ).join("");
       check(
-        block !== "" && coreTail().startsWith(block) && scriptOn().endsWith(coreTail()),
-        "the block is appended at the very end of the bundle, ahead of the other core block"
+        block !== "" &&
+          coreTail().startsWith(block) &&
+          scriptOn().endsWith(coreTail()),
+        "the block is appended at the very end of the bundle, ahead of the other core block",
       );
       const body = test.chatScrollScript(threshold);
       check(
@@ -342,11 +412,11 @@ function main() {
           body.includes(".chat-view") &&
           body.includes(".message-list") &&
           body.includes(`< ${threshold} ?`),
-        "the script names the three class names and this build's threshold"
+        "the script names the three class names and this build's threshold",
       );
       check(
         !body.includes("preventDefault") && !body.includes("stopPropagation"),
-        "the script prevents and stops nothing"
+        "the script prevents and stops nothing",
       );
 
       // Run it. The stand-in scroller clamps its scrollTop the way a real one
@@ -360,7 +430,10 @@ function main() {
           return this.top;
         },
         set scrollTop(v) {
-          this.top = Math.max(0, Math.min(v, this.scrollHeight - this.clientHeight));
+          this.top = Math.max(
+            0,
+            Math.min(v, this.scrollHeight - this.clientHeight),
+          );
         },
       };
       class HTMLTextAreaElement {
@@ -386,8 +459,9 @@ function main() {
         HTMLTextAreaElement,
       });
       check(
-        listeners.beforeinput?.capture === true && listeners.input?.capture === false,
-        "the script listens on window: beforeinput in capture, input in bubble"
+        listeners.beforeinput?.capture === true &&
+          listeners.input?.capture === false,
+        "the script listens on window: beforeinput in capture, input in bubble",
       );
       // One edit: the snapshot, then the clamp the browser would apply
       // mid-edit, then the input event. Returns the distance left.
@@ -399,27 +473,37 @@ function main() {
       };
       const prompt = new HTMLTextAreaElement("textarea.prompt-input", true);
       list.scrollTop = 3500;
-      check(edit(prompt, 21) === 0, "an edit that clamped the history re-pins it");
+      check(
+        edit(prompt, 21) === 0,
+        "an edit that clamped the history re-pins it",
+      );
       list.scrollTop = 3500 - threshold + 1;
-      check(edit(prompt, 0) === 0, "a history within Kilo's threshold counts as at the bottom");
+      check(
+        edit(prompt, 0) === 0,
+        "a history within Kilo's threshold counts as at the bottom",
+      );
       list.scrollTop = 3500 - threshold - 40;
       const away = list.scrollTop;
       check(
         edit(prompt, 0) === 3500 - away,
-        "a history the user scrolled away from is left where it was"
+        "a history the user scrolled away from is left where it was",
       );
       list.scrollTop = 3500;
       check(
         edit(new HTMLTextAreaElement("textarea.other", true), 21) === 21,
-        "an edit in another textarea is ignored"
+        "an edit in another textarea is ignored",
       );
       list.scrollTop = 3500;
       check(
-        edit(new HTMLTextAreaElement("textarea.prompt-input", false), 21) === 21,
-        "a prompt textarea outside .chat-view is ignored"
+        edit(new HTMLTextAreaElement("textarea.prompt-input", false), 21) ===
+          21,
+        "a prompt textarea outside .chat-view is ignored",
       );
       list.scrollTop = 3500;
-      check(edit({ tagName: "DIV" }, 21) === 21, "an edit in a non-textarea is ignored");
+      check(
+        edit({ tagName: "DIV" }, 21) === 21,
+        "an edit in a non-textarea is ignored",
+      );
 
       // The bundle's bonuses are splices elsewhere in the file, so switching
       // them on and off must leave the block exactly as it was.
@@ -428,32 +512,40 @@ function main() {
           .computeStatus(dist)
           .files.find((f) => f.filename === test.CHAT_SCRIPT_FILE)
           ?.features.find((ft) => ft.label.startsWith("Chat scroll"))?.state;
-      check(jsRow() === "patched", 'the block reads "patched" in the bundle\'s rows', `got "${jsRow()}"`);
+      check(
+        jsRow() === "patched",
+        'the block reads "patched" in the bundle\'s rows',
+        `got "${jsRow()}"`,
+      );
       shim.setConfig({ addAttachFileButton: true, chatMathRendering: true });
       test.reconcileAttachFileButton(sandbox);
       test.reconcileMathRendering(sandbox);
       check(
         scriptOn().endsWith(coreTail()) && jsRow() === "patched",
-        "enabling the bundle bonuses leaves the block in place"
+        "enabling the bundle bonuses leaves the block in place",
       );
       shim.setConfig({});
       test.reconcileAttachFileButton(sandbox);
       test.reconcileMathRendering(sandbox);
       check(
         scriptOn().endsWith(coreTail()) && jsRow() === "patched",
-        "disabling them does too"
+        "disabling them does too",
       );
 
       const removed = test.reconcileChatScript(sandbox, false);
       check(
         removed["chat-scroll"] && !scriptOn().includes(marker),
-        "restoring removes the block"
+        "restoring removes the block",
       );
-      check(jsRow() === "unpatched", 'an absent block reads "unpatched"', `got "${jsRow()}"`);
+      check(
+        jsRow() === "unpatched",
+        'an absent block reads "unpatched"',
+        `got "${jsRow()}"`,
+      );
       check(
         test.computeStatus(dist).verdict === "partially patched",
         "and the verdict counts it",
-        `got "${test.computeStatus(dist).verdict}"`
+        `got "${test.computeStatus(dist).verdict}"`,
       );
 
       // A stale form (an older kb-patch's text) is reported and rewritten
@@ -462,22 +554,30 @@ function main() {
         scriptPath,
         scriptOn() +
           "\n/* kilo-code-kb-patch:chat-scroll:begin */\n/* stale */\n/* kilo-code-kb-patch:chat-scroll:end */\n",
-        "utf8"
+        "utf8",
       );
-      check(jsRow() === "unpatched", 'a stale block reads "unpatched"', `got "${jsRow()}"`);
+      check(
+        jsRow() === "unpatched",
+        'a stale block reads "unpatched"',
+        `got "${jsRow()}"`,
+      );
       const upgraded = test.reconcileChatScript(sandbox, true);
       check(
         upgraded["chat-scroll"] &&
           !scriptOn().includes("/* stale */") &&
           countOccurrences(scriptOn(), marker) === 1 &&
           scriptOn().endsWith(coreTail()),
-        "Apply rewrites a stale block in place, exactly once"
+        "Apply rewrites a stale block in place, exactly once",
       );
-      check(jsRow() === "patched", 'the fresh block reads "patched"', `got "${jsRow()}"`);
+      check(
+        jsRow() === "patched",
+        'the fresh block reads "patched"',
+        `got "${jsRow()}"`,
+      );
       check(
         test.computeStatus(dist).verdict === "fully patched",
         "and the verdict is whole again",
-        `got "${test.computeStatus(dist).verdict}"`
+        `got "${test.computeStatus(dist).verdict}"`,
       );
     }
 
@@ -497,7 +597,7 @@ function main() {
     } else {
       check(
         test.hoverGuardAnchorsPresent(pristineJs),
-        "Kilo's chat templates are present exactly once"
+        "Kilo's chat templates are present exactly once",
       );
       const block = test.chatScriptBlock("hover-guard", pristineJs);
       const scrollBlock = test.chatScriptBlock("chat-scroll", pristineJs);
@@ -505,23 +605,24 @@ function main() {
       const marker = "kilo-code-kb-patch:hover-guard:begin";
       check(
         countOccurrences(scriptOn(), marker) === 1 &&
-          countOccurrences(scriptOn(), "kilo-code-kb-patch:hover-guard:end") === 1,
-        "exactly one hover-guard block"
+          countOccurrences(scriptOn(), "kilo-code-kb-patch:hover-guard:end") ===
+            1,
+        "exactly one hover-guard block",
       );
       check(
         block !== "" && scriptOn().endsWith(scrollBlock + block),
-        "the block follows the chat-scroll block at the very end of the bundle"
+        "the block follows the chat-scroll block at the very end of the bundle",
       );
       const body = test.hoverGuardScript();
       check(
         body.includes("textarea.prompt-input") && body.includes(".chat-view"),
-        "the script names the two class names"
+        "the script names the two class names",
       );
       check(
         !body.includes("preventDefault") &&
           !body.includes(".stopPropagation") &&
           countOccurrences(body, "stopImmediatePropagation") === 1,
-        "the script prevents nothing and stops only immediate propagation, in one place"
+        "the script prevents nothing and stops only immediate propagation, in one place",
       );
 
       // Run it against the sequences the engine produces.
@@ -548,14 +649,25 @@ function main() {
       });
       const kinds = [
         "keydown",
-        "pointerover", "pointerenter", "mouseover", "mouseenter",
-        "pointermove", "mousemove", "pointerout", "pointerleave", "mouseout", "mouseleave",
-        "pointerdown", "mousedown", "pointerup", "mouseup",
+        "pointerover",
+        "pointerenter",
+        "mouseover",
+        "mouseenter",
+        "pointermove",
+        "mousemove",
+        "pointerout",
+        "pointerleave",
+        "mouseout",
+        "mouseleave",
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
       ];
       check(
         kinds.every((k) => listeners[k]?.capture === true) &&
           Object.keys(listeners).length === kinds.length,
-        "the script listens on window in the capture phase, for the key and the mouse and pointer events only"
+        "the script listens on window in the capture phase, for the key and the mouse and pointer events only",
       );
       const prompt = new HTMLTextAreaElement("textarea.prompt-input", true);
       // Dispatch one event; true when the script stopped it.
@@ -591,24 +703,44 @@ function main() {
         mouseover: fire("mouseover", mouseAt(x, y)),
         mouseenter: fire("mouseenter", mouseAt(x, y)),
       });
-      const key = (props) => fire("keydown", { key: "a", metaKey: false, target: prompt, ...props });
-      const stoppedEnters = (r) => r.pointerover && r.pointerenter && r.mouseover && r.mouseenter;
+      const key = (props) =>
+        fire("keydown", { key: "a", metaKey: false, target: prompt, ...props });
+      const stoppedEnters = (r) =>
+        r.pointerover && r.pointerenter && r.mouseover && r.mouseenter;
       const passedLeaves = (r) => !r.pointerout && !r.mouseout;
       const none = (r) => Object.values(r).every((v) => !v);
 
-      check(none(move(165.5, 467.25)), "the pointer arrives: a real move passes");
-      check(none(relayout(165.5, 467.25)), "with the cursor visible, a layout change under the pointer passes");
+      check(
+        none(move(165.5, 467.25)),
+        "the pointer arrives: a real move passes",
+      );
+      check(
+        none(relayout(165.5, 467.25)),
+        "with the cursor visible, a layout change under the pointer passes",
+      );
       key({});
       let r = relayout(165.5, 467.25);
       check(
         stoppedEnters(r) && passedLeaves(r),
-        "after a key down in the chat textarea, the enter events are stopped and the out events pass"
+        "after a key down in the chat textarea, the enter events are stopped and the out events pass",
       );
-      check(stoppedEnters(relayout(165.5, 467.25)), "and so are the next layout change's");
-      check(none(move(200.5, 300)), "a real move's own enter events pass, new coordinates first");
-      check(none(relayout(200.5, 300)), "and the cursor counts as visible again");
+      check(
+        stoppedEnters(relayout(165.5, 467.25)),
+        "and so are the next layout change's",
+      );
+      check(
+        none(move(200.5, 300)),
+        "a real move's own enter events pass, new coordinates first",
+      );
+      check(
+        none(relayout(200.5, 300)),
+        "and the cursor counts as visible again",
+      );
       key({});
-      check(stoppedEnters(relayout(200.5, 300)), "the next key down hides it again");
+      check(
+        stoppedEnters(relayout(200.5, 300)),
+        "the next key down hides it again",
+      );
       fire("pointermove", at(201.5, 300));
       check(none(relayout(201.5, 300)), "a move event alone brings it back");
       key({});
@@ -624,21 +756,33 @@ function main() {
       key({ target: new HTMLTextAreaElement("textarea.other", true) });
       check(none(relayout(202.5, 300)), "nor a key in another textarea");
       key({ target: new HTMLTextAreaElement("textarea.prompt-input", false) });
-      check(none(relayout(202.5, 300)), "nor in a prompt textarea outside .chat-view");
+      check(
+        none(relayout(202.5, 300)),
+        "nor in a prompt textarea outside .chat-view",
+      );
       key({ target: { tagName: "DIV" } });
       check(none(relayout(202.5, 300)), "nor in a non-textarea");
       key({ ctrlKey: true });
-      check(stoppedEnters(relayout(202.5, 300)), "a Control chord does hide it, as on the platform");
+      check(
+        stoppedEnters(relayout(202.5, 300)),
+        "a Control chord does hide it, as on the platform",
+      );
       check(
         !fire("mouseover", { isTrusted: false, ...mouseAt(999, 999) }),
-        "a script-dispatched enter event is never stopped"
+        "a script-dispatched enter event is never stopped",
       );
-      check(stoppedEnters(relayout(202.5, 300)), "and does not count as movement");
+      check(
+        stoppedEnters(relayout(202.5, 300)),
+        "and does not count as movement",
+      );
       fire("pointerdown", at(202.5, 300));
       fire("mousedown", mouseAt(202.5, 300));
       fire("pointerup", at(202.5, 300));
       fire("mouseup", mouseAt(202.5, 300));
-      check(stoppedEnters(relayout(202.5, 300)), "a click without movement keeps it hidden, as on the platform");
+      check(
+        stoppedEnters(relayout(202.5, 300)),
+        "a click without movement keeps it hidden, as on the platform",
+      );
       check(none(move(202.5, 301)), "a move of one pixel brings it back");
 
       // The round trip, the way the chat-scroll block's is proven.
@@ -647,30 +791,49 @@ function main() {
           .computeStatus(dist)
           .files.find((f) => f.filename === test.CHAT_SCRIPT_FILE)
           ?.features.find((ft) => ft.label.startsWith("Hover guard"))?.state;
-      check(hgRow() === "patched", 'the block reads "patched" in the bundle\'s rows', `got "${hgRow()}"`);
+      check(
+        hgRow() === "patched",
+        'the block reads "patched" in the bundle\'s rows',
+        `got "${hgRow()}"`,
+      );
       const removed = test.reconcileChatScript(sandbox, false);
-      check(removed["hover-guard"] && !scriptOn().includes(marker), "restoring removes the block");
-      check(hgRow() === "unpatched", 'an absent block reads "unpatched"', `got "${hgRow()}"`);
+      check(
+        removed["hover-guard"] && !scriptOn().includes(marker),
+        "restoring removes the block",
+      );
+      check(
+        hgRow() === "unpatched",
+        'an absent block reads "unpatched"',
+        `got "${hgRow()}"`,
+      );
       fs.writeFileSync(
         scriptPath,
         scriptOn() +
           "\n/* kilo-code-kb-patch:hover-guard:begin */\n/* stale */\n/* kilo-code-kb-patch:hover-guard:end */\n",
-        "utf8"
+        "utf8",
       );
-      check(hgRow() === "unpatched", 'a stale block reads "unpatched"', `got "${hgRow()}"`);
+      check(
+        hgRow() === "unpatched",
+        'a stale block reads "unpatched"',
+        `got "${hgRow()}"`,
+      );
       const upgraded = test.reconcileChatScript(sandbox, true);
       check(
         upgraded["hover-guard"] &&
           !scriptOn().includes("/* stale */") &&
           countOccurrences(scriptOn(), marker) === 1 &&
           scriptOn().endsWith(scrollBlock + block),
-        "Apply rewrites a stale block in place, exactly once, after the chat-scroll block"
+        "Apply rewrites a stale block in place, exactly once, after the chat-scroll block",
       );
-      check(hgRow() === "patched", 'the fresh block reads "patched"', `got "${hgRow()}"`);
+      check(
+        hgRow() === "patched",
+        'the fresh block reads "patched"',
+        `got "${hgRow()}"`,
+      );
       check(
         test.computeStatus(dist).verdict === "fully patched",
         "and the verdict is whole again",
-        `got "${test.computeStatus(dist).verdict}"`
+        `got "${test.computeStatus(dist).verdict}"`,
       );
     }
 
@@ -683,19 +846,26 @@ function main() {
     shim.setConfig({ addAttachFileButton: true });
     const webview = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
     if (test.matchingAttachFileButton(webview)) {
-      check(test.reconcileAttachFileButton(sandbox), "enabling adds the button");
+      check(
+        test.reconcileAttachFileButton(sandbox),
+        "enabling adds the button",
+      );
       check(
         test.computeBonusStatus(sandbox)[0]?.state === "on",
         "bonus reports on",
-        `got "${test.computeBonusStatus(sandbox)[0]?.state}"`
+        `got "${test.computeBonusStatus(sandbox)[0]?.state}"`,
       );
     } else {
       check(
         test.reconcileAttachFileButton(sandbox) === false,
-        "no variant for this build: enabling changes nothing"
+        "no variant for this build: enabling changes nothing",
       );
       const state = test.computeBonusStatus(sandbox)[0]?.state;
-      check(state === "unavailable", 'bonus reports "unavailable"', `got "${state}"`);
+      check(
+        state === "unavailable",
+        'bonus reports "unavailable"',
+        `got "${state}"`,
+      );
     }
 
     // Upgrading kb-patch can change a variant's patched text while the user's
@@ -704,31 +874,56 @@ function main() {
     // and inject a second one, so the old form has to be rewritten instead.
     const attachVariant = test.matchingAttachFileButton(webview);
     if (attachVariant?.previous?.length) {
-      console.log("\nattach-file button upgrade (older form already installed)");
-      const migrate = fs.mkdtempSync(path.join(os.tmpdir(), "kb-patch-migrate-"));
+      console.log(
+        "\nattach-file button upgrade (older form already installed)",
+      );
+      const migrate = fs.mkdtempSync(
+        path.join(os.tmpdir(), "kb-patch-migrate-"),
+      );
       try {
         fs.mkdirSync(path.join(migrate, "dist"));
         const target = path.join(migrate, "dist", "webview.js");
         const clean = pristine["webview.js"];
-        const fresh = clean.replace(attachVariant.original, attachVariant.patched);
+        const fresh = clean.replace(
+          attachVariant.original,
+          attachVariant.patched,
+        );
         for (const old of attachVariant.previous) {
-          fs.writeFileSync(target, clean.replace(attachVariant.original, old), "utf8");
+          fs.writeFileSync(
+            target,
+            clean.replace(attachVariant.original, old),
+            "utf8",
+          );
           shim.setConfig({ addAttachFileButton: true });
           test.reconcileAttachFileButton(migrate);
           const after = fs.readFileSync(target, "utf8");
           // Count buttons by the injected onClick's selectMention call, which
           // every variant contains exactly once regardless of how it captions
           // itself (7.5.4+ variants no longer call t("prompt.action.attachFile")).
-          const buttons = countOccurrences(after, 'selectMention({type:"file-picker"}');
-          check(buttons === 1, "older form yields exactly one button", `got ${buttons}`);
-          check(after === fresh, "older form upgrades to exactly a fresh apply");
+          const buttons = countOccurrences(
+            after,
+            'selectMention({type:"file-picker"}',
+          );
+          check(
+            buttons === 1,
+            "older form yields exactly one button",
+            `got ${buttons}`,
+          );
+          check(
+            after === fresh,
+            "older form upgrades to exactly a fresh apply",
+          );
 
-          fs.writeFileSync(target, clean.replace(attachVariant.original, old), "utf8");
+          fs.writeFileSync(
+            target,
+            clean.replace(attachVariant.original, old),
+            "utf8",
+          );
           shim.setConfig({ addAttachFileButton: false });
           test.reconcileAttachFileButton(migrate);
           check(
             fs.readFileSync(target, "utf8") === clean,
-            "older form can be removed back to pristine"
+            "older form can be removed back to pristine",
           );
         }
       } finally {
@@ -747,37 +942,45 @@ function main() {
     const beforeMath = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
     const mathVariant = test.matchingMathExtension(beforeMath);
     const mathRow = () =>
-      test.computeBonusStatus(sandbox).find((b) => b.label.includes("math"))?.state;
+      test.computeBonusStatus(sandbox).find((b) => b.label.includes("math"))
+        ?.state;
     if (mathVariant) {
       check(
         countOccurrences(beforeMath, mathVariant.original) === 1,
-        "the matched pack tail occurs exactly once"
+        "the matched pack tail occurs exactly once",
       );
-      check(test.reconcileMathRendering(sandbox), "enabling adds the extensions");
+      check(
+        test.reconcileMathRendering(sandbox),
+        "enabling adds the extensions",
+      );
       const afterMath = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
       check(
         countOccurrences(afterMath, 'name:"kbpKatexInlineDollar"') === 1 &&
           countOccurrences(afterMath, 'name:"kbpKatexBlockBracket"') === 1 &&
           countOccurrences(afterMath, 'name:"kbpKatexInlineBracket"') === 1,
-        "exactly one copy of each added extension"
+        "exactly one copy of each added extension",
       );
       check(
         afterMath.includes('{name:"doubleKatexBlock",level:"block"') &&
           afterMath.includes('{name:"doubleKatexInline",level:"inline"') &&
           afterMath.includes('{name:"inlineKatex",level:"inline"'),
-        "Kilo's own $$ and \\( extensions survive the splice"
+        "Kilo's own $$ and \\( extensions survive the splice",
       );
       check(mathRow() === "on", "bonus reports on", `got "${mathRow()}"`);
       check(
         test.reconcileMathRendering(sandbox) === false,
-        "re-enabling is a no-op"
+        "re-enabling is a no-op",
       );
     } else {
       check(
         test.reconcileMathRendering(sandbox) === false,
-        "no variant for this build: enabling changes nothing"
+        "no variant for this build: enabling changes nothing",
       );
-      check(mathRow() === "unavailable", 'bonus reports "unavailable"', `got "${mathRow()}"`);
+      check(
+        mathRow() === "unavailable",
+        'bonus reports "unavailable"',
+        `got "${mathRow()}"`,
+      );
     }
 
     // The stylesheet bonuses store no per-release text: the typography block
@@ -792,7 +995,11 @@ function main() {
       check(false, `${test.CHAT_STYLE_FILE} is present in dist/`);
     } else {
       const values = test.readChatStyleValues(pristineCss);
-      check(values !== undefined, "Kilo's own declarations are readable", JSON.stringify(values));
+      check(
+        values !== undefined,
+        "Kilo's own declarations are readable",
+        JSON.stringify(values),
+      );
 
       const ON = {
         addAttachFileButton: true,
@@ -805,7 +1012,7 @@ function main() {
       const changed = test.reconcileChatStyle(sandbox);
       check(
         changed.typography && changed.math,
-        "enabling appends both blocks and attributes each to its bonus"
+        "enabling appends both blocks and attributes each to its bonus",
       );
       const styled = fs.readFileSync(cssPath, "utf8");
       const typography = test.chatCssRules("typography", pristineCss);
@@ -813,20 +1020,20 @@ function main() {
 
       check(
         [...typography, ...math].every((r) => styled.includes(r)),
-        "every rule the settings ask for is in the file"
+        "every rule the settings ask for is in the file",
       );
       check(
         values !== undefined &&
           styled.includes(`font-size: calc(${values.size} * 1.3)`) &&
           styled.includes(`font-size: calc(${values.heading} * 1.3)`) &&
           styled.includes(`font-size: calc(${values.table} * 1.3)`),
-        "container, headings and tables are each scaled by the multiplier"
+        "container, headings and tables are each scaled by the multiplier",
       );
       check(
         values !== undefined &&
           styled.includes(`pre { font-size: ${values.code}; }`) &&
           !styled.includes(`${values.code} * `),
-        "code blocks are pinned to Kilo's own size, not scaled"
+        "code blocks are pinned to Kilo's own size, not scaled",
       );
       // Kilo gives inline code and file-path links a monospace family and no
       // size, so they follow the container unless pinned. Without these two
@@ -835,15 +1042,15 @@ function main() {
         values !== undefined &&
           styled.includes(`:not(pre) > code { font-size: ${values.size}; }`) &&
           styled.includes(`a.file-path-link { font-size: ${values.size}; }`),
-        "inline code and file-path links are pinned to Kilo's own size"
+        "inline code and file-path links are pinned to Kilo's own size",
       );
       check(
         styled.includes("font-family: Charter, Georgia, serif"),
-        "the font-family value is emitted verbatim"
+        "the font-family value is emitted verbatim",
       );
       check(
         math.length === 1 && math[0].includes(".katex { font-size: 1.05em; }"),
-        "the math size is emitted in em, in the math bonus's own block"
+        "the math size is emitted in em, in the math bonus's own block",
       );
       // The scoping promise: everything the typography block emits must be
       // under the assistant's text-part, which is what keeps the reasoning
@@ -851,25 +1058,30 @@ function main() {
       // may name .shiki, which is how code blocks keep Kilo's own size.
       check(
         typography.length > 0 &&
-          typography.every((r) => r.startsWith('[data-component="text-part"] ')),
-        "typography rules are scoped to the agent's reply"
+          typography.every((r) =>
+            r.startsWith('[data-component="text-part"] '),
+          ),
+        "typography rules are scoped to the agent's reply",
       );
       check(
         [...typography, ...math].every((r) => !r.includes(".shiki")),
-        "no rule touches code blocks"
+        "no rule touches code blocks",
       );
       for (const key of test.CHAT_CSS_BLOCKS) {
         check(
           countOccurrences(styled, `kilo-code-kb-patch:${key}:begin`) === 1 &&
             countOccurrences(styled, `kilo-code-kb-patch:${key}:end`) === 1,
-          `exactly one ${key} block`
+          `exactly one ${key} block`,
         );
-        check(test.chatCssApplied(sandbox, key), `${key} block reads as applied`);
+        check(
+          test.chatCssApplied(sandbox, key),
+          `${key} block reads as applied`,
+        );
       }
       const reapplied = test.reconcileChatStyle(sandbox);
       check(
         !reapplied.typography && !reapplied.math,
-        "re-applying the same settings is a no-op"
+        "re-applying the same settings is a no-op",
       );
 
       // The math size belongs to the math bonus, so turning that bonus off has
@@ -879,12 +1091,12 @@ function main() {
       const withoutMath = fs.readFileSync(cssPath, "utf8");
       check(
         offMath.math && !offMath.typography,
-        "turning math rendering off is attributed to the math bonus alone"
+        "turning math rendering off is attributed to the math bonus alone",
       );
       check(
         !withoutMath.includes(".katex { font-size:") &&
           typography.every((r) => withoutMath.includes(r)),
-        "the math size is void without math rendering, typography is untouched"
+        "the math size is void without math rendering, typography is untouched",
       );
 
       // A value that could end the declaration or open a new rule would corrupt
@@ -897,7 +1109,7 @@ function main() {
       test.reconcileChatStyle(sandbox);
       check(
         !fs.readFileSync(cssPath, "utf8").includes("display: none"),
-        "a font-family value with CSS syntax in it is ignored"
+        "a font-family value with CSS syntax in it is ignored",
       );
 
       // Rewriting the blocks in place must converge on exactly what a fresh
@@ -906,7 +1118,7 @@ function main() {
       test.reconcileChatStyle(sandbox);
       check(
         fs.readFileSync(cssPath, "utf8") === styled,
-        "re-editing the settings converges on a fresh apply"
+        "re-editing the settings converges on a fresh apply",
       );
     }
 
@@ -928,7 +1140,9 @@ function main() {
     }
     if (upgrades.length > 0) {
       console.log("\ncore upgrade (older patched form already installed)");
-      const migrate = fs.mkdtempSync(path.join(os.tmpdir(), "kb-patch-core-migrate-"));
+      const migrate = fs.mkdtempSync(
+        path.join(os.tmpdir(), "kb-patch-core-migrate-"),
+      );
       try {
         for (const [fp, p] of upgrades) {
           const clean = pristine[fp.filename];
@@ -943,18 +1157,18 @@ function main() {
           const result = test.applyPatches(target, fp.patches);
           check(
             result.applied.includes(`${p.description} (upgraded)`),
-            `${fp.filename}: older "${p.feature}" form is upgraded in place`
+            `${fp.filename}: older "${p.feature}" form is upgraded in place`,
           );
           check(
             fs.readFileSync(target, "utf8") === fresh,
-            `${fp.filename}: upgraded "${p.feature}" equals a fresh apply`
+            `${fp.filename}: upgraded "${p.feature}" equals a fresh apply`,
           );
 
           fs.writeFileSync(target, older, "utf8");
           test.restorePatches(target, fp.patches);
           check(
             fs.readFileSync(target, "utf8") === clean,
-            `${fp.filename}: older "${p.feature}" form restores to pristine`
+            `${fp.filename}: older "${p.feature}" form restores to pristine`,
           );
         }
       } finally {
@@ -973,29 +1187,33 @@ function main() {
     console.log("\nneeds-patching scan (short-circuit matches the flat scan)");
     {
       const webviewPatches = test.PATCHES.find(
-        (group) => group.filename === "webview.js"
+        (group) => group.filename === "webview.js",
       ).patches;
       const flat = (content) =>
         webviewPatches.some(
           (p) =>
             !content.includes(p.patched) &&
             (content.includes(p.original) ||
-              (p.previous && content.includes(p.previous)))
+              (p.previous && content.includes(p.previous))),
         );
       const pristineJs = pristine["webview.js"];
       let full = pristineJs;
       for (const p of webviewPatches) {
         if (full.includes(p.patched)) continue;
-        if (full.includes(p.original)) full = full.replace(p.original, p.patched);
+        if (full.includes(p.original))
+          full = full.replace(p.original, p.patched);
       }
       const states = [
         ["pristine", pristineJs],
         ["fully patched", full],
         ...webviewPatches
           .filter(
-            (p) => full.includes(p.patched) && !pristineJs.includes(p.patched)
+            (p) => full.includes(p.patched) && !pristineJs.includes(p.patched),
           )
-          .map((p) => [`only ${p.feature} missing`, full.replace(p.patched, p.original)]),
+          .map((p) => [
+            `only ${p.feature} missing`,
+            full.replace(p.patched, p.original),
+          ]),
       ];
       let parted = 0;
       for (const [name, content] of states) {
@@ -1007,23 +1225,29 @@ function main() {
       check(
         parted === 0,
         "both scans agree on every reachable state",
-        `${states.length} states`
+        `${states.length} states`,
       );
       check(
         test.webviewNeedsPatching(pristineJs) === true &&
           test.webviewNeedsPatching(full) === false,
-        "pristine needs patching, fully patched does not"
+        "pristine needs patching, fully patched does not",
       );
     }
 
     console.log("\nvalidity (fully patched bundles still parse)");
-    for (const filename of Object.keys(pristine).filter((f) => f.endsWith(".js"))) {
+    for (const filename of Object.keys(pristine).filter((f) =>
+      f.endsWith(".js"),
+    )) {
       const target = path.join(dist, filename);
       try {
         execFileSync(process.execPath, ["--check", target], { stdio: "pipe" });
         check(true, `node --check ${filename}`);
       } catch (err) {
-        check(false, `node --check ${filename}`, String(err.stderr || err.message).trim());
+        check(
+          false,
+          `node --check ${filename}`,
+          String(err.stderr || err.message).trim(),
+        );
       }
     }
 
@@ -1040,7 +1264,10 @@ function main() {
     }
     for (const [filename, original] of Object.entries(pristine)) {
       const restored = fs.readFileSync(path.join(dist, filename), "utf8");
-      check(restored === original, `${filename}: byte-identical to pristine after restore`);
+      check(
+        restored === original,
+        `${filename}: byte-identical to pristine after restore`,
+      );
     }
   } finally {
     fs.rmSync(sandbox, { recursive: true, force: true });

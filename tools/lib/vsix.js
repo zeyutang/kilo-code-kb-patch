@@ -38,7 +38,8 @@ function findEndOfCentralDirectory(buf) {
 // filename -> { method, compressedSize, localHeaderOffset }
 function readCentralDirectory(buf) {
   const eocd = findEndOfCentralDirectory(buf);
-  if (eocd === -1) throw new Error("not a zip archive (no end-of-central-directory record)");
+  if (eocd === -1)
+    throw new Error("not a zip archive (no end-of-central-directory record)");
 
   const entryCount = buf.readUInt16LE(eocd + 10);
   const directoryOffset = buf.readUInt32LE(eocd + 16);

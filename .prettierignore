@@ -1,0 +1,6 @@
+# Build output and packaged artifacts.
+out/
+*.vsix
+
+# npm owns this file's formatting and rewrites it on every install.
+package-lock.json

@@ -28,7 +28,7 @@ function loadExtension() {
     require.resolve(compiled);
   } catch {
     throw new Error(
-      "out/extension.js not found. Run `npm run compile` before using the harness."
+      "out/extension.js not found. Run `npm run compile` before using the harness.",
     );
   }
   const mod = require(compiled);

@@ -89,6 +89,8 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "watch": "tsc -watch -p ./",
     "retarget": "npm run compile && node tools/retarget.js",
     "verify": "npm run compile && node tools/verify.js",
@@ -98,6 +100,7 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "prettier": "^3.9.6",
     "typescript": "^5.4.0"
   }
 }

@@ -34,8 +34,8 @@ function findKiloInstalls(test) {
   found.sort((a, b) =>
     test.compareKiloVersions(
       test.parseKiloVersion(path.basename(a.extPath)),
-      test.parseKiloVersion(path.basename(b.extPath))
-    )
+      test.parseKiloVersion(path.basename(b.extPath)),
+    ),
   );
   return found;
 }
@@ -51,7 +51,7 @@ function resolveInstall(test, explicitPath) {
   const installs = findKiloInstalls(test);
   if (installs.length === 0) {
     throw new Error(
-      "No kilocode.kilo-code-* install found. Pass one explicitly with --ext <path>."
+      "No kilocode.kilo-code-* install found. Pass one explicitly with --ext <path>.",
     );
   }
   return installs[installs.length - 1];
@@ -148,16 +148,19 @@ function assertPristine(bundles) {
   if (dirty.length === 0) return;
 
   const detail = dirty
-    .map((d) => `  ${d.filename}: ${d.residual.map((m) => JSON.stringify(m)).join(", ")}`)
+    .map(
+      (d) =>
+        `  ${d.filename}: ${d.residual.map((m) => JSON.stringify(m)).join(", ")}`,
+    )
     .join("\n");
   throw new Error(
     "this install still carries kb-patch edits that this checkout cannot reverse,\n" +
       "so its pristine bytes cannot be recovered. Leftover markers:\n" +
       detail +
       "\n\nThe usual cause is an installed kb-patch newer than this checkout.\n" +
-      "Fix by running the \"Kilo Code KB Patch: Restore Originals\" command (or\n" +
+      'Fix by running the "Kilo Code KB Patch: Restore Originals" command (or\n' +
       "reinstalling Kilo Code), then retry. A clean build can also be passed\n" +
-      "directly with --ext <path>."
+      "directly with --ext <path>.",
   );
 }
 
@@ -179,7 +182,7 @@ function readPristineBundles(extPath, test) {
     bundles[filename] = unpatched(
       fs.readFileSync(fpath, "utf8"),
       filename,
-      test
+      test,
     );
   }
   return bundles;
@@ -198,7 +201,7 @@ function readVsixBundles(vsixPath, test) {
   if (Object.keys(bundles).length === 0) {
     throw new Error(
       `${path.basename(vsixPath)} contains no extension/dist/ bundles this patch set covers.\n` +
-        "Is it a Kilo Code vsix?"
+        "Is it a Kilo Code vsix?",
     );
   }
 

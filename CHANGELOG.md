@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Work out the patch sites from Kilo Code build and applies them instead of storing seen patterns
+- **Restore Originals** reverses those patches as expected
+- Faster startup and **Apply Patches**
+- After **Apply Patches**, **Restore Originals**, or a settings change, the notification offers **Restart Extensions** instead of a window reload, so editors and terminals stay put
+- The editor-title rename is the one setting that still asks for a window reload, and that reload no longer asks for a second one
+
 ## 1.25.0
 
 - Support Kilo Code 7.6.1, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

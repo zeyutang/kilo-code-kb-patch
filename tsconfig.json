@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "module": "commonjs",
+    // src/rules.js is plain JS on purpose: it is shared verbatim with the
+    // offline harness, and a rewrite would put the shipped rules and the
+    // proposed ones in two places.
+    "allowJs": true,
     "target": "ES2021",
     "lib": ["ES2021"],
     "outDir": "out",
@@ -11,5 +15,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
+  "include": ["src"],
   "exclude": ["node_modules", ".vscode-test", "out"]
 }

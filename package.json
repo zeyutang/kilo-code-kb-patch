@@ -1,7 +1,7 @@
 {
   "name": "kilo-code-kb-patch",
   "displayName": "Kilo Code KB Patch",
-  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, Cmd+Up/Down to recall earlier messages, smarter permission prompt key routing, Escape that keeps the @ mention menu closed. Keeps the chat history scrolled to the bottom while you type, and keeps menus and tooltips from reacting to the hidden mouse cursor. Optional extras for chat math rendering and response typography.",
+  "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, smarter Escape routing, and more.",
   "version": "1.25.0",
   "publisher": "zeyutang",
   "license": "MIT",
@@ -53,7 +53,7 @@
         "kiloCodeKbPatch.addAttachFileButton": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Add a `+` button to the Kilo Code prompt toolbar that opens the file picker directly. Reload the window after changing."
+          "markdownDescription": "Add a `+` button to the Kilo Code prompt toolbar that opens the file picker directly. Restart extensions after changing."
         },
         "kiloCodeKbPatch.renameOpenInTab": {
           "type": "boolean",
@@ -65,24 +65,24 @@
           "default": 1,
           "minimum": 0.5,
           "maximum": 3,
-          "markdownDescription": "Multiply the font size of the agent's rendered response in chat history, relative to Kilo Code's own **Display** font-size setting. `1` leaves it unchanged. Monospace content (code blocks, inline code, file paths) keeps its own size, as do reasoning blocks, tool output, and your own messages. Reload the window after changing."
+          "markdownDescription": "Multiply the font size of the agent's rendered response in chat history, relative to Kilo Code's own **Display** font-size setting. `1` leaves it unchanged. Monospace content (code blocks, inline code, file paths) keeps its own size, as do reasoning blocks, tool output, and your own messages. Restart extensions after changing."
         },
         "kiloCodeKbPatch.chatHistoryFontFamily": {
           "type": "string",
           "default": "",
-          "markdownDescription": "CSS `font-family` for the agent's rendered response in chat history, for example `Charter, Georgia, serif`. Empty keeps Kilo Code's font. Code, file paths, and math keep their own fonts. Reload the window after changing."
+          "markdownDescription": "CSS `font-family` for the agent's rendered response in chat history, for example `Charter, Georgia, serif`. Empty keeps Kilo Code's font. Code, file paths, and math keep their own fonts. Restart extensions after changing."
         },
         "kiloCodeKbPatch.chatMathRendering": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Render `$...$` inline math and `\\[...\\]` display math in chat. Kilo Code already renders `$$...$$` and `\\(...\\)`. Reload the window after changing."
+          "markdownDescription": "Render `$...$` inline math and `\\[...\\]` display math in chat. Kilo Code already renders `$$...$$` and `\\(...\\)`. Restart extensions after changing."
         },
         "kiloCodeKbPatch.chatMathFontSizeEm": {
           "type": "number",
           "default": 1.21,
           "minimum": 0.5,
           "maximum": 2,
-          "markdownDescription": "Font size of rendered math in chat, in `em` relative to the text around it. `1.21` is KaTeX's own size. Applies only while `#kiloCodeKbPatch.chatMathRendering#` is on. Reload the window after changing."
+          "markdownDescription": "Font size of rendered math in chat, in `em` relative to the text around it. `1.21` is KaTeX's own size. Applies only while `#kiloCodeKbPatch.chatMathRendering#` is on. Restart extensions after changing."
         }
       }
     }

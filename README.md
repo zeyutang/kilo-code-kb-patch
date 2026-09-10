@@ -9,6 +9,7 @@ Patches [Kilo Code](https://github.com/Kilo-Org/kilocode)'s keyboard behavior: `
 It also keeps the chat history scrolled to the bottom while you type, stops the mouse cursor macOS hides while you type from highlighting menus and buttons, and makes `Escape` dismiss the `@` mention menu for good.
 
 Each patch release keeps the earlier versions' patterns, so a newer patch still works on an older Kilo Code.
+When a Kilo Code update renames the code these patches target, KB Patch works out the new target from the updated build and offers to apply.
 
 ## What it does
 
@@ -30,7 +31,7 @@ Applies to the chat input, the permission prompt, and the KiloClaw edit/chat pan
 Native Kilo Code recalls a message when a bare `Up` or `Down` reaches the start or end of what you typed, which is why holding the key can jump away mid-edit.
 Patched, recall moves to `Cmd/Ctrl+Up` / `Down` and works from anywhere in the chat box, and stepping forward past the newest message brings your unsent draft back.
 
-Since Kilo Code 7.5.11 an `@` mention query may contain spaces, so ordinary prose typed after a mention can bring the menu back on every keystroke, `Escape` only closes it until the next key, and `Enter` then replaces your text with the highlighted file ([Kilo-Org/kilocode#13961](https://github.com/Kilo-Org/kilocode/issues/13961)).
+Since Kilo Code 7.5.11 an `@` mention query may contain spaces, so ordinary prose typed after a mention can bring the menu back on every keystroke, `Escape` only closes it until the next key, and `Enter` then replaces your text with the highlighted file.
 Patched, `Escape` dismisses the query you were looking at: the menu stays closed while you type on, and comes back when you edit back into a shorter query or retype the `@`.
 Earlier Kilo Code releases end a query at the first space and need no such patch, which the status view reports as "not needed".
 
@@ -48,8 +49,9 @@ Patched, menus and tooltips ignore the hidden cursor until you move the mouse.
 ### Bonus
 
 Optional extras, all off by default.
-Enable them from the Settings UI (search "Kilo Code KB Patch") or in your `settings.json`, then reload the window (`Cmd+Shift+P` → `Developer: Reload Window`).
-To turn one off, put it back to its default (or run **Restore Originals**, which switches every extra off) and reload.
+Enable them from the Settings UI (search "Kilo Code KB Patch") or in your `settings.json`, then accept the restart KB Patch offers (or run `Cmd+Shift+P` → `Developer: Restart Extension Host`).
+The editor-title rename is the one extra that needs a window reload instead, and its offer says so.
+To turn one off, put it back to its default (or run **Restore Originals**, which switches every extra off) and restart the same way.
 
 - **Attach-file button.**
   Adds a `+` button to the prompt toolbar that opens Kilo Code's file picker directly, instead of typing `@` and choosing "Browse files...".
@@ -106,7 +108,9 @@ The extension detects an unpatched Kilo Code and offers to apply. Three commands
 - **Restore Originals** (also switches the bonus settings off)
 - **Show Status**
 
-Reload the window after applying KB Patch: `Cmd+Shift+P` → `Developer: Reload Window`.
+Restart extensions after applying KB Patch: accept the offer in the notification, or run `Cmd+Shift+P` → `Developer: Restart Extension Host`.
+A window reload works too, and is what the editor-title rename needs.
+A chat opened with **Open in Tab** shows the change once reopened.
 
 ## How keystrokes are routed
 
@@ -147,7 +151,7 @@ Model and mode pickers, confirmations, `@`-mentions. The patch leaves these alon
 
 ## Troubleshooting
 
-- **No effect:** reload the VS Code window after applying.
-- **Stopped working after a Kilo Code update:** updates overwrite the patched files and can rename Kilo Code's internal code. Re-apply by `Cmd+Shift+P` → `Kilo Code KB Patch: Apply Patches`.
+- **No effect:** restart extensions (`Developer: Restart Extension Host`) or reload the window after applying.
+- **Stopped working after a Kilo Code update:** updates overwrite the patched files. KB Patch offers to re-apply on the next launch or restart, and you can run it yourself with `Cmd+Shift+P` → `Kilo Code KB Patch: Apply Patches`.
 - **"Could not find a kilocode.kilo-code-\* install":** Kilo Code is not installed in this editor (the message lists every folder searched).
   Install Kilo Code first, then re-run **Apply Patches**.

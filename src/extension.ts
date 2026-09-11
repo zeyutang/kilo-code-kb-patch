@@ -1882,22 +1882,14 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// The native modal dialog has a fixed, narrow width that wraps long rows, so the
-// status view uses a webview panel where the width is under our control and each
-// feature stays on one line.
-function showStatusPanel(
+// The page itself, as one string. Built apart from the panel that shows it, so
+// the same markup serves a page being opened and a page being redrawn.
+function statusHtml(
   version: string,
   verdict: Verdict,
   files: FileStatus[],
   bonuses: BonusStatus[],
-): void {
-  const panel = vscode.window.createWebviewPanel(
-    "kiloCodeKbPatchStatus",
-    "Kilo Code KB Patch",
-    vscode.ViewColumn.Active,
-    { enableScripts: false },
-  );
-
+): string {
   const verdictClass =
     verdict === "fully patched"
       ? "ok"
@@ -1987,7 +1979,7 @@ function showStatusPanel(
     ? `<section><h2>Bonus <span class="sub">(opt-in, does not affect status)</span></h2>${bonusRows}</section>`
     : "";
 
-  panel.webview.html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2050,6 +2042,116 @@ function showStatusPanel(
   ${bonusSection}
 </body>
 </html>`;
+}
+
+// The view type given to createWebviewPanel. A tab reports it back through
+// TabInputWebview.viewType with the workbench's own "mainThreadWebview-" prefix
+// in front of it, so the tab matching below accepts either spelling.
+const STATUS_VIEW_TYPE = "kiloCodeKbPatchStatus";
+
+// The one status page this window has open, if any. Held so a second Show
+// Status redraws that page instead of stacking another tab beside it, and so
+// anything that moves the state the page reports can redraw it in place.
+let statusPanel: vscode.WebviewPanel | undefined;
+
+// The native modal dialog has a fixed, narrow width that wraps long rows, so the
+// status view uses a webview panel where the width is under our control and each
+// feature stays on one line.
+function showStatusPanel(
+  version: string,
+  verdict: Verdict,
+  files: FileStatus[],
+  bonuses: BonusStatus[],
+  show: { column: vscode.ViewColumn; preserveFocus: boolean } = {
+    column: vscode.ViewColumn.Active,
+    preserveFocus: false,
+  },
+): void {
+  const html = statusHtml(version, verdict, files, bonuses);
+  if (statusPanel) {
+    statusPanel.webview.html = html;
+    statusPanel.reveal(statusPanel.viewColumn, show.preserveFocus);
+    return;
+  }
+  const panel = vscode.window.createWebviewPanel(
+    STATUS_VIEW_TYPE,
+    "Kilo Code KB Patch",
+    { viewColumn: show.column, preserveFocus: show.preserveFocus },
+    { enableScripts: false },
+  );
+  statusPanel = panel;
+  panel.onDidDispose(() => {
+    if (statusPanel === panel) statusPanel = undefined;
+  });
+  // The files move without us asking too: a Kilo update resets them, an Apply
+  // in another window rewrites them. Redrawing whenever the page comes back
+  // into view costs one pass over the bundle, and keeps a page the user tabs
+  // back to from reporting whatever happened to be true when it was drawn.
+  panel.onDidChangeViewState((e) => {
+    if (e.webviewPanel.visible) refreshStatusPanel();
+  });
+  panel.webview.html = html;
+}
+
+// Redraw the open status page from what is on disk now. A no-op when no page is
+// open, so callers can say this after anything that rewrites a patched file
+// without first checking whether anyone is looking.
+function refreshStatusPanel(): void {
+  if (!statusPanel) return;
+  const extPath = findLatestKiloExt();
+  if (!extPath) return;
+  const { files, verdict } = computeStatus(path.join(extPath, "dist"));
+  statusPanel.webview.html = statusHtml(
+    extractVersion(extPath),
+    verdict,
+    files,
+    computeBonusStatus(extPath),
+  );
+}
+
+// Whether a tab is one of our status pages, in either spelling of the view type
+// (see STATUS_VIEW_TYPE).
+function isStatusTab(tab: vscode.Tab): boolean {
+  const input = tab.input;
+  return (
+    input instanceof vscode.TabInputWebview &&
+    (input.viewType === STATUS_VIEW_TYPE ||
+      input.viewType.endsWith(`-${STATUS_VIEW_TYPE}`))
+  );
+}
+
+// An extension-host restart leaves the status page on screen and takes our
+// handle to it: the workbench keeps the webview and the HTML it last rendered,
+// and re-resolves only a panel it restored itself, never one an extension
+// created. So the page sits there reporting the state from before the restart,
+// which is the state the restart was meant to change.
+//
+// Nothing else leaves a status tab behind. No serializer is registered for the
+// view type, which is what tells the workbench the tab cannot be persisted, so
+// a window reload drops it instead of restoring it. A status tab present at
+// activation therefore belongs to the previous host, and is replaced here by
+// one drawn from the state on disk now.
+function replaceStaleStatusPanel(): void {
+  const stale = vscode.window.tabGroups.all.flatMap((g) =>
+    g.tabs.filter(isStatusTab),
+  );
+  if (stale.length === 0) return;
+  const extPath = findLatestKiloExt();
+  if (extPath) {
+    const { files, verdict } = computeStatus(path.join(extPath, "dist"));
+    // Drawn before the old tabs close, and without taking focus. A status tab
+    // sitting alone in a split group takes the group with it when it closes,
+    // and the column named here would be gone by the time the replacement
+    // asked for it.
+    showStatusPanel(
+      extractVersion(extPath),
+      verdict,
+      files,
+      computeBonusStatus(extPath),
+      { column: stale[0].group.viewColumn, preserveFocus: true },
+    );
+  }
+  void vscode.window.tabGroups.close(stale, true);
 }
 
 // Kilo extension dirs are named "kilocode.kilo-code-<version>[-<platform>]",
@@ -4234,6 +4336,11 @@ async function runPatch(
   if (mode === "apply") markSettled(extPath);
   else clearSettled();
 
+  // Every file this run was going to move has moved, so a status page open
+  // beside the notification below reports the result rather than the state the
+  // command was run from.
+  refreshStatusPanel();
+
   const totalApplied =
     results.reduce((s, r) => s + r.applied.length + r.reverted.length, 0) +
     bonusReverted;
@@ -4432,6 +4539,10 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
+  // Ahead of every early return below, because this window may be carrying a
+  // status page frozen by the same host restart that brought us back.
+  replaceStaleStatusPanel();
+
   // Auto-patch on activation if not yet patched
   const extPath = findLatestKiloExt();
   if (!extPath) return;
@@ -4444,6 +4555,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!e.affectsConfiguration("kiloCodeKbPatch")) return;
       notifyBonusRestart(reconcileBonuses(extPath));
       markSettled(extPath);
+      refreshStatusPanel();
     }),
   );
 
@@ -4459,6 +4571,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // On the settings path the restart offer shows right away; the startup
   // result is held until the apply-patches decision below is settled.
   const startupBonuses = reconcileBonuses(extPath);
+  refreshStatusPanel();
 
   // Read after the bonus reconcile, which may itself rewrite webview.js, so the
   // needs-patching check sees the reconciled bundle.

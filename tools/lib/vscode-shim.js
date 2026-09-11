@@ -12,6 +12,14 @@ function setConfig(values) {
 }
 
 const noop = () => {};
+
+// Tab inputs are matched with `instanceof`, so the shim needs the real class
+// identity rather than a plain object shaped like one.
+class TabInputWebview {
+  constructor(viewType) {
+    this.viewType = viewType;
+  }
+}
 const configuration = {
   get: (key, fallback) => (key in config ? config[key] : fallback),
   inspect: () => undefined,
@@ -30,10 +38,19 @@ module.exports = {
     showInformationMessage: () => Promise.resolve(undefined),
     showWarningMessage: () => Promise.resolve(undefined),
     showErrorMessage: () => Promise.resolve(undefined),
-    createWebviewPanel: () => ({ webview: {} }),
+    createWebviewPanel: () => ({
+      webview: {},
+      reveal: noop,
+      dispose: noop,
+      onDidDispose: noop,
+      onDidChangeViewState: noop,
+    }),
+    // No editor, so no tabs: a status page is never found to replace.
+    tabGroups: { all: [], close: async () => true },
   },
   commands: { registerCommand: noop, executeCommand: noop },
   extensions: { getExtension: () => undefined },
+  TabInputWebview,
   ViewColumn: { Active: 1 },
   ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
 };

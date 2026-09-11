@@ -1,11 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.0.0
 
+- Support **Restart Extensions** instead of a window reload after **Apply Patches**, **Restore Originals**
 - Work out the patch sites from Kilo Code build and applies them instead of storing seen patterns
 - **Restore Originals** reverses those patches as expected
 - Faster startup and **Apply Patches**
-- After **Apply Patches**, **Restore Originals**, or a settings change, the notification offers **Restart Extensions** instead of a window reload, so editors and terminals stay put
 - The editor-title rename is the one setting that still asks for a window reload, and that reload no longer asks for a second one
 - **Show Status** redraws the status page that is already open instead of adding another tab, and that page keeps up with **Apply Patches**, **Restore Originals**, and settings changes
 - The status page survives **Restart Extensions**: it used to stay on screen reporting the state from before the restart

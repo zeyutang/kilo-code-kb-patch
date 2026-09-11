@@ -365,6 +365,71 @@ function main() {
       );
     }
 
+    // The second core stylesheet block: one declaration that makes each
+    // rendered formula clip its own out-of-flow MathML twin, so the twins stop
+    // extending the chat scroller past its content (the measurement is in the
+    // comment above MATH_CLIP_RULE in src/extension.ts; nothing here can run
+    // layout). It stores no per-release text either, so what is asserted is the
+    // shape of the rule, that it leaves the MathML in the tree, and the same
+    // carry-over contract and status rows as the block above.
+    console.log("\nmath clip (core stylesheet patch)");
+    if (pristineCss === undefined) {
+      check(false, `${test.CHAT_STYLE_FILE} is present in dist/`);
+    } else {
+      const clip = test.readMathClip(pristineCss);
+      check(
+        clip !== undefined,
+        "KaTeX's out-of-flow MathML twin and the reasoning peek are readable",
+        JSON.stringify(clip),
+      );
+      check(
+        test.MATH_CLIP_RULE.includes(".katex {") &&
+          test.MATH_CLIP_RULE.includes("position: relative"),
+        "the rule makes each formula the containing block for its own twin",
+      );
+      check(
+        !test.MATH_CLIP_RULE.includes("katex-mathml") &&
+          !test.MATH_CLIP_RULE.includes("display: none"),
+        "and leaves the MathML in the tree for screen readers and copying",
+      );
+      const hasClip = () =>
+        fs
+          .readFileSync(cssPath, "utf8")
+          .includes("kilo-code-kb-patch:math-clip:begin");
+      check(
+        countOccurrences(
+          fs.readFileSync(cssPath, "utf8"),
+          "kilo-code-kb-patch:math-clip:begin",
+        ) === 1 && test.chatCssApplied(sandbox, "math-clip"),
+        "exactly one math-clip block, and it reads as applied",
+      );
+      shim.setConfig({ chatHistoryFontSizeEm: 1.3 });
+      const clipWithBonus = test.reconcileChatStyle(sandbox);
+      check(
+        !clipWithBonus["math-clip"] && hasClip(),
+        "a bonus reconcile leaves the applied block in place",
+      );
+      shim.setConfig({});
+      const clipRow = () =>
+        test
+          .computeStatus(dist)
+          .files.find((f) => f.filename === test.CHAT_STYLE_FILE)
+          ?.features.find((f) => f.label === test.FEATURE_LABELS["math-clip"])
+          ?.state;
+      const clipOff = test.reconcileChatStyle(sandbox, coreOff);
+      check(
+        clipOff["math-clip"] && !hasClip() && clipRow() === "unpatched",
+        'restoring removes the block, which then reads "unpatched"',
+        `got "${clipRow()}"`,
+      );
+      const clipOn = test.reconcileChatStyle(sandbox, coreOn);
+      check(
+        clipOn["math-clip"] && hasClip() && clipRow() === "patched",
+        'Apply writes it again, which reads "patched"',
+        `got "${clipRow()}"`,
+      );
+    }
+
     // The script block is the other half of the same patch: a listener pair
     // appended to the bundle, with no per-release text either. Its threshold
     // is read out of the build, so what is asserted is the derivation, the

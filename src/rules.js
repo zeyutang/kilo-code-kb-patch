@@ -957,6 +957,43 @@ const PROBES = [
     },
   },
   {
+    key: "math-clip",
+    file: "webview.css",
+    describe:
+      "what the math-clip block assumes about KaTeX and the reasoning peek",
+    read(content, test) {
+      // The rule adds one declaration to `.katex`, so what has to hold is that
+      // KaTeX still hides its MathML twin out of flow, that `.katex` carries no
+      // position of its own, and that the clipped surface the leak was measured
+      // in is still shaped that way. The anchors come from the extension itself
+      // so the two cannot drift.
+      const ambiguous = Object.entries(test.MATH_CLIP_ANCHORS)
+        .map(([label, re]) => [
+          label,
+          (content.match(new RegExp(re.source, "g")) ?? []).length,
+        ])
+        .filter(([, count]) => count !== 1);
+      if (ambiguous.length > 0) {
+        return {
+          error:
+            "not exactly one match for: " +
+            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
+        };
+      }
+      const clip = test.readMathClip(content);
+      if (!clip) {
+        return {
+          error: "anchors matched but the extension would not write the block",
+        };
+      }
+      // Reported rather than asserted: a peek box that became a containing
+      // block of its own would fix that one surface upstream, and the rule
+      // would still be earning its place on Kilo's other clipped boxes.
+      const peek = test.MATH_CLIP_ANCHORS["reasoning peek"].exec(content)[0];
+      return { values: { ...clip, peekPositioned: /position:/.test(peek) } };
+    },
+  },
+  {
     key: "chat-scroll",
     file: "webview.js",
     describe: "what the chat-scroll script block assumes about the chat view",

@@ -1648,6 +1648,7 @@ const FEATURE_ORDER = [
   "mention-escape",
   "chat-history",
   "chat-scroll",
+  "math-clip",
   "hover-guard",
   "perm-keys",
   "perm-escape",
@@ -1668,6 +1669,7 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
   "mention-escape": "Mention menu Escape: stays closed while you keep typing",
   "chat-history": "Chat history: Cmd/Ctrl+Up/Down, not bare Up/Down",
   "chat-scroll": "Chat scroll: history stays at the bottom while you type",
+  "math-clip": "Math clip: math in chat adds no empty scroll space",
   "hover-guard":
     "Hover guard: the hidden cursor highlights nothing while you type",
   "perm-keys": "Permission prompt: typing keys stay in the input",
@@ -2873,6 +2875,10 @@ function reconcileMathRendering(extPath: string): boolean {
 //                keep the history at the bottom while typing. Apply Patches
 //                writes them, Restore Originals removes them, and each feeds
 //                the verdict like a keyboard patch.
+//   math-clip    core, webview.css: one declaration that makes each rendered
+//                formula clip its own out-of-flow MathML twin, so the twins
+//                stop extending the chat scroller past its content (see
+//                MATH_CLIP_RULE). Applied and removed with chat-scroll.
 //   hover-guard  core, webview.js: while the cursor macOS hid for typing stays
 //                hidden, the enter events the engine synthesizes for a layout
 //                change under the pointer are stopped, so a menu row or a
@@ -2909,7 +2915,12 @@ const CHAT_SCRIPT_FILE = "webview.js";
 
 // One block per patch and file, in the order they are appended: the core
 // patches first, keyed by their FEATURE_ORDER names, then the bonuses.
-const CHAT_CSS_BLOCKS = ["chat-scroll", "typography", "math"] as const;
+const CHAT_CSS_BLOCKS = [
+  "chat-scroll",
+  "math-clip",
+  "typography",
+  "math",
+] as const;
 type ChatCssBlockKey = (typeof CHAT_CSS_BLOCKS)[number];
 const CHAT_SCRIPT_BLOCKS = ["chat-scroll", "hover-guard"] as const;
 type ChatScriptBlockKey = (typeof CHAT_SCRIPT_BLOCKS)[number];
@@ -2926,6 +2937,7 @@ type PatchBlockKey = ChatCssBlockKey | ChatScriptBlockKey | "derived";
 // error rather than a row that never renders.
 const CHAT_CSS_CORE = [
   "chat-scroll",
+  "math-clip",
 ] as const satisfies readonly (ChatCssBlockKey & FeatureKey)[];
 type ChatCssCoreKey = (typeof CHAT_CSS_CORE)[number];
 const CHAT_SCRIPT_CORE = [
@@ -3222,6 +3234,84 @@ function readPromptSizing(css: string): PromptSizing | undefined {
   return { minHeight: sizing[1], maxHeight: sizing[2] };
 }
 
+// --- math-clip, a core stylesheet block --------------------------------------
+// KaTeX renders every formula twice: `.katex-html`, which paints, and
+// `.katex-mathml`, an invisible MathML twin kept for screen readers and for
+// what a copy yields, hidden the old way (`position: absolute; height: 1px;
+// width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px)`). Being
+// absolutely positioned with no offsets of its own, that twin is laid out at
+// its static position but belongs to its containing block, the nearest
+// positioned ancestor, which in the chat history is
+// `[data-component=tool-part-wrapper] { position: relative }`: inside the
+// scroller, and outside the clipped box the formula itself sits in.
+//
+// A scroll container clips, and absorbs the scrollable overflow of, only those
+// descendants for which it is in the containing block chain. So a reasoning
+// block's peek box (`[data-slot=reasoning-content] { max-height: 120px;
+// overflow-y: auto }`, which declares no position) clips the visible half of
+// the math it holds but not the twins: their border boxes join the wrapper's
+// scrollable overflow instead, which propagates up to `.message-list`. They
+// paint nothing, so the scroller gains scroll range that holds nothing, reaching
+// down to the last formula in the reasoning body, and Kilo's stick-to-bottom
+// controller parks the history inside it.
+//
+// Measured on 7.6.2 (reported 2026-09-11): a turn whose reasoning ran to
+// 36242px inside the 120px peek left `.message-list` with a scrollHeight of
+// 36162 against a content box of 1174px, so about 35000px of the scroller was
+// blank. Reproduced in a headless Chromium on a copy of Kilo's layout, where a
+// 37185px reasoning body adds 36812px of empty scroll range and this rule takes
+// it to 0. The gap is the body's whole height and does not depend on where the
+// peek is scrolled, since a twin keeps its static position in the unscrolled
+// content (with the peek scrolled to its end, the last formula's twin measured
+// 37042px below the formula itself), so what makes the gap dramatic is simply a
+// long reasoning stream. Collapsing the block clears it, because `display: none`
+// takes the twins out of layout.
+//
+// `position: relative` moves nothing (the twin declares no offsets) and makes
+// each formula the containing block for its own twin, so whatever clips the
+// formula now clips the twin too. That covers every clipped surface at once,
+// the ones Kilo has today and the ones it adds later, which is why the rule
+// sits on the formula rather than on a list of Kilo's scrolling boxes. The
+// MathML stays in the tree, which is the point: `display: none` would buy the
+// same space by dropping every formula out of the accessibility tree and out of
+// what a copy yields. KaTeX's other out-of-flow part, the equation tag,
+// resolves to `.katex-html`, which already declares position: relative, so it
+// is unaffected, and so is the MathML-only output mode, where the `.katex`
+// element is itself the MathML and there is no twin.
+const MATH_CLIP_RULE = `${CHAT_ANY_MD} .katex { position: relative; }`;
+
+// What the rule assumes, matched to decide whether the block is written at all:
+// KaTeX still hides the twin by taking it out of flow (without that the rule
+// fixes nothing), `.katex` still declares no position of its own (overriding a
+// position Kilo relies on would be a different change), and the peek box the
+// leak was measured in still looks the way it did. A build that changed any of
+// them reads as "missing" in the status view and keeps stock behavior, rather
+// than carrying a rule whose reason is gone.
+//
+// Exported to the harness, whose probe asserts each matches exactly once and
+// reports whether Kilo has since made the peek box a containing block of its
+// own, which would fix that one surface upstream and leave this rule covering
+// the rest.
+const MATH_CLIP_ANCHORS: Record<string, RegExp> = {
+  "katex mathml twin": /\.katex-mathml\{[^{}]*position:absolute[^{}]*\}/,
+  "katex root": /\.katex\{font:[^{}]*\}/,
+  "reasoning peek":
+    /\[data-slot=reasoning-content\]\{max-height:([^;{}]+);overflow-y:auto[^{}]*\}/,
+};
+
+interface MathClip {
+  peekMaxHeight: string;
+}
+
+function readMathClip(css: string): MathClip | undefined {
+  const peek = MATH_CLIP_ANCHORS["reasoning peek"].exec(css);
+  const root = MATH_CLIP_ANCHORS["katex root"].exec(css);
+  if (!peek || !root) return undefined;
+  if (!MATH_CLIP_ANCHORS["katex mathml twin"].test(css)) return undefined;
+  if (/position:/.test(root[0])) return undefined;
+  return { peekMaxHeight: peek[1] };
+}
+
 // --- chat-scroll, the script half --------------------------------------------
 // With the textarea engine-sized, Kilo's measurement no longer moves anything,
 // but the browser lays some edits out part-way through on its own. A backspace
@@ -3434,6 +3524,9 @@ function chatScriptBlock(key: ChatScriptBlockKey, pristineJs: string): string {
 function chatCssRules(key: ChatCssBlockKey, pristineCss: string): string[] {
   if (key === "chat-scroll") {
     return readPromptSizing(pristineCss) ? [CHAT_SCROLL_RULE] : [];
+  }
+  if (key === "math-clip") {
+    return readMathClip(pristineCss) ? [MATH_CLIP_RULE] : [];
   }
   if (key === "math") {
     // Gated on the math bonus as a whole: sizing math the user cannot produce
@@ -4758,6 +4851,9 @@ export const __test = {
   CHAT_SCROLL_RULE,
   CHAT_SCROLL_ANCHORS,
   readPromptSizing,
+  MATH_CLIP_RULE,
+  MATH_CLIP_ANCHORS,
+  readMathClip,
   coreCssDecision,
   chatCssCoreStatus,
   forceSettingOff,

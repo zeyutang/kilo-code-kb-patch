@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.2
+
+- Fix a large blank gap below the newest reply when math inside a reasoning block added scroll space that held nothing
+- Part of the core patches: **Apply Patches** adds it, **Restore Originals** removes it, and there is no setting
+
 ## 2.0.1
 
 - Fix the opt-in attach-file `+` button on Kilo Code 7.6.1 and later: it was drawn as a wide text button, so it sat too far from the other prompt toolbar icons, and it now matches their size and spacing

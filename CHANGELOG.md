@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1
+
+- Fix the opt-in attach-file `+` button on Kilo Code 7.6.1 and later: it was drawn as a wide text button, so it sat too far from the other prompt toolbar icons, and it now matches their size and spacing
+- A `+` button already added to a patched build is resized in place on upgrade
+
 ## 2.0.0
 
 - Support **Restart Extensions** instead of a window reload after **Apply Patches**, **Restore Originals**

@@ -2399,20 +2399,34 @@ interface WebviewVariant {
 type AttachButtonDef = WebviewVariant;
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
-  // v7.6.1: container ws→dc, tooltip Bn→In, ghost Rt→Lt, icon Vo→Wo,
-  // controller h→b, textarea w→k, setter U→W, sync Dr→ta and when-pred
-  // It→ot. Insert P, create B, when-wrapper me, indexing accessor a and the
-  // glyph "plus" all held. Kilo's own mention-menu row,
-  // b.selectMention(uc,k,W,ta), still occurs exactly once and pins all four
-  // closure locals the injected button calls, and the textarea k is
-  // corroborated by the chat-history rule, which derives the same rename.
-  // The caption stays the literal "Attach file": prompt.action.attachFile
-  // still scores 0 across the bundle, as it has since 7.4.17.
+  // v7.6.1: container ws→dc, tooltip Bn→In, button Rt→bn, controller h→b,
+  // textarea w→k, setter U→W, sync Dr→ta and when-pred It→ot. Insert P,
+  // create B, when-wrapper me, indexing accessor a and the glyph "plus" all
+  // held. Kilo's own mention-menu row, b.selectMention(uc,k,W,ta), still
+  // occurs exactly once and pins all four closure locals the injected button
+  // calls, and the textarea k is corroborated by the chat-history rule, which
+  // derives the same rename. The caption stays the literal "Attach file":
+  // prompt.action.attachFile still scores 0 across the bundle, as it has
+  // since 7.4.17.
+  //
+  // The button is bn, Kilo's icon-button, which is what the indexing,
+  // auto-approve, enhance and send buttons in this row are. Through 1.25.0
+  // this entry shipped Lt, the generic text Button, which wraps the same 16px
+  // glyph in 12px of horizontal padding: 40x24 against the 22x22 of every
+  // neighbour, on a row whose gap is a uniform 4px, which is what made the
+  // "+" look pushed away from the rest of the toolbar. An icon-button takes
+  // its glyph as an `icon` prop and renders it itself, so this form names one
+  // symbol fewer: the sprite icon component (Wo) is no longer referenced at
+  // all. previous carries the old form so an install already holding it is
+  // rewritten in place instead of gaining a second button.
   {
     original:
       "P(dc,B(me,{get when(){return ot()},get children(){return B(In,{get value(){return a.status().message||a.label()}",
     patched:
+      'P(dc,B(In,{get value(){return "Attach file"},placement:"top",get children(){return B(bn,{icon:"plus",variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");b.selectMention({type:"file-picker"},k,W,ta)},get"aria-label"(){return "Attach file"}})}}),null),P(dc,B(me,{get when(){return ot()},get children(){return B(In,{get value(){return a.status().message||a.label()}',
+    previous: [
       'P(dc,B(In,{get value(){return "Attach file"},placement:"top",get children(){return B(Lt,{variant:"ghost",size:"small",onClick:()=>{if(!k)return;k.focus();let _v=k.value,_s=k.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");b.selectMention({type:"file-picker"},k,W,ta)},get"aria-label"(){return "Attach file"},get children(){return B(Wo,{name:"plus",size:"small"})}})}}),null),P(dc,B(me,{get when(){return ot()},get children(){return B(In,{get value(){return a.status().message||a.label()}',
+    ],
   },
   // v7.6.0: container fr→ws, insert P held, create B held, tooltip Ln→Bn,
   // ghost Qt→Rt, icon Go→Vo, when-wrapper me held, when-pred cn→It, setter

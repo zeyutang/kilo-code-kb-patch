@@ -652,20 +652,48 @@ const ATTACH_RULE = {
       return { error: "selectMention call not unique" };
     const [, controller, , textarea, setter, sync] = mentions[0];
 
-    // The ghost button is taken from the indexing button that immediately
-    // follows this anchor, so the button we inject is literally the one its
-    // neighbours use. Picking the bundle-wide most common identifier instead
-    // would be a guess about an unrelated site.
+    // The button has to be the component its neighbours are, not merely one
+    // that looks like them. Kilo's toolbar buttons are icon-buttons, a fixed
+    // 22x22 square, while the generic Button is a text button that pads the
+    // same 16px glyph out to 40px. Both are ghost/small, and they are told
+    // apart by their first prop: the icon-button names its glyph
+    // (`{icon:"database",...}`) and renders it itself, while the generic
+    // Button starts at `{variant:...}` and takes the glyph as a child.
+    //
+    // The window is the point. Kilo moved this toolbar to icon-buttons, after
+    // which the old unbounded "first ghost button past the anchor" search
+    // found nothing nearby and walked ~18KB on to the permission dialog's Deny
+    // button. That is a real ghost button, so the rule still derived, still
+    // spliced, still parsed, and still reported covered, having placed a 40px
+    // button in a 22px row. Nothing failed loudly because nothing was asked
+    // to. The true neighbour sits ~160 bytes past the anchor, so a match
+    // beyond this window is some other component, and the right answer there
+    // is to report rather than to reach.
+    const NEIGHBOUR_WINDOW = 2048;
+    const nearAnchor = (m) =>
+      m.index > anchors[0].index &&
+      m.index - anchors[0].index < NEIGHBOUR_WINDOW;
+
+    const iconButtons = findAll(
+      content,
+      `${esc(create)}\\((${ID}),\\{icon:"[a-z-]+",variant:"ghost",size:"small",onClick:`,
+    ).filter(nearAnchor);
     const ghosts = findAll(
       content,
       `${esc(create)}\\((${ID}),\\{variant:"ghost",size:"small",onClick:`,
-    ).filter((m) => m.index > anchors[0].index);
-    if (ghosts.length === 0)
-      return { error: "ghost button component not found" };
-    const ghost = ghosts[0][1];
+    ).filter(nearAnchor);
+    if (iconButtons.length === 0 && ghosts.length === 0)
+      return { error: "no ghost toolbar button beside the indexing status" };
+    const asIconButton = iconButtons.length > 0;
+    const ghost = (asIconButton ? iconButtons[0] : ghosts[0])[1];
 
-    const icon = deriveIconComponent(content);
-    if (!icon) return { error: "sprite icon component not found" };
+    // An icon-button resolves the glyph from its own `icon` prop, so that
+    // branch needs no icon component at all. The legacy Button form still
+    // passes one as a child, which is why this stays conditional rather than
+    // being dropped outright.
+    const icon = asIconButton ? undefined : deriveIconComponent(content);
+    if (!asIconButton && !icon)
+      return { error: "sprite icon component not found" };
 
     const i18nMatches = findAll(
       content,
@@ -688,15 +716,22 @@ const ATTACH_RULE = {
     const label = attachLabelExpression(content, i18n);
 
     const original = anchors[0][0];
+    // Mirror whichever form the neighbours use, prop order included, so the
+    // emitted text reads like the code it is spliced into.
+    const open = asIconButton
+      ? `{icon:"${glyph}",variant:"ghost",size:"small",`
+      : `{variant:"ghost",size:"small",`;
+    const child = asIconButton
+      ? ""
+      : `,get children(){return ${create}(${icon},{name:"${glyph}",size:"small"})}`;
     const button =
       `${insert}(${container},${create}(${tooltip},{get value(){return ${label}},` +
-      `placement:"top",get children(){return ${create}(${ghost},{variant:"ghost",size:"small",` +
+      `placement:"top",get children(){return ${create}(${ghost},${open}` +
       `onClick:()=>{if(!${textarea})return;${textarea}.focus();let _v=${textarea}.value,` +
       `_s=${textarea}.selectionStart??_v.length,_b=_v.substring(0,_s);` +
       `document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");` +
       `${controller}.selectMention({type:"file-picker"},${textarea},${setter},${sync})},` +
-      `get"aria-label"(){return ${label}},` +
-      `get children(){return ${create}(${icon},{name:"${glyph}",size:"small"})}})}}),null),`;
+      `get"aria-label"(){return ${label}}${child}})}}),null),`;
 
     return {
       original,
@@ -707,7 +742,7 @@ const ATTACH_RULE = {
         create,
         tooltip,
         ghost,
-        icon,
+        ...(icon ? { icon } : {}),
         i18n,
         controller,
         textarea,

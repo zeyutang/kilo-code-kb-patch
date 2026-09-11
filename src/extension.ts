@@ -1759,10 +1759,14 @@ function offerRestart(message: string, scope: RestartScope): void {
 }
 
 // Bonus (opt-in) items are reported in their own status section and never feed
-// the verdict. "on": enabled and applied. "off": not enabled, drawn as a neutral
-// white circle. "pending": enabled but the file does not reflect it yet.
-// "unavailable": enabled but this Kilo build has no matching code. `needs` is
-// the restart that shows a change to the item's file; the pending hint names it.
+// the verdict. "on": enabled and in effect. "off": not enabled, with nothing of
+// it left in the session, drawn as a neutral white circle. "pending": the files
+// on disk agree with the setting, but the window the user is looking at was
+// built before they did, so the change is not in effect yet. Pending covers a
+// bonus just switched on and one just switched off alike, since either way what
+// is on screen still says otherwise. "unavailable": enabled but this Kilo build
+// has no matching code. `needs` is the restart that puts a change into effect,
+// and the pending hint names it.
 type BonusState = "on" | "off" | "pending" | "unavailable";
 interface BonusStatus {
   label: string;
@@ -3547,6 +3551,39 @@ interface BonusChanges {
   typography: boolean;
 }
 
+// The bonus files this extension host has rewritten since it started. Kilo
+// reads its bundle and stylesheet when its view is rebuilt, which is what the
+// restart offered alongside these changes does, so a file rewritten after that
+// point is on disk but not yet in the session on screen. The status page reports
+// those rows as pending rather than done.
+//
+// Tracked at this layer rather than inside the individual reconcilers, which
+// stay pure disk operations that a caller with no session to speak of (the
+// offline harness) can use for exactly what they say they do. The flags need no
+// clearing: the restart that settles them ends the host that holds them.
+const bonusAwaitingRestart: BonusChanges = {
+  title: false,
+  attach: false,
+  math: false,
+  typography: false,
+};
+
+// Fold one reconcile pass's result into what this session is still waiting on.
+function noteBonusChanges(changed: BonusChanges): void {
+  const keys = Object.keys(bonusAwaitingRestart) as (keyof BonusChanges)[];
+  for (const key of keys) {
+    if (changed[key]) bonusAwaitingRestart[key] = true;
+  }
+}
+
+// A row's state once the session is accounted for. A bonus whose file this host
+// rewrote reads pending until the restart that puts it into effect, whether it
+// was switched on or off. The "unavailable" reading is about the build rather
+// than the session, so it stands either way.
+function pendingIfUnseen(state: BonusState, awaiting: boolean): BonusState {
+  return awaiting && (state === "on" || state === "off") ? "pending" : state;
+}
+
 // One reconcile pass over every bonus. Each reconciler fails safe on its own
 // (an unreadable file reads as "unchanged"), so a broken manifest cannot stop
 // the webview bundle from reconciling or vice versa.
@@ -3573,7 +3610,9 @@ function reconcileBonuses(extPath: string): BonusChanges {
     typography = css.typography;
     math = math || css.math;
   } catch {}
-  return { title, attach, math, typography };
+  const changed = { title, attach, math, typography };
+  noteBonusChanges(changed);
+  return changed;
 }
 
 // The restart a set of bonus changes needs: the manifest is the one file only
@@ -3711,22 +3750,22 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   return [
     {
       label: "Prompt toolbar: + button opens the file picker",
-      state: attach,
+      state: pendingIfUnseen(attach, bonusAwaitingRestart.attach),
       needs: "extensions",
     },
     {
       label: 'Editor title: group the "Open in Tab" icon',
-      state: openInTab,
+      state: pendingIfUnseen(openInTab, bonusAwaitingRestart.title),
       needs: "window",
     },
     {
       label: "Chat: render $...$ and \\[...\\] math",
-      state: math,
+      state: pendingIfUnseen(math, bonusAwaitingRestart.math),
       needs: "extensions",
     },
     {
       label: "Chat history: size and font of the agent's response",
-      state: typography,
+      state: pendingIfUnseen(typography, bonusAwaitingRestart.typography),
       needs: "extensions",
     },
   ];
@@ -4309,14 +4348,32 @@ async function runPatch(
       for (const [key, off] of BONUS_SETTING_DEFAULTS) {
         await forceSettingOff(key, off);
       }
-      if (reconcileAttachFileButton(extPath)) bonusReverted++;
+      const reverted: BonusChanges = {
+        title: false,
+        attach: false,
+        math: false,
+        typography: false,
+      };
+      if (reconcileAttachFileButton(extPath)) {
+        bonusReverted++;
+        reverted.attach = true;
+      }
       if (reconcileOpenInTabTitle(extPath)) {
         bonusReverted++;
         manifestChanged = true;
+        reverted.title = true;
       }
-      if (reconcileMathRendering(extPath)) bonusReverted++;
+      if (reconcileMathRendering(extPath)) {
+        bonusReverted++;
+        reverted.math = true;
+      }
       const css = reconcileChatStyle(extPath, coreCssDecision(false));
       if (css.typography || css.math) bonusReverted++;
+      reverted.typography = css.typography;
+      reverted.math = reverted.math || css.math;
+      // What Restore just took off disk is still on screen until the restart
+      // the notification below offers.
+      noteBonusChanges(reverted);
       results.push(
         blockResult(CHAT_STYLE_FILE, CHAT_CSS_CORE, css, "restore"),
         blockResult(

@@ -9,6 +9,7 @@
 - The editor-title rename is the one setting that still asks for a window reload, and that reload no longer asks for a second one
 - **Show Status** redraws the status page that is already open instead of adding another tab, and that page keeps up with **Apply Patches**, **Restore Originals**, and settings changes
 - The status page survives **Restart Extensions**: it used to stay on screen reporting the state from before the restart
+- A bonus switched on or off reads **restart extensions to apply** on the status page until that restart happens, rather than reading as done while the old state is still on screen
 
 ## 1.25.0
 

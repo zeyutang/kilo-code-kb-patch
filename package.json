@@ -2,7 +2,7 @@
   "name": "kilo-code-kb-patch",
   "displayName": "Kilo Code KB Patch",
   "description": "Patches Kilo Code keyboard behavior: Enter for newline, Cmd+Enter to send, smarter Escape routing, and more.",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "publisher": "zeyutang",
   "license": "MIT",
   "icon": "icon.png",

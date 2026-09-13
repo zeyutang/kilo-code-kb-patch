@@ -39,6 +39,7 @@ const {
   RULES,
   ATTACH_RULE,
   MATH_RULE,
+  RAW_MARKDOWN_RULE,
   PROBES,
   withoutPrefilter,
 } = require("./lib/rules");
@@ -98,6 +99,10 @@ function main() {
     [
       MATH_RULE.key,
       new Map(test.MATH_EXTENSIONS.map((m) => [m.original, m.patched])),
+    ],
+    [
+      RAW_MARKDOWN_RULE.key,
+      new Map(test.RAW_MARKDOWN_TOGGLES.map((t) => [t.original, t.patched])),
     ],
   ]);
 
@@ -189,6 +194,7 @@ function main() {
   for (const rule of RULES) run(rule, false);
   run(ATTACH_RULE, true);
   run(MATH_RULE, true);
+  run(RAW_MARKDOWN_RULE, true);
 
   for (const probe of PROBES) {
     const content = bundles[probe.file];
@@ -220,7 +226,7 @@ function main() {
   // about what deriving alone used to, and this tool runs once per release.
   if (!args.fast) {
     let disagreed = 0;
-    for (const rule of [...RULES, ATTACH_RULE, MATH_RULE]) {
+    for (const rule of [...RULES, ATTACH_RULE, MATH_RULE, RAW_MARKDOWN_RULE]) {
       const content = bundles[rule.file];
       if (content === undefined) continue;
       const quick = JSON.stringify(rule.derive(content) ?? null);
@@ -238,7 +244,7 @@ function main() {
     unclear += disagreed;
     if (disagreed === 0) {
       console.log(
-        `\n  prefilters proven: all ${RULES.length + 2} rules derive identically without them`,
+        `\n  prefilters proven: all ${RULES.length + 3} rules derive identically without them`,
       );
     }
   }

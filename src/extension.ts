@@ -2859,6 +2859,72 @@ function reconcileMathRendering(extPath: string): boolean {
   return reconcileVariant(extPath, MATH_EXTENSIONS, chatMathRenderingEnabled());
 }
 
+// --- Bonus raw-markdown toggle ----------------------------------------------
+// Kilo renders the agent's reply as markdown and offers no way to see what it
+// rendered. The footer under the last text part of an assistant turn
+// (`assistant-copy-wrapper`: copy, thumbs up, thumbs down, then the throughput
+// readout) already has the source at hand, since its copy button puts exactly
+// that text on the clipboard. This bonus adds a button beside it that shows
+// the same text in place, in a monospace block, and hides the rendered view
+// until it is clicked again.
+//
+// Reading the source is the whole point of the feature rather than a debugging
+// aid: it is how you tell a table Kilo failed to render from one the agent
+// wrote wrong, see the literal `$...$` a formula came from, or read a link's
+// target without hovering it.
+//
+// It is two pieces. The splice below adds the button and the toggle, and a
+// stylesheet block (see chatCssRules) hides the rendered markdown and styles
+// the raw block. The split follows the math bonus: whatever can be done
+// without a minified symbol is done in CSS, where nothing needs re-targeting.
+//
+// The button carries no Solid state. A signal would mean splicing the
+// component's `let` chain, a third edit thousands of bytes from this one, for
+// one bit that an attribute on the text-part already holds and the stylesheet
+// can read. The toggle therefore writes that attribute, appends or removes the
+// block, and sets `aria-pressed` for the same reason Kilo's feedback buttons
+// do. None of it collides with Solid: the attribute sits on the one element in
+// this component Solid sets no attributes on, and the block is appended
+// alongside a child Solid's insert placed once and does not track.
+const RAW_MARKDOWN_TOGGLES: WebviewVariant[] = [
+  {
+    // v7.6.2: insert P, footer k, create B, tooltip In, icon-button bn, copy
+    // handler f, raw-text accessor o. The glyph is Kilo's own "code-lines",
+    // which its sprite injector emits a symbol for whether or not Kilo uses
+    // it (and this build does use it elsewhere), so no glyph has to be added.
+    // Captioned by an English literal: Kilo's catalog has no key for this, and
+    // its t() renders a missing key as the key string.
+    original:
+      'P(k,B(In,{get value(){return nt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return B(bn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return nt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null)',
+    patched:
+      'P(k,B(In,{get value(){return nt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return B(bn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return nt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null),P(k,B(In,{value:"Markdown source",placement:"top",gutter:4,get children(){return B(bn,{icon:"code-lines",size:"normal",variant:"ghost","data-slot":"kbp-raw-markdown-toggle","aria-label":"Markdown source","aria-pressed":"false",onMouseDown:_e=>_e.preventDefault(),onClick:_e=>{let _btn=_e.currentTarget,_part=_btn.closest("[data-component=text-part]"),_body=_part&&_part.querySelector("[data-slot=text-part-body]");if(!_body)return;let _pre=_body.querySelector("pre[data-slot=kbp-raw-markdown]");if(_pre){_pre.remove(),_part.removeAttribute("data-kbp-raw-markdown"),_btn.setAttribute("aria-pressed","false");return}_pre=document.createElement("pre"),_pre.setAttribute("data-slot","kbp-raw-markdown"),_pre.textContent=o(),_body.appendChild(_pre),_part.setAttribute("data-kbp-raw-markdown",""),_btn.setAttribute("aria-pressed","true")}})}}),null)',
+  },
+];
+
+function chatRawMarkdownEnabled(): boolean {
+  return vscode.workspace
+    .getConfiguration("kiloCodeKbPatch")
+    .get<boolean>("chatRawMarkdownButton", false);
+}
+
+// Like the attach button, each patched string here contains its own original
+// as a *prefix* (the splice appends after Kilo's copy button), so a patched
+// build makes both includes()-true and reconcileVariant's "already patched
+// before pristine" ordering is what keeps them apart.
+function matchingRawMarkdownToggle(
+  content: string,
+): WebviewVariant | undefined {
+  return matchingVariant(content, RAW_MARKDOWN_TOGGLES);
+}
+
+function reconcileRawMarkdownToggle(extPath: string): boolean {
+  return reconcileVariant(
+    extPath,
+    RAW_MARKDOWN_TOGGLES,
+    chatRawMarkdownEnabled(),
+  );
+}
+
 // --- Appended blocks ---------------------------------------------------------
 // Two core patches and two bonuses are applied by appending a delimited block
 // to one of Kilo's own dist/ files instead of splicing into a bundle's code. That
@@ -2890,6 +2956,11 @@ function reconcileMathRendering(extPath: string): boolean {
 //                the math-rendering bonus rather than a knob of its own: the
 //                size is meaningless when that bonus is off, so this block is
 //                written only while it is on
+//   raw-markdown bonus, webview.css: the half of the raw-markdown toggle that
+//                needs no minified symbol, hiding the rendered reply while the
+//                toggle's attribute is set and styling the raw block the
+//                toggle appends. Part of that bonus rather than a knob of its
+//                own, so it is written only while the splice is asked for
 //
 // Each patch owns its own block, so a change can be attributed to the patch it
 // belongs to without inferring anything from the rules themselves.
@@ -2927,6 +2998,7 @@ const CHAT_CSS_BLOCKS = [
   "math-clip",
   "typography",
   "math",
+  "raw-markdown",
 ] as const;
 type ChatCssBlockKey = (typeof CHAT_CSS_BLOCKS)[number];
 const CHAT_SCRIPT_BLOCKS = ["chat-scroll", "hover-guard"] as const;
@@ -3335,6 +3407,44 @@ function readPromptSizing(css: string): PromptSizing | undefined {
 // element is itself the MathML and there is no twin.
 const MATH_CLIP_RULE = `${CHAT_ANY_MD} .katex { position: relative; }`;
 
+// The stylesheet half of the raw-markdown bonus. The splice appends
+// `pre[data-slot=kbp-raw-markdown]` inside the text part's body and sets
+// `data-kbp-raw-markdown` on the text part itself; these rules are what make
+// that swap the rendered reply rather than sit under it, and what make the raw
+// text read as source.
+//
+// Three choices worth stating. The raw block is scoped by its own slot rather
+// than by `pre`, so Kilo's fenced code blocks (which are `pre` too, inside the
+// markdown container) are untouched. It is styled to Kilo's own code-block
+// treatment, border and radius and padding and the mono family at the base
+// size, *except* for the background: Kilo's `.shiki` names
+// `--color-background-stronger`, a token this stylesheet never defines, so its
+// code blocks render border-only and matching them means declaring no
+// background either. And it sits outside `[data-component="markdown"]`, so the
+// typography bonus's rules do not reach it: source is monospace content and
+// keeps Kilo's size, the same line the typography block draws for `pre` and
+// inline `code`.
+//
+// Wrapping rather than scrolling, because the chat lives in a sidebar narrow
+// enough that a long line would otherwise be unreachable without a horizontal
+// scrollbar per message.
+const RAW_MARKDOWN_RULES = [
+  '[data-component="text-part"][data-kbp-raw-markdown]' +
+    ' [data-slot="text-part-body"] > [data-component="markdown"] { display: none; }',
+  '[data-slot="text-part-body"] > pre[data-slot="kbp-raw-markdown"] {' +
+    " margin: 0; padding: 12px; border: 0.5px solid var(--border-weak-base);" +
+    " border-radius: 6px; color: var(--text-base);" +
+    " font-family: var(--font-family-mono); font-size: var(--font-size-base);" +
+    " line-height: 150%; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }",
+  // Kilo's feedback buttons show their state by swapping to a filled glyph,
+  // which the sprite has no counterpart of for this one, so the pressed state
+  // borrows the ghost icon-button's own active treatment instead.
+  '[data-component="text-part"][data-kbp-raw-markdown]' +
+    ' [data-slot="kbp-raw-markdown-toggle"] { background-color: var(--surface-base-active); }',
+  '[data-component="text-part"][data-kbp-raw-markdown]' +
+    ' [data-slot="kbp-raw-markdown-toggle"] [data-slot="icon-svg"] { color: var(--icon-strong-base); }',
+];
+
 // What the rule assumes, matched to decide whether the block is written at all:
 // KaTeX still hides the twin by taking it out of flow (without that the rule
 // fixes nothing), `.katex` still declares no position of its own (overriding a
@@ -3591,6 +3701,12 @@ function chatCssRules(key: ChatCssBlockKey, pristineCss: string): string[] {
     if (em === KATEX_DEFAULT_EM) return [];
     return [`${CHAT_ANY_MD} .katex { font-size: ${em}em; }`];
   }
+  if (key === "raw-markdown") {
+    // Gated on the splice, not on a knob of its own: with no button to press,
+    // the attribute these rules key on is never set and the raw block they
+    // style is never created.
+    return chatRawMarkdownEnabled() ? RAW_MARKDOWN_RULES : [];
+  }
 
   const rules: string[] = [];
   const scale = clampSetting("chatHistoryFontSizeEm", 1, 0.5, 3);
@@ -3723,6 +3839,7 @@ interface BonusChanges {
   attach: boolean;
   math: boolean;
   typography: boolean;
+  rawMarkdown: boolean;
 }
 
 // The bonus files this extension host has rewritten since it started. Kilo
@@ -3740,6 +3857,7 @@ const bonusAwaitingRestart: BonusChanges = {
   attach: false,
   math: false,
   typography: false,
+  rawMarkdown: false,
 };
 
 // Fold one reconcile pass's result into what this session is still waiting on.
@@ -3770,6 +3888,7 @@ function reconcileBonuses(extPath: string): BonusChanges {
   let attach = false;
   let math = false;
   let typography = false;
+  let rawMarkdown = false;
   try {
     title = reconcileOpenInTabTitle(extPath);
   } catch {}
@@ -3780,11 +3899,15 @@ function reconcileBonuses(extPath: string): BonusChanges {
     math = reconcileMathRendering(extPath);
   } catch {}
   try {
+    rawMarkdown = reconcileRawMarkdownToggle(extPath);
+  } catch {}
+  try {
     const css = reconcileChatStyle(extPath);
     typography = css.typography;
     math = math || css.math;
+    rawMarkdown = rawMarkdown || css["raw-markdown"];
   } catch {}
-  const changed = { title, attach, math, typography };
+  const changed = { title, attach, math, typography, rawMarkdown };
   noteBonusChanges(changed);
   return changed;
 }
@@ -3807,6 +3930,7 @@ function notifyBonusRestart(changed: BonusChanges): void {
     ...(changed.attach ? ["attach-file button"] : []),
     ...(changed.math ? ["math rendering"] : []),
     ...(changed.typography ? ["chat typography"] : []),
+    ...(changed.rawMarkdown ? ["markdown source button"] : []),
   ];
   if (items.length === 0) return;
   // Two items read as "a and b"; three or more as "a, b and c".
@@ -3827,6 +3951,7 @@ const BONUS_SETTING_DEFAULTS: [string, boolean | number | string][] = [
   ["addAttachFileButton", false],
   ["renameOpenInTab", false],
   ["chatMathRendering", false],
+  ["chatRawMarkdownButton", false],
   ["chatHistoryFontSizeEm", 1],
   ["chatHistoryFontFamily", ""],
   // KaTeX's own em size, so the default asks for no override at all. Kept in
@@ -3906,6 +4031,21 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
         : "pending";
   }
 
+  // Like math, this bonus spans a bundle splice and a stylesheet block, and
+  // the block is unconditional once the setting is on, so "on" means both are
+  // in place.
+  let rawMarkdown: BonusState = "off";
+  if (chatRawMarkdownEnabled()) {
+    const content = read(path.join(extPath, "dist", "webview.js"));
+    const variant = matchingRawMarkdownToggle(content);
+    rawMarkdown = !variant
+      ? "unavailable"
+      : content.includes(variant.patched) &&
+          chatCssApplied(extPath, "raw-markdown")
+        ? "on"
+        : "pending";
+  }
+
   // Typography is requested from the settings alone, so a build whose own
   // declarations could not be read still gets a row, and it reads "unavailable"
   // rather than silently "off".
@@ -3948,6 +4088,11 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
     {
       label: "Chat history: size and font of the agent's response",
       state: pendingIfUnseen(typography, bonusAwaitingRestart.typography),
+      needs: "extensions",
+    },
+    {
+      label: "Chat: button to read a reply's markdown source",
+      state: pendingIfUnseen(rawMarkdown, bonusAwaitingRestart.rawMarkdown),
       needs: "extensions",
     },
   ];
@@ -4535,6 +4680,7 @@ async function runPatch(
         attach: false,
         math: false,
         typography: false,
+        rawMarkdown: false,
       };
       if (reconcileAttachFileButton(extPath)) {
         bonusReverted++;
@@ -4549,10 +4695,15 @@ async function runPatch(
         bonusReverted++;
         reverted.math = true;
       }
+      if (reconcileRawMarkdownToggle(extPath)) {
+        bonusReverted++;
+        reverted.rawMarkdown = true;
+      }
       const css = reconcileChatStyle(extPath, coreCssDecision(false));
-      if (css.typography || css.math) bonusReverted++;
+      if (css.typography || css.math || css["raw-markdown"]) bonusReverted++;
       reverted.typography = css.typography;
       reverted.math = reverted.math || css.math;
+      reverted.rawMarkdown = reverted.rawMarkdown || css["raw-markdown"];
       // What Restore just took off disk is still on screen until the restart
       // the notification below offers.
       noteBonusChanges(reverted);
@@ -4898,6 +5049,10 @@ export const __test = {
   MATH_EXTENSIONS,
   matchingMathExtension,
   reconcileMathRendering,
+  RAW_MARKDOWN_TOGGLES,
+  matchingRawMarkdownToggle,
+  reconcileRawMarkdownToggle,
+  RAW_MARKDOWN_RULES,
   CHAT_STYLE_FILE,
   CHAT_CSS_BLOCKS,
   stripChatCss,

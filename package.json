@@ -72,6 +72,11 @@
           "default": "",
           "markdownDescription": "CSS `font-family` for the agent's rendered response in chat history, for example `Charter, Georgia, serif`. Empty keeps Kilo Code's font. Code, file paths, and math keep their own fonts. Restart extensions after changing."
         },
+        "kiloCodeKbPatch.chatRawMarkdownButton": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Add a button beside **Copy** under the agent's reply that shows the reply's markdown source in place. Click it again for the rendered view. Restart extensions after changing."
+        },
         "kiloCodeKbPatch.chatMathRendering": {
           "type": "boolean",
           "default": false,

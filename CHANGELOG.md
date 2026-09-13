@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New opt-in `kiloCodeKbPatch.chatRawMarkdownButton`: adds a button beside **Copy** under the agent's reply that shows the reply's markdown source in place, with a second click for the rendered view
+
+## 2.0.3
+
 - Size the headings in the agent's replies per level, as a multiple of the response text, where Kilo Code renders every level at body size
 - Fix headings in the agent's replies holding one fixed size instead of following `kiloCodeKbPatch.chatHistoryFontSizeEm` and Kilo Code's **Display** font-size setting
 - Fix code blocks in the agent's replies holding 13px instead of following Kilo Code's **Display** font-size setting

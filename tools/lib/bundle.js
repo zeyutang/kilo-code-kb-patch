@@ -71,9 +71,13 @@ function unpatched(content, filename, test) {
     }
   }
   if (filename === "webview.js") {
-    // Both webview.js bonuses are variant lists of the same shape: newest
+    // Every webview.js bonus is a variant list of the same shape: newest
     // patched form first, older ones in `previous`.
-    for (const variants of [test.ATTACH_FILE_BUTTONS, test.MATH_EXTENSIONS]) {
+    for (const variants of [
+      test.ATTACH_FILE_BUTTONS,
+      test.MATH_EXTENSIONS,
+      test.RAW_MARKDOWN_TOGGLES,
+    ]) {
       for (const b of variants) {
         if (out.includes(b.patched)) out = out.replace(b.patched, b.original);
         else {
@@ -133,6 +137,10 @@ const PATCH_MARKERS = [
   // item as an object literal, where Kilo's own call sites pass a variable.
   't("prompt.action.attachFile")',
   'selectMention({type:"file-picker"}',
+  // The raw-markdown toggle. Its button and the block it appends are both
+  // slotted under one name Kilo uses nowhere, so the marker covers the splice
+  // and, via the same string, the stylesheet block that styles it.
+  "kbp-raw-markdown",
 ];
 
 function residualPatchMarkers(content) {

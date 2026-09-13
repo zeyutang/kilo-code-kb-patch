@@ -821,6 +821,123 @@ const MATH_RULE = {
   },
 };
 
+// The DOM names the raw-markdown toggle reaches through, and the templates
+// that spell them. Kilo builds both from a single template literal each, so
+// one presence check pins a name and its nesting at once. The injected button
+// walks the DOM rather than closing over the body element, which keeps the
+// derivation to one symbol from outside the matched span, but it also means a
+// renamed template would leave the splice deriving, applying and parsing while
+// the button found nothing to toggle. That is the 7.6.2 failure mode (a rule
+// that still reported covered while doing the wrong thing), so the names are
+// asserted here rather than assumed.
+const RAW_MARKDOWN_TEMPLATES = {
+  "text-part": "<div data-component=text-part><div data-slot=text-part-body>",
+  markdown: "<div data-component=markdown dir=auto>",
+};
+
+// The caption. Kilo's catalog has no key for this (its `ui.message.*` keys
+// cover copy, feedback and the expand/collapse pair only), and t() falls back
+// to String(key) for a missing one, so a localized call would render the key
+// itself. An English literal is what the attach button settled on for the same
+// reason.
+const RAW_MARKDOWN_LABEL = "Markdown source";
+
+// The opt-in raw-markdown toggle adds a button to the footer Kilo already puts
+// under the last text part of an assistant turn (`assistant-copy-wrapper`:
+// copy, the two feedback buttons, then the throughput readout). Like the
+// attach button it is an insertion rather than a rewrite, so it lives outside
+// PATCHES, in RAW_MARKDOWN_TOGGLES.
+//
+// The anchor is Kilo's own copy button in that footer, which is the right span
+// for three reasons. It pins every symbol the injected button renders with
+// (the insert, the footer element, createComponent, the tooltip and the
+// icon-button), it is keyed on two i18n keys the minifier cannot touch, and it
+// is the neighbour the new button has to look like, so there is no unbounded
+// "first button after the anchor" search of the kind that drifted into the
+// permission dialog in 7.6.2.
+//
+// One symbol still comes from outside it: the accessor for the part's raw
+// text. The copy handler is the only place that reads it, and the anchor
+// captures that handler by name, so the second hop is pinned to this component
+// rather than matched loose across the bundle. That one outside symbol is also
+// why this rule is not DERIVABLE.
+const RAW_MARKDOWN_RULE = {
+  key: "raw-markdown",
+  file: "webview.js",
+  derive(content) {
+    const anchors = findAll(
+      content,
+      `(${ID})\\((${ID}),(${ID})\\((${ID}),\\{get value\\(\\)\\{return ` +
+        `(${ID})\\(\\(\\)=>!!(${ID})\\(\\)\\)\\(\\)\\?` +
+        `(${ID})\\.t\\("ui\\.message\\.copied"\\):\\7\\.t\\("ui\\.message\\.copyResponse"\\)\\}` +
+        `,placement:"top",gutter:4,get children\\(\\)\\{return \\3\\((${ID}),\\{` +
+        `get icon\\(\\)\\{return \\6\\(\\)\\?"check":"copy"\\}` +
+        `,size:"normal",variant:"ghost",onMouseDown:(${ID})=>\\9\\.preventDefault\\(\\),onClick:(${ID})` +
+        `,get"aria-label"\\(\\)\\{return \\5\\(\\(\\)=>!!\\6\\(\\)\\)\\(\\)\\?` +
+        `\\7\\.t\\("ui\\.message\\.copied"\\):\\7\\.t\\("ui\\.message\\.copyResponse"\\)\\}\\}\\)\\}\\}\\),null\\)`,
+    );
+    if (anchors.length !== 1) return { matches: anchors.length };
+    const [, insert, container, create, tooltip, , , , button, , copy] =
+      anchors[0];
+
+    // Kilo's copy handler is `<copy>=async()=>{let v=<raw>();v&&(await
+    // <clipboard>.write(v),...)}`, so the accessor it reads is the part's raw
+    // markdown: exactly what Copy puts on the clipboard, which is the text
+    // this button should show. Anchored on the handler name the footer already
+    // gave us, so this cannot match some other component's copy handler.
+    const handlers = findAll(
+      content,
+      `\\b${esc(copy)}=async\\(\\)=>\\{let (${ID})=(${ID})\\(\\);\\1&&\\(await (${ID})\\.write\\(\\1\\),`,
+    );
+    if (handlers.length !== 1)
+      return { error: "the footer's copy handler is not unique" };
+    const raw = handlers[0][2];
+
+    const missing = Object.entries(RAW_MARKDOWN_TEMPLATES)
+      .filter(([, literal]) => !content.includes(literal))
+      .map(([name]) => name);
+    if (missing.length > 0) {
+      return {
+        error: `the ${missing.join(" and ")} template(s) no longer spell the DOM this patch selects on`,
+      };
+    }
+
+    // Three things the toggle deliberately does not do. It does not hold Solid
+    // state: a signal would have to be spliced into the component's `let`
+    // chain, a third edit far from this one, where an attribute on the
+    // text-part carries the same one bit and the stylesheet reads it. It does
+    // not keep the raw block around: rebuilding it per toggle re-reads the
+    // accessor, so a part that grew while the view was closed shows its
+    // current text. And it writes nothing Solid also writes, so there is
+    // nothing for a re-render to fight: the attribute is on an element Solid
+    // sets no attributes on, and the block is a child Solid's insert appended
+    // once and never tracks.
+    const toggle =
+      `${insert}(${container},${create}(${tooltip},{value:"${RAW_MARKDOWN_LABEL}",placement:"top",gutter:4,` +
+      `get children(){return ${create}(${button},{icon:"code-lines",size:"normal",variant:"ghost",` +
+      `"data-slot":"kbp-raw-markdown-toggle","aria-label":"${RAW_MARKDOWN_LABEL}","aria-pressed":"false",` +
+      `onMouseDown:_e=>_e.preventDefault(),onClick:_e=>{let _btn=_e.currentTarget,` +
+      `_part=_btn.closest("[data-component=text-part]"),` +
+      `_body=_part&&_part.querySelector("[data-slot=text-part-body]");if(!_body)return;` +
+      `let _pre=_body.querySelector("pre[data-slot=kbp-raw-markdown]");` +
+      `if(_pre){_pre.remove(),_part.removeAttribute("data-kbp-raw-markdown"),` +
+      `_btn.setAttribute("aria-pressed","false");return}` +
+      `_pre=document.createElement("pre"),_pre.setAttribute("data-slot","kbp-raw-markdown"),` +
+      `_pre.textContent=${raw}(),_body.appendChild(_pre),` +
+      `_part.setAttribute("data-kbp-raw-markdown",""),_btn.setAttribute("aria-pressed","true")}})}}),null)`;
+
+    const original = anchors[0][0];
+    return {
+      // Appended after the copy button rather than before it, so the two text
+      // actions sit together at the head of the row and the feedback buttons
+      // and the throughput readout keep their order.
+      original,
+      patched: `${original},${toggle}`,
+      symbols: { insert, container, create, tooltip, button, copy, raw },
+    };
+  },
+};
+
 // Probes are rules that assert a derivation still works without proposing a
 // pattern to paste. Two patches need one, and neither stores per-release text
 // in src at all. The typography bonus reads three font-size declarations out
@@ -1083,6 +1200,7 @@ module.exports = {
   RULES,
   ATTACH_RULE,
   MATH_RULE,
+  RAW_MARKDOWN_RULE,
   PROBES,
   mathExtensions,
   ID,

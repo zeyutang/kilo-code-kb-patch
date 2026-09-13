@@ -67,6 +67,15 @@ To turn one off, put it back to its default (or run **Restore Originals**, which
   "kiloCodeKbPatch.renameOpenInTab": true
   ```
 
+- **Markdown source of a reply.**
+  Adds a button beside **Copy** under the agent's reply that shows the reply's markdown source in place, in a monospace block.
+  Click it again for the rendered view.
+  This is the text **Copy** puts on your clipboard, so it is how you tell a table Kilo Code failed to render from one the agent wrote wrong, or read a link's target without hovering it.
+
+  ```json
+  "kiloCodeKbPatch.chatRawMarkdownButton": true
+  ```
+
 - **Math rendering.**
   Renders `$...$` inline math and `\[...\]` display math in chat.
   Kilo Code already renders `$$...$$` and `\(...\)`.

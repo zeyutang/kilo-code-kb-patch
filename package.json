@@ -65,7 +65,7 @@
           "default": 1,
           "minimum": 0.5,
           "maximum": 3,
-          "markdownDescription": "Multiply the font size of the agent's rendered response in chat history, relative to Kilo Code's own **Display** font-size setting. `1` leaves it unchanged. Monospace content (code blocks, inline code, file paths) keeps its own size, as do reasoning blocks, tool output, and your own messages. Restart extensions after changing."
+          "markdownDescription": "Multiply the font size of the agent's rendered response in chat history, relative to Kilo Code's own **Display** font-size setting. `1` leaves it unchanged. Headings are sized as a multiple of the response text, so their ratios hold at any value. Monospace content (code blocks, inline code, file paths) keeps its own size, as do reasoning blocks, tool output, and your own messages. Restart extensions after changing."
         },
         "kiloCodeKbPatch.chatHistoryFontFamily": {
           "type": "string",

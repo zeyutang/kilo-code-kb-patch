@@ -2884,8 +2884,8 @@ function reconcileMathRendering(extPath: string): boolean {
 //                change under the pointer are stopped, so a menu row or a
 //                tooltip that lands there no longer reacts (see
 //                hoverGuardScript). Applied and removed with chat-scroll.
-//   typography   bonus, webview.css: the agent's reply is scaled and optionally
-//                re-fonted
+//   typography   bonus, webview.css: the agent's reply is scaled, its headings
+//                laddered, and it is optionally re-fonted
 //   math         bonus, webview.css: rendered math is sized, which is part of
 //                the math-rendering bonus rather than a knob of its own: the
 //                size is meaningless when that bonus is off, so this block is
@@ -2897,16 +2897,23 @@ function reconcileMathRendering(extPath: string): boolean {
 // The values the typography block multiplies are read out of Kilo's stylesheet
 // rather than hardcoded. Scaling only the markdown container would leave
 // headings and tables behind, because Kilo declares those with sizes of their
-// own (a literal 14px for headings, the base token again for tables), and a
-// heading that stays 14px while body text grows ends up *smaller* than the
-// paragraph around it. So each declaration Kilo makes is read and re-declared
-// multiplied. Monospace content is what deliberately does *not* scale, and it
-// needs rules for the opposite reason, because Kilo gives it no size of its own
-// to hold it back: a fenced block's absolute size lives on `.shiki`, which it
-// only gains once the highlighter has run, and inline `code` and
-// `a.file-path-link` declare a family and nothing else. So `pre` is pinned to
-// Kilo's `.shiki` size (which also keeps a streaming block from resizing under
-// the reader) and the two inline forms to its base size.
+// own, and a heading that keeps its own size while body text grows ends up
+// *smaller* than the paragraph around it. Tables are handled by reading that
+// declaration and re-declaring it multiplied. Headings are handled the other
+// way, by restating them in `em` (see HEADING_LADDER): their `em` resolves
+// against the container this block has already scaled, so one rule carries both
+// the text multiplier and the heading ladder, and Kilo's own heading
+// declaration never has to be read.
+//
+// Monospace content is what deliberately does *not* scale, and it needs rules
+// for the opposite reason, because Kilo gives it no size of its own to hold it
+// back: a fenced block's size lives on `.shiki`, which it only gains once the
+// highlighter has run, and inline `code` and `a.file-path-link` declare a
+// family and nothing else. So `pre` is pinned to Kilo's `.shiki` size (which
+// also keeps a streaming block from resizing under the reader) and the two
+// inline forms to its base size. "Keeps its own size" means Kilo's size, which
+// still follows Kilo's own Display setting: these pins hold the em multiplier
+// off, not that setting.
 //
 // A build that renamed or restructured those declarations reads as
 // "unavailable" in the status view rather than producing a wrong size.
@@ -3083,13 +3090,23 @@ const CHAT_ANY_MD = '[data-component="markdown"]';
 
 // Kilo's own declarations, each matched only to read the value it sets. The
 // `min-width:0` prefix pins the base markdown rule (the file has 29 other
-// [data-component=markdown] selectors), and the heading rule is pinned by the
-// two declarations that follow its size (a bare h1..h6 size selector matches
-// three unrelated rules).
+// [data-component=markdown] selectors).
 //
 // Kilo's font-family declaration is not among them: the family setting replaces
 // that value outright rather than deriving from it, so there is nothing to
-// read. Neither is KaTeX's em size, which the math block states absolutely.
+// read. Neither is KaTeX's em size, which the math block states absolutely,
+// nor the heading size, which is restated in `em` (see HEADING_LADDER).
+//
+// Kilo declares both the heading size and the code-block size *twice*, once as
+// a literal inside `@layer components` (14px, 13px) and once unlayered as
+// `var(--font-size-base)`. An anchor matches either one uniquely, but only the
+// unlayered declaration renders, and reading the layered one pinned scaled
+// headings to 16.1px and code blocks to 13px whatever the reader's Display
+// setting. Headings no longer read anything at all; the code anchor is pinned
+// to the unlayered declaration by its `[data-component=markdown]{` prefix. Any
+// future anchor into this stylesheet has to be checked against the cascade, not
+// just against its own match count: unlayered beats layered whatever the
+// specificity, so "exactly one match" does not mean "the value that renders".
 //
 // Exported to the harness, which asserts each anchor still matches exactly
 // once against a fresh build (see PROBES in tools/lib/rules.js). Duplicating
@@ -3097,11 +3114,10 @@ const CHAT_ANY_MD = '[data-component="markdown"]';
 const CHAT_STYLE_ANCHORS: Record<string, RegExp> = {
   "markdown font-size":
     /\[data-component=markdown\]\{min-width:0;[^{}]*?font-size:([^;{}]+);/,
-  "heading font-size":
-    /h1,h2,h3,h4,h5,h6\{font-size:([^;{}]+);color:var\(--text-strong\);font-weight:var\(--font-weight-medium\);/,
   "table font-size":
     /table\{width:100%;border-collapse:collapse;margin:24px 0;font-size:([^;{}]+);/,
-  "code block font-size": /\.shiki\{background:[^{}]*?font-size:([^;{}]+);/,
+  "code block font-size":
+    /\[data-component=markdown\]\{\.shiki\{font-size:([^;{}]+);/,
   // Read by the harness only: if it stops matching KATEX_DEFAULT_EM, the schema
   // default in package.json is the thing that needs updating.
   "katex em size": /\.katex\{font:\s*([\d.]+)em\s/,
@@ -3114,24 +3130,22 @@ const CHAT_STYLE_ANCHORS: Record<string, RegExp> = {
 // users who never touched the setting.
 const KATEX_DEFAULT_EM = 1.21;
 
-// The font sizes Kilo declares inside the assistant markdown: three the
+// The font sizes Kilo declares inside the assistant markdown: two the
 // typography block re-declares multiplied, and the code-block size it re-states
 // unchanged. `size` does double duty, since Kilo's base size is also what its
 // inline monospace content inherits and therefore what pins it.
 interface ChatStyleValues {
   size: string;
-  heading: string;
   table: string;
   code: string;
 }
 
 function readChatStyleValues(css: string): ChatStyleValues | undefined {
   const size = CHAT_STYLE_ANCHORS["markdown font-size"].exec(css)?.[1];
-  const heading = CHAT_STYLE_ANCHORS["heading font-size"].exec(css)?.[1];
   const table = CHAT_STYLE_ANCHORS["table font-size"].exec(css)?.[1];
   const code = CHAT_STYLE_ANCHORS["code block font-size"].exec(css)?.[1];
-  if (!size || !heading || !table || !code) return undefined;
-  return { size, heading, table, code };
+  if (!size || !table || !code) return undefined;
+  return { size, table, code };
 }
 
 // A number setting can arrive as anything (a hand-edited settings.json is not
@@ -3168,6 +3182,47 @@ function chatFontFamily(): string {
   const value = typeof raw === "string" ? raw.trim() : "";
   if (!value) return "";
   return CHAT_FONT_FAMILY_RE.test(value) ? value : "";
+}
+
+// How much bigger each heading level is than the text around it. Kilo declares
+// no ladder at all (`#` through `######` all render at body size, set apart
+// only by weight, line-height and spacing), so the whole ladder is ours to
+// state. It is part of what this bonus means by typesetting the reply rather
+// than a knob of its own, so it rides along with both settings.
+//
+// Stating the ratios in `em` rather than in a derived absolute size is what
+// makes them compose with chatHistoryFontSizeEm for free. A heading's `em`
+// resolves against the markdown container, which the size rule has already
+// multiplied, so the ratio and the multiplier compose without either one
+// knowing about the other, and Kilo's own heading declaration never has to be
+// read. Weights are left alone: this is sizes only, and Kilo's heading weight
+// carries over.
+const HEADING_LADDER = {
+  h1: 1.875,
+  h2: 1.3125,
+  h3: 1.3125,
+  h4: 1.125,
+  h5: 1,
+  h6: 1,
+} as const;
+
+// One rule per distinct ratio, levels in document order, which keeps the block
+// short enough to read in the stylesheet and makes the ladder legible as a
+// ladder. The levels left at 1 still need their rule: Kilo pins headings to its
+// own *unscaled* base size, so with no rule of ours they stay behind scaled
+// body text and a `#####` ends up smaller than the paragraph under it.
+function headingRules(): string[] {
+  const groups = new Map<number, string[]>();
+  for (const [level, ratio] of Object.entries(HEADING_LADDER)) {
+    const levels = groups.get(ratio);
+    if (levels) levels.push(level);
+    else groups.set(ratio, [level]);
+  }
+  return [...groups].map(([ratio, levels]) => {
+    const selector =
+      levels.length === 1 ? levels[0] : `:is(${levels.join(", ")})`;
+    return `${CHAT_ASSISTANT_MD} ${selector} { font-size: ${ratio}em; }`;
+  });
 }
 
 // --- chat-scroll, the stylesheet half ----------------------------------------
@@ -3539,23 +3594,35 @@ function chatCssRules(key: ChatCssBlockKey, pristineCss: string): string[] {
 
   const rules: string[] = [];
   const scale = clampSetting("chatHistoryFontSizeEm", 1, 0.5, 3);
-  const values = scale === 1 ? undefined : readChatStyleValues(pristineCss);
+  const family = chatFontFamily();
+  // Either knob puts this block in the file, and the whole size treatment rides
+  // along with either one: the ladder is not separately requestable, and a reply
+  // whose text is re-fonted but whose headings keep Kilo's flat sizing reads as
+  // unfinished. With both knobs neutral nothing is read and the block is not
+  // written at all, which is what leaves the stylesheet byte-identical to
+  // Kilo's.
+  const values =
+    scale !== 1 || family !== "" ? readChatStyleValues(pristineCss) : undefined;
   if (values) {
+    if (scale !== 1) {
+      rules.push(
+        `${CHAT_ASSISTANT_MD} { font-size: calc(${values.size} * ${scale}); }`,
+        `${CHAT_ASSISTANT_MD} table { font-size: calc(${values.table} * ${scale}); }`,
+      );
+    }
+    rules.push(...headingRules());
     rules.push(
-      `${CHAT_ASSISTANT_MD} { font-size: calc(${values.size} * ${scale}); }`,
-      `${CHAT_ASSISTANT_MD} :is(h1, h2, h3, h4, h5, h6) { font-size: calc(${values.heading} * ${scale}); }`,
-      `${CHAT_ASSISTANT_MD} table { font-size: calc(${values.table} * ${scale}); }`,
-      `${CHAT_ASSISTANT_MD} pre { font-size: ${values.code}; }`,
       // Monospace content stays at the size Kilo would have given it. Kilo
       // declares a family for these two and no size, so without a rule they
       // follow the scaled container, and "code is not affected" would hold for
       // fenced blocks but not for the `code` spans and file paths in the middle
-      // of a sentence.
+      // of a sentence. The inline pins matter to the ladder too, since a `code`
+      // span inside a heading would otherwise take the heading's ratio.
+      `${CHAT_ASSISTANT_MD} pre { font-size: ${values.code}; }`,
       `${CHAT_ASSISTANT_MD} :not(pre) > code { font-size: ${values.size}; }`,
       `${CHAT_ASSISTANT_MD} a.file-path-link { font-size: ${values.size}; }`,
     );
   }
-  const family = chatFontFamily();
   if (family) rules.push(`${CHAT_ASSISTANT_MD} { font-family: ${family}; }`);
   return rules;
 }
@@ -3844,10 +3911,18 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   // rather than silently "off".
   let typography: BonusState = "off";
   const scale = clampSetting("chatHistoryFontSizeEm", 1, 0.5, 3);
-  if (scale !== 1 || chatFontFamily() !== "") {
+  const scalesText = scale !== 1;
+  if (scalesText || chatFontFamily() !== "") {
     const css = read(path.join(extPath, "dist", CHAT_STYLE_FILE));
+    const pristine = css === undefined ? undefined : stripChatCss(css);
+    // The family needs nothing read out of the build, so "unavailable" has to
+    // name the part that actually failed: a build whose declarations no longer
+    // parse breaks the size knob specifically, and reporting "on" because the
+    // family rule still got written would hide it.
     typography =
-      !css || chatCssRules("typography", stripChatCss(css)).length === 0
+      pristine === undefined ||
+      chatCssRules("typography", pristine).length === 0 ||
+      (scalesText && readChatStyleValues(pristine) === undefined)
         ? "unavailable"
         : chatCssApplied(extPath, "typography")
           ? "on"
@@ -4842,6 +4917,8 @@ export const __test = {
   chatScriptCoreStatus,
   CHAT_STYLE_ANCHORS,
   KATEX_DEFAULT_EM,
+  HEADING_LADDER,
+  headingRules,
   readChatStyleValues,
   chatCssRules,
   chatCssBlock,

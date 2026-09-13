@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Size the headings in the agent's replies per level, as a multiple of the response text, where Kilo Code renders every level at body size
+- Fix headings in the agent's replies holding one fixed size instead of following `kiloCodeKbPatch.chatHistoryFontSizeEm` and Kilo Code's **Display** font-size setting
+- Fix code blocks in the agent's replies holding 13px instead of following Kilo Code's **Display** font-size setting
+
 ## 2.0.2
 
 - Fix a large blank gap below the newest reply when math inside a reasoning block added scroll space that held nothing

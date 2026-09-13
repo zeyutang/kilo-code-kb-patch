@@ -1066,6 +1066,11 @@ function main() {
         JSON.stringify(values),
       );
 
+      // The scope every typography rule carries, spelled out here so the
+      // heading assertions can name a whole rule rather than a fragment.
+      const ASSISTANT =
+        '[data-component="text-part"] [data-component="markdown"]';
+
       const ON = {
         addAttachFileButton: true,
         chatMathRendering: true,
@@ -1090,15 +1095,55 @@ function main() {
       check(
         values !== undefined &&
           styled.includes(`font-size: calc(${values.size} * 1.3)`) &&
-          styled.includes(`font-size: calc(${values.heading} * 1.3)`) &&
           styled.includes(`font-size: calc(${values.table} * 1.3)`),
-        "container, headings and tables are each scaled by the multiplier",
+        "container and tables are each scaled by the multiplier",
+      );
+      // Headings carry the multiplier through `em` instead of a second calc(),
+      // which is the only reason the ladder and the multiplier compose. A
+      // heading rule stated in absolute units would freeze the ratio at one
+      // multiplier, which is the bug this replaced.
+      check(
+        test
+          .headingRules()
+          .every(
+            (r) => styled.includes(r) && /font-size: [\d.]+em; }$/.test(r),
+          ),
+        "the ladder is emitted in em, so it multiplies on top of the text size",
+      );
+      check(
+        styled.includes(
+          `${ASSISTANT} h1 { font-size: ${test.HEADING_LADDER.h1}em; }`,
+        ) &&
+          styled.includes(
+            `${ASSISTANT} :is(h2, h3) { font-size: ${test.HEADING_LADDER.h2}em; }`,
+          ),
+        "levels that share a ratio are grouped, in document order",
+      );
+      // Every level needs a rule, including the ones left at 1: Kilo pins its
+      // headings to its own unscaled base size, so a level with no rule of ours
+      // stays behind scaled body text.
+      check(
+        Object.keys(test.HEADING_LADDER).every((level) =>
+          test.headingRules().some((r) => r.includes(level)),
+        ),
+        "every heading level is covered by a rule",
       );
       check(
         values !== undefined &&
-          styled.includes(`pre { font-size: ${values.code}; }`) &&
-          !styled.includes(`${values.code} * `),
+          styled.includes(`${ASSISTANT} pre { font-size: ${values.code}; }`) &&
+          !typography.some((r) => r.includes(" pre ") && r.includes("calc(")),
         "code blocks are pinned to Kilo's own size, not scaled",
+      );
+      // Kilo declares its code-block size twice as well, and as with headings
+      // only the unlayered declaration renders. Reading the layered literal
+      // held code blocks at 13px whatever the reader's Display setting, so what
+      // is read here has to be a token that still follows that setting. A
+      // literal here means the anchor is back on the losing declaration, or
+      // that Kilo really did hardcode it and the pin needs rethinking.
+      check(
+        values !== undefined && values.code.includes("var(--"),
+        "the code size read follows Kilo's Display setting",
+        JSON.stringify(values),
       );
       // Kilo gives inline code and file-path links a monospace family and no
       // size, so they follow the container unless pinned. Without these two
@@ -1162,6 +1207,30 @@ function main() {
         !withoutMath.includes(".katex { font-size:") &&
           typography.every((r) => withoutMath.includes(r)),
         "the math size is void without math rendering, typography is untouched",
+      );
+
+      // The ladder rides along with either knob, so a reply that is only
+      // re-fonted is laddered too, and that path reads Kilo's declarations even
+      // though the family itself needs nothing read.
+      shim.setConfig({ chatHistoryFontFamily: "Charter" });
+      const familyOnly = test.chatCssRules("typography", pristineCss);
+      check(
+        test.headingRules().every((r) => familyOnly.includes(r)) &&
+          !familyOnly.some((r) => r.includes("calc(")),
+        "a family-only reply is laddered, with no multiplier anywhere",
+      );
+      check(
+        values !== undefined &&
+          familyOnly.includes(
+            `${ASSISTANT} :not(pre) > code { font-size: ${values.size}; }`,
+          ),
+        "and inline code is pinned, which a heading would otherwise enlarge",
+      );
+
+      shim.setConfig({});
+      check(
+        test.chatCssRules("typography", pristineCss).length === 0,
+        "both knobs neutral asks for no rules at all",
       );
 
       // A value that could end the declaration or open a new rule would corrupt

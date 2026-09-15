@@ -618,6 +618,17 @@ return (ctx) => ({ controller: ${module_.factory}(ctx, undefined, () => false, u
 // One session per form, walked through the same steps. Each step says what the
 // menu does afterwards in the stock form and in the patched one; the two agree
 // everywhere except where Escape's record is what decides, which is the point.
+// One session per form, walked through the same steps. Each step says what the
+// menu does afterwards in the stock form and in the patched one.
+//
+// What stock does here is Kilo's business and it changed in 7.7.0, which
+// upstreamed the recording half of this patch: its Escape now writes the
+// dismissed query into its own dead-query slot, so a dismissal survives the
+// next keystroke without our help. A step whose stock column moved therefore
+// carries a `clear` override, named for the form that ships on those builds
+// (`clear`, the clearing edit alone) against `record+clear` on 7.5.11-7.6.2.
+// Encoding both columns per form is what makes a *third* change in Kilo's own
+// behavior fail loudly here instead of passing quietly.
 const MENTION_STEPS = [
   {
     label: "type @docs/f",
@@ -636,6 +647,8 @@ const MENTION_STEPS = [
     run: (s) => s.type("@docs/fi"),
     stock: "open",
     patched: "closed",
+    // 7.7.0+ records on Escape itself, so the dismissal already holds.
+    clear: { stock: "closed", patched: "closed" },
   },
   {
     label: "edit back to a shorter query: @docs/",
@@ -660,18 +673,24 @@ const MENTION_STEPS = [
     run: (s) => s.type("Summarize @docs/file.md he"),
     stock: "open",
     patched: "open",
+    // 7.7.0 also rewrote its settle test, so the menu no longer reopens after
+    // an edit before the mention: the reported bug is gone upstream.
+    clear: { stock: "closed", patched: "closed" },
   },
   {
     label: "Escape",
     run: (s) => s.key("Escape"),
     stock: "closed, handled",
     patched: "closed, handled",
+    // Nothing is open to dismiss, so Escape falls through to the chat handler.
+    clear: { stock: "closed, fell-through", patched: "closed, fell-through" },
   },
   {
     label: "type on: ...hel",
     run: (s) => s.type("Summarize @docs/file.md hel"),
     stock: "open",
     patched: "closed",
+    clear: { stock: "closed", patched: "closed" },
   },
   {
     label: "a new draft: type @",
@@ -690,6 +709,7 @@ const MENTION_STEPS = [
     run: (s) => s.type("@f"),
     stock: "open",
     patched: "closed",
+    clear: { stock: "closed", patched: "closed" },
   },
   {
     label: "a second @ later on the line: @f bar @",
@@ -720,6 +740,46 @@ const MENTION_STEPS = [
     run: (s) => s.key("Escape"),
     stock: "closed, fell-through",
     patched: "closed, fell-through",
+  },
+
+  // The empty-query strand, which is the whole of what this patch still does
+  // on 7.7.0+. Dismissing an empty query records `{at, query: ""}`, and every
+  // later query starts with "", so nothing can reopen the menu at that offset
+  // until the slot is cleared. Deleting the "@" is what should clear it.
+  {
+    label: "a fresh draft: type @",
+    run: (s) => s.type("@"),
+    stock: "open",
+    patched: "open",
+  },
+  {
+    label: "Escape on the empty query",
+    run: (s) => s.key("Escape"),
+    stock: "closed, handled",
+    patched: "closed, handled",
+  },
+  {
+    label: "type on: @f stays closed",
+    run: (s) => s.type("@f"),
+    stock: "open",
+    patched: "closed",
+    clear: { stock: "closed", patched: "closed" },
+  },
+  {
+    label: "delete the @ entirely",
+    run: (s) => s.type(""),
+    stock: "closed",
+    patched: "closed",
+  },
+  {
+    label: "retype the @ at that offset: the menu comes back",
+    run: (s) => s.type("@"),
+    stock: "open",
+    patched: "open",
+    // The one row where 7.7.0+ stock is wrong and the patch is the whole fix:
+    // Kilo records but never clears, so its own recorded empty query strands
+    // the offset and retyping the "@" gets nothing.
+    clear: { stock: "closed", patched: "open" },
   },
 ];
 
@@ -771,11 +831,12 @@ function runMention(test, content) {
     `  (controller ${module_.factory}, signal ${module_.signal}, ${module_.source.length} bytes sliced)`,
   );
   for (const step of MENTION_STEPS) {
+    const want = derived.form === "clear" && step.clear ? step.clear : step;
     const before = step.run(stock);
     const after = step.run(patched);
     check(
-      before === step.stock && after === step.patched,
-      `${step.label}: ${step.stock} -> ${step.patched}`,
+      before === want.stock && after === want.patched,
+      `${step.label}: ${want.stock} -> ${want.patched}`,
       `stock "${before}", patched "${after}"`,
     );
   }

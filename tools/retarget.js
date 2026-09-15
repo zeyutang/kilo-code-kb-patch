@@ -273,8 +273,13 @@ function main() {
         console.log(`        feature: ${JSON.stringify(rule.key)},`);
         console.log(`        original: ${JSON.stringify(result.original)},`);
         console.log(`        patched: ${JSON.stringify(result.patched)},`);
+        // A rule with several live forms describes what the matched form
+        // actually does, which can differ per form: on 7.7.0+ Kilo records the
+        // dismissed mention query itself, so our edit there only clears it.
+        // The rule-level description is the single-form default.
+        const describe = result.description ?? rule.description;
         console.log(
-          `        description: ${JSON.stringify(rule.description(version))},`,
+          `        description: ${JSON.stringify(describe(version))},`,
         );
         console.log("      },");
       }
@@ -283,6 +288,7 @@ function main() {
     const BONUS_ARRAYS = {
       [ATTACH_RULE.key]: "ATTACH_FILE_BUTTONS",
       [MATH_RULE.key]: "MATH_EXTENSIONS",
+      [RAW_MARKDOWN_RULE.key]: "RAW_MARKDOWN_TOGGLES",
     };
     for (const { rule, result } of proposals.filter((p) => p.isBonus)) {
       console.log(

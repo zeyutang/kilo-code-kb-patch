@@ -1,8 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.1.0
 
+- Support Kilo Code 7.7.0 and 7.7.1, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes
+- Re-target the opt-in attach-file `+` button, the opt-in chat math rendering, and the opt-in markdown-source button to 7.7.0 and later
+- On Kilo Code 7.7.0 and later, `Escape` at a permission prompt opens Kilo Code's own box for a denial reason rather than denying at once, and a second `Escape` closes that box. The patch still keeps `Escape` away from the prompt while the chat box has text, and `Shift+Escape` still always reaches it
+- On Kilo Code 7.7.0 and later, Kilo Code itself keeps the `@` mention menu closed while you type on after `Escape`, so the patch now covers only what it still misses: dismissing an empty `@` no longer leaves the menu shut at that spot when you delete the `@` and retype it
+- Fix the opt-in attach-file `+` button on Kilo Code 7.6.0: it was drawn as a wide text button, so it sat too far from the other prompt toolbar icons, and it now matches their size and spacing, as it already did on 7.6.1 and later
 - New opt-in `kiloCodeKbPatch.chatRawMarkdownButton`: adds a button beside **Copy** under the agent's reply that shows the reply's markdown source in place, with a second click for the rendered view
+- Keep all earlier versions' patterns, so this release still applies on older Kilo Code releases
 
 ## 2.0.3
 

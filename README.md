@@ -15,25 +15,30 @@ When a Kilo Code update renames the code these patches target, KB Patch works ou
 
 ### Keyboard patches
 
-| Key                      | Before Patched (native Kilo Code)        | After Patched                                             |
-| ------------------------ | ---------------------------------------- | --------------------------------------------------------- |
-| `Enter`                  | Send / Approve                           | **New line** (approves when the chat box is empty)        |
-| `Cmd/Ctrl+Enter`         | Send / Save                              | **Send / Approve / Save**                                 |
-| `Shift+Enter`            | New line                                 | New line (unchanged)                                      |
-| `Escape`                 | Reject / Abort                           | Reject / Abort **only when the chat box is empty**        |
-| `Escape` (`@` menu open) | Closes the menu until the next keystroke | Closes the menu **and keeps it closed** while you type on |
-| `Shift+Escape`           | Reject / Abort                           | **Reject / Abort** (always)                               |
-| `Up` / `Down`            | Previous / next message at the edges     | **Caret movement only**                                   |
-| `Cmd/Ctrl+Up` / `Down`   | Caret to start / end                     | **Previous / next message**                               |
+| Key                      | Before Patched (native Kilo Code)    | After Patched                                             |
+| ------------------------ | ------------------------------------ | --------------------------------------------------------- |
+| `Enter`                  | Send / Approve                       | **New line** (approves when the chat box is empty)        |
+| `Cmd/Ctrl+Enter`         | Send / Save                          | **Send / Approve / Save**                                 |
+| `Shift+Enter`            | New line                             | New line (unchanged)                                      |
+| `Escape`                 | Deny / Abort                         | Deny / Abort **only when the chat box is empty**          |
+| `Escape` (`@` menu open) | Closes the menu (see below)          | Closes the menu **and keeps it closed** while you type on |
+| `Shift+Escape`           | Deny / Abort                         | **Deny / Abort** (always)                                 |
+| `Up` / `Down`            | Previous / next message at the edges | **Caret movement only**                                   |
+| `Cmd/Ctrl+Up` / `Down`   | Caret to start / end                 | **Previous / next message**                               |
 
 Applies to the chat input, the permission prompt, and the KiloClaw edit/chat panels.
+
+What `Escape` does once it reaches a permission prompt is Kilo Code's own behavior, and it changed in 7.7.0: earlier releases deny straight away, while 7.7.0 and later open a box for a denial reason, which `Escape` closes again.
+The patch decides whether `Escape` reaches the prompt at all, not what happens there.
 
 Native Kilo Code recalls a message when a bare `Up` or `Down` reaches the start or end of what you typed, which is why holding the key can jump away mid-edit.
 Patched, recall moves to `Cmd/Ctrl+Up` / `Down` and works from anywhere in the chat box, and stepping forward past the newest message brings your unsent draft back.
 
 Since Kilo Code 7.5.11 an `@` mention query may contain spaces, so ordinary prose typed after a mention can bring the menu back on every keystroke, `Escape` only closes it until the next key, and `Enter` then replaces your text with the highlighted file.
 Patched, `Escape` dismisses the query you were looking at: the menu stays closed while you type on, and comes back when you edit back into a shorter query or retype the `@`.
-Earlier Kilo Code releases end a query at the first space and need no such patch, which the status view reports as "not needed".
+Kilo Code 7.7.0 adopted most of this, so on that release and later the patch covers only the last part, releasing a dismissal once you delete the `@` it applied to.
+Without that, dismissing an empty `@` leaves the menu shut at that spot however many times you retype the `@`.
+Kilo Code releases before 7.5.11 end a query at the first space and need no such patch, which the status view reports as "not needed".
 
 ### Scrolling
 
@@ -130,7 +135,7 @@ KB Patch never moves the keyboard focus. Because Kilo Code moves focus on its ow
 
 ### Permission prompts
 
-Approve or reject a tool or command. The only surface the patch rewires.
+Approve or deny a tool or command. The only surface the patch rewires.
 
 - Kilo Code does **not** shift focus here: it leaves focus in the chat box and intercepts keys with a document-level listener, so the patch can read the chat box content and route accordingly.
 
@@ -141,10 +146,10 @@ The chat box content decides where each key goes:
 | `Enter`          | Approve        | New line                  |
 | `Space`          | Approve        | Space                     |
 | `Cmd/Ctrl+Enter` | Approve        | Approve                   |
-| `Escape`         | Reject         | Dismiss autocomplete only |
-| `Shift+Escape`   | Reject         | Reject                    |
+| `Escape`         | Deny           | Dismiss autocomplete only |
+| `Shift+Escape`   | Deny           | Deny                      |
 
-Reject and abort use `Shift+Escape` (not `Cmd+Escape`, which is Claude Code's quick-launch shortcut).
+Denying and aborting use `Shift+Escape` (not `Cmd+Escape`, which is Claude Code's quick-launch shortcut).
 
 ### Follow-up questions
 

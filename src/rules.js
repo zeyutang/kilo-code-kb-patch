@@ -243,6 +243,119 @@ const ENTER_SEND_SHAPE = `(${ID})\\((${ID})\\)&&!\\2\\.shiftKey&&\\(\\2\\.preven
 const enterSendBuild = (m) =>
   `${m[1]}(${m[2]})&&(${m[2]}.metaKey||${m[2]}.ctrlKey)&&(${m[2]}.preventDefault(),${m[3]}())`;
 
+// The two live forms of the mention controller, for the `mention-escape` rule
+// below. Each returns a derive result, so an unmatched form reports its own
+// match count and the rule can tell "the shape moved" from "this build is the
+// other generation".
+
+// v7.7.0+: Kilo records the dismissed query itself, so the only edit left is
+// clearing the slot when the "@" it names is gone. The anchor stops at the
+// dead-slot check rather than running on through the settle test, because the
+// slot, the draft text and the close are all bound by then and the settle
+// test's arguments are the volatile part (7.7.0 rewrote them outright). Every
+// symbol the splice writes is inside the span, which is what the 7.4.22
+// aliasing lesson requires.
+function deriveMentionClear(content) {
+  const hits = findAll(
+    content,
+    String.raw`let (${ID})=(${ID})\.substring\(0,(${ID})\),(${ID})=\1\.match\((${ID})\);` +
+      String.raw`if\(!\4\)\{(${ID})\(\);return\}let (${ID})=\4\[1\]\?\?"";` +
+      String.raw`if\((${ID})=\(\4\.index\?\?0\)\+\(/\^\\s/\.test\(\4\[0\]\)\?1:0\),` +
+      String.raw`(${ID})&&\9\.at===\8&&\7\.startsWith\(\9\.query\)\)\{\6\(\);return\}`,
+  );
+  if (hits.length !== 1) return { matches: hits.length };
+  const m = hits[0];
+  const [original, , text, , match, , close, , at, dead] = m;
+  const closeReturn = `if(!${match}){${close}();return}`;
+  if (countIn(original, closeReturn) !== 1) {
+    return {
+      error:
+        "the mention trigger's no-match close is not where the shape expects",
+    };
+  }
+  return {
+    original,
+    patched: original.replace(
+      closeReturn,
+      `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`,
+    ),
+    symbols: { text, match, close, at, dead },
+    form: "clear",
+    description: (v) =>
+      `Mention menu Escape: drops Kilo's recorded @ query once that @ is gone, so deleting and retyping the @ reopens the menu (v${v}+)`,
+  };
+}
+
+// v7.5.11 through 7.6.2: Kilo's Escape closes the menu and records nothing, so
+// both edits ship. onInput and onKeyDown sit next to each other inside the
+// controller, so the anchor runs from onInput's trigger test (binding the dead
+// slot, the "@" offset, the text and the close) through onKeyDown's Escape
+// branch (binding the query accessor and the event). The bare Escape branch is
+// not unique on its own, the slash-command menu has the same one, so the two
+// hops are what make the site identifiable.
+function deriveMentionRecordAndClear(content) {
+  const heads = findAll(
+    content,
+    String.raw`let (${ID})=(${ID})\.substring\(0,(${ID})\)\.match\((${ID})\);` +
+      String.raw`if\(!\1\)\{(${ID})\(\);return\}let (${ID})=\1\[1\]\?\?"";` +
+      String.raw`if\((${ID})=\(\1\.index\?\?0\)\+\(/\^\\s/\.test\(\1\[0\]\)\?1:0\),` +
+      String.raw`(${ID})\(\6,(${ID})\.get\(\7\),(${ID})\(\)\)\)\{\5\(\);return\}` +
+      String.raw`if\((${ID})&&\11\.at===\7&&\6\.startsWith\(\11\.query\)\)\{\5\(\);return\}`,
+  );
+  if (heads.length !== 1) return { matches: heads.length };
+  const head = heads[0];
+  const [, match, text, , , close, , at, , , , dead] = head;
+
+  const tails = findAll(
+    content,
+    String.raw`let (${ID})=(${ID})\(\)\?\?"";return (${ID})\.type==="file-picker"` +
+      String.raw`&&/\\s/\.test\(\1\)&&!(${ID})\(\1\)\?!1:\((${ID})\.preventDefault\(\),` +
+      String.raw`(${ID})&&(${ID})\(\3,\6,(${ID}),(${ID})\),!0\)\}` +
+      String.raw`return \5\.key==="Escape"\?\(\5\.preventDefault\(\),\5\.stopPropagation\(\),` +
+      String.raw`(${ID})\(\),!0\):!1\}`,
+  );
+  if (tails.length !== 1) return { matches: tails.length };
+  const tail = tails[0];
+  const mentionQuery = tail[2];
+  if (tail[10] !== close) {
+    return {
+      error: "onKeyDown's Escape closes with a different function than onInput",
+    };
+  }
+  if (tail.index <= head.index || tail.index - head.index > 4000) {
+    return {
+      error:
+        "onKeyDown's Escape branch is not just after onInput's trigger test",
+    };
+  }
+
+  const original = content.slice(head.index, tail.index + tail[0].length);
+  const closeReturn = `if(!${match}){${close}();return}`;
+  const escapeTail = `${close}(),!0):!1}`;
+  if (countIn(original, closeReturn) !== 1 || !original.endsWith(escapeTail)) {
+    return {
+      error:
+        "the trigger's close or the Escape tail is not where the shape expects",
+    };
+  }
+  const patched =
+    original
+      .replace(
+        closeReturn,
+        `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`,
+      )
+      .slice(0, -escapeTail.length) +
+    `${dead}={at:${at},query:${mentionQuery}()??""},${escapeTail}`;
+  return {
+    original,
+    patched,
+    symbols: { text, match, close, at, dead, mentionQuery, event: tail[5] },
+    form: "record+clear",
+    description: (v) =>
+      `Mention menu Escape: Escape records the dismissed @ query so typing on keeps the menu closed; retyping the @ reopens it (v${v}+)`,
+  };
+}
+
 const RULES = [
   shapeRule({
     key: "chat-input",
@@ -298,87 +411,41 @@ const RULES = [
   // spaces (Kilo-Org/kilocode#13592), so ordinary prose typed after a mention
   // still matches the trigger, and the controller keeps the menu closed only
   // while the query extends the mention it inserted at that exact "@" offset
-  // or a query it already found dead. Escape closes the menu but records
-  // nothing, so the next keystroke re-derives it (Kilo-Org/kilocode#13961).
-  // The edit makes Escape record the dismissed query in the controller's own
-  // dead-query slot, which is what its onInput consults, and clears that slot
-  // once the "@" it named is gone so retyping the "@" gets the menu back.
+  // or a query it already found dead (Kilo-Org/kilocode#13961). Two edits make
+  // that slot behave: Escape has to *record* the dismissed query in it, and
+  // onInput has to *clear* it once the "@" it names is gone, or an empty-query
+  // dismissal strands the offset and retyping the "@" gets nothing.
   //
-  // onInput and onKeyDown sit next to each other inside the controller, so
-  // the anchor runs from onInput's trigger test (which binds the dead slot,
-  // the "@" offset, the text and the close) through onKeyDown's Escape
-  // branch (which binds the query accessor and the event). Every symbol the
-  // splice references is inside it; a build whose Escape branch matched while
-  // its onInput bound those names differently would bind the wrong slot, which
-  // is the 7.4.22 aliasing failure. The bare Escape branch is not unique (the
-  // slash-command menu has the same one), so the two hops are what make it so.
+  // 7.7.0 upstreamed the recording half: Kilo's own Escape branch now writes
+  // `{at,query}` into the slot, its onInput consults the slot before its settle
+  // test rather than after, and its settle test records there too. The clearing
+  // half is still absent, so that release needs one edit where the earlier ones
+  // need two, and shipping the recording edit on top of Kilo's would just
+  // duplicate an assignment. Hence two forms rather than one shape, and the
+  // form that matches decides which edits ship; two forms matching at once is
+  // reported as ambiguous rather than resolved by list order.
   {
     key: "mention-escape",
     file: "webview.js",
     description: (v) =>
-      `Mention menu Escape: Escape records the dismissed @ query so typing on keeps the menu closed; retyping the @ reopens it (v${v}+)`,
+      `Mention menu Escape: a dismissed @ query keeps the menu closed while you type on, and is dropped once that @ is gone so retyping it reopens the menu (v${v}+)`,
     derive(content) {
-      const heads = findAll(
-        content,
-        String.raw`let (${ID})=(${ID})\.substring\(0,(${ID})\)\.match\((${ID})\);` +
-          String.raw`if\(!\1\)\{(${ID})\(\);return\}let (${ID})=\1\[1\]\?\?"";` +
-          String.raw`if\((${ID})=\(\1\.index\?\?0\)\+\(/\^\\s/\.test\(\1\[0\]\)\?1:0\),` +
-          String.raw`(${ID})\(\6,(${ID})\.get\(\7\),(${ID})\(\)\)\)\{\5\(\);return\}` +
-          String.raw`if\((${ID})&&\11\.at===\7&&\6\.startsWith\(\11\.query\)\)\{\5\(\);return\}`,
-      );
-      if (heads.length !== 1) return { matches: heads.length };
-      const head = heads[0];
-      const [, match, text, , , close, , at, , , , dead] = head;
-
-      const tails = findAll(
-        content,
-        String.raw`let (${ID})=(${ID})\(\)\?\?"";return (${ID})\.type==="file-picker"` +
-          String.raw`&&/\\s/\.test\(\1\)&&!(${ID})\(\1\)\?!1:\((${ID})\.preventDefault\(\),` +
-          String.raw`(${ID})&&(${ID})\(\3,\6,(${ID}),(${ID})\),!0\)\}` +
-          String.raw`return \5\.key==="Escape"\?\(\5\.preventDefault\(\),\5\.stopPropagation\(\),` +
-          String.raw`(${ID})\(\),!0\):!1\}`,
-      );
-      if (tails.length !== 1) return { matches: tails.length };
-      const tail = tails[0];
-      const mentionQuery = tail[2];
-      if (tail[10] !== close) {
+      const forms = [
+        deriveMentionClear(content),
+        deriveMentionRecordAndClear(content),
+      ];
+      const live = forms.filter((f) => f && f.original !== undefined);
+      if (live.length > 1) {
         return {
           error:
-            "onKeyDown's Escape closes with a different function than onInput",
+            "two mention-escape forms match this build, so which edits apply would be decided by list order",
         };
       }
-      if (tail.index <= head.index || tail.index - head.index > 4000) {
-        return {
-          error:
-            "onKeyDown's Escape branch is not just after onInput's trigger test",
-        };
-      }
-
-      const original = content.slice(head.index, tail.index + tail[0].length);
-      const closeReturn = `if(!${match}){${close}();return}`;
-      const escapeTail = `${close}(),!0):!1}`;
-      if (
-        countIn(original, closeReturn) !== 1 ||
-        !original.endsWith(escapeTail)
-      ) {
-        return {
-          error:
-            "the trigger's close or the Escape tail is not where the shape expects",
-        };
-      }
-      const patched =
-        original
-          .replace(
-            closeReturn,
-            `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`,
-          )
-          .slice(0, -escapeTail.length) +
-        `${dead}={at:${at},query:${mentionQuery}()??""},${escapeTail}`;
-      return {
-        original,
-        patched,
-        symbols: { text, match, close, at, dead, mentionQuery, event: tail[5] },
-      };
+      if (live.length === 1) return live[0];
+      // Neither form produced a site. Surface the first form's own diagnosis
+      // (a match count or a structural error) rather than a bare zero, since
+      // that is what says whether the shape moved or the hop checks failed.
+      return forms.find((f) => f && f.error) ?? forms[0] ?? { matches: 0 };
     },
   },
 
@@ -495,24 +562,45 @@ const RULES = [
     },
   },
 
+  // The permission dialog's own Escape handler. What Escape *does* there is
+  // Kilo's decision, and it changed in 7.7.0: through 7.6.2 Escape rejected
+  // outright (`dispatch(event,"reject")`), and from 7.7.0 it opens the
+  // deny-with-feedback box instead (`open(event)`, a one-argument call on a
+  // different function). The edit only decides *whether* the handler runs and
+  // reproduces its body verbatim, so the body is captured as a brace-free span
+  // rather than spelled out, the same treatment doc-escape's "nothing to abort"
+  // test gets. Widening there cannot bind a symbol wrongly: every name the
+  // patched text writes is the handler, the event, or inside the span.
   shapeRule({
     key: "perm-escape",
     file: "webview.js",
-    shape: `(${ID})=(${ID})=>\\{if\\(\\2\\.key==="Escape"\\)\\{(${ID})\\(\\2,"reject"\\);return\\}\\}`,
-    names: ["handler", "event", "dispatch"],
+    shape: `(${ID})=(${ID})=>\\{if\\(\\2\\.key==="Escape"\\)\\{([^{}]{0,60}?);return\\}\\}`,
+    names: ["handler", "event", "action"],
     build: (m) =>
-      `${m[1]}=${m[2]}=>{if(${m[2]}.key==="Escape"&&(${m[2]}.shiftKey||!${m[2]}.target?.value?.trim())){${m[3]}(${m[2]},"reject");return}}`,
+      `${m[1]}=${m[2]}=>{if(${m[2]}.key==="Escape"&&(${m[2]}.shiftKey||!${m[2]}.target?.value?.trim())){${m[3]};return}}`,
     description: (v) =>
-      `Permission reject: bare Escape rejects only when textarea empty/whitespace-only; Shift+Escape always rejects (v${v}+)`,
+      `Permission Escape: bare Escape reaches the dialog only when the textarea is empty/whitespace-only; Shift+Escape always does (v${v}+)`,
   }),
 
+  // The permission dialog's approve-on-Enter branch. Kilo hangs extra
+  // conjuncts on this guard as it gains modes that must not approve (7.7.0
+  // added `&&!feedbackOpen()` so Enter inside the deny-feedback box submits the
+  // rejection instead), and the edit has to keep them governing the branches it
+  // adds, not just Kilo's own. So the conjuncts are captured as a span of
+  // `&&!fn()` terms and the disjunction is parenthesised under them; with no
+  // such term the shape emits the unwrapped form the pre-7.7.0 entries ship.
   shapeRule({
     key: "perm-approve",
     file: "webview.js",
-    shape: `if\\((${ID})\\((${ID})\\)\\)\\{(${ID})\\(\\2,"once"\\);return\\}\\}\\};`,
-    names: ["enterCheck", "event", "dispatch"],
-    build: (m) =>
-      `if(${m[1]}(${m[2]})||${m[2]}.key===" "&&!${m[2]}.metaKey&&!${m[2]}.ctrlKey&&!${m[2]}.target?.value?.trim()||${m[2]}.key==="Enter"&&(${m[2]}.metaKey||${m[2]}.ctrlKey)){${m[3]}(${m[2]},"once");return}}};`,
+    shape: `if\\((${ID})\\((${ID})\\)((?:&&!${ID}\\(\\))*)\\)\\{(${ID})\\(\\2,"once"\\);return\\}\\}\\};`,
+    names: ["enterCheck", "event", "extraGuards", "dispatch"],
+    build: (m) => {
+      const ours =
+        `${m[1]}(${m[2]})||${m[2]}.key===" "&&!${m[2]}.metaKey&&!${m[2]}.ctrlKey&&!${m[2]}.target?.value?.trim()` +
+        `||${m[2]}.key==="Enter"&&(${m[2]}.metaKey||${m[2]}.ctrlKey)`;
+      const guard = m[3] ? `(${ours})${m[3]}` : ours;
+      return `if(${guard}){${m[4]}(${m[2]},"once");return}}};`;
+    },
     description: (v) =>
       `Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v${v}+)`,
   }),

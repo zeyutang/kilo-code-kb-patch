@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.1
+
+- Support Kilo Code 7.7.2, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, and permission prompt keys) to their re-minified scopes
+- Re-target the opt-in attach-file `+` button, the opt-in chat math rendering, and the opt-in markdown-source button to 7.7.2 and later, where they were unavailable
+- Keep all earlier versions' patterns, so this release still applies on older Kilo Code releases
+
 ## 2.1.0
 
 - Support Kilo Code 7.7.0 and 7.7.1, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

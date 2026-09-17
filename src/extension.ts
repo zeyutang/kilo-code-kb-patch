@@ -66,10 +66,130 @@ interface FilePatches {
   patches: PatchDef[];
 }
 
+// A patch target Kilo may legitimately stop shipping. Kilo retired KiloClaw in
+// 7.7.3, dropping dist/kiloclaw.js and dist/kiloclaw.css along with the
+// commands and every occurrence of the name, so from that build on the two
+// features that patched that bundle have nothing to patch.
+//
+// That is a fact about the build rather than a broken install or a pattern
+// gone stale, and saying so costs two things otherwise. The status view would
+// show a bare "file not found" where it can instead report those features as
+// "not needed", and the launch fingerprint, which refuses to record an install
+// it cannot fully stat, would never settle: every launch on every 7.7.3
+// install would pay the full ~100 ms check for an answer that cannot change.
+// The variants themselves stay, because 7.7.2 and earlier still ship the file.
+const RETIRED_FILES = new Set(["kiloclaw.js"]);
+
 const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.7.3+ patterns. A pure re-minify of webview.js, in the release
+      //     that retired KiloClaw: Kilo dropped dist/kiloclaw.js and
+      //     dist/kiloclaw.css along with the KiloClaw commands and every
+      //     occurrence of the name, so the two features that patched that
+      //     bundle have no site to patch here (see the kiloclaw.js block
+      //     below, which keeps them for 7.7.2 and earlier). Every patch point
+      //     kept its shape, so tools/lib/rules.js needed no change and all
+      //     eleven rules whose file this build still ships derived cleanly
+      //     from the 7.7.3 vsix on the first run.
+      //
+      //     As on 7.7.2, 2.1.1 derived and applied all eight of these by
+      //     itself, so the keyboard half never broke and the install read
+      //     fully patched. What 7.7.3 broke is again only the three bonuses
+      //     that name closure locals outside their matched span and so stay
+      //     off the derivation path: the attach button, the math extensions
+      //     and the raw-markdown toggle.
+      //
+      //     The churn, and unlike 7.7.2 it covers every webview scope, so no
+      //     keyboard behavior on this build reads off an older entry: chat
+      //     Enter-check tg→g1, event Je→qe and send X_→Sn, with the Escape
+      //     chain's popup pKe→aU, ghost et→tt and busy kn→Cr (goal F and
+      //     store t held). History moved selectionStart Ht→Bt, selectionEnd
+      //     yn→jt, caret Ar→Tn, direction Mr→qn and result sr→Yn, while the
+      //     textarea w, navigator k and text accessor Z held. Mention: text
+      //     $e→ft, match lt→bt, close Oe→Ne, the "@" offset Ne→ze and the
+      //     dead slot Ke→Ue. Permission: in-textarea guard Ke→Ue, event
+      //     ke→he, element-level handler ce→le and the feedback opener Ae→pe,
+      //     while the element arg X, helper Y, bare-Enter check W and dispatch
+      //     ee held. doc-escape moved its event be→ye and nothing else, its
+      //     nothing-to-abort test and store t both holding.
+      //
+      //     Two names changed role outright: 7.7.2's chat busy check kn is
+      //     7.7.3's icon-button component (so it now names the attach ghost
+      //     and the raw-markdown button), and mention's "@" offset Ne is now
+      //     its close call, a rotation inside one scope. The cross-scope
+      //     pairs repeat one letter over for the third release running: qe
+      //     alone names the event of chat-input, chat-escape and chat-history
+      //     (Je in 7.7.2, Ze in 7.7.0), he names all three permission events
+      //     (ke, we before it), and Ue names both the mention dead slot and
+      //     the permission guard (Ke, Ue before it). ---
+      {
+        feature: "chat-input",
+        original: "g1(qe)&&!qe.shiftKey&&(qe.preventDefault(),Sn())",
+        patched: "g1(qe)&&(qe.metaKey||qe.ctrlKey)&&(qe.preventDefault(),Sn())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.7.3+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'qe.key!=="Escape"?!1:aU()?!0:!tt.text()&&!F.active()&&!Cr()?!1:(qe.preventDefault(),qe.stopPropagation(),tt.text()?tt.dismiss():F.active()?F.cancel():t.abort(),!0)',
+        patched:
+          'qe.key!=="Escape"?!1:aU()?!0:!tt.text()&&!F.active()&&(!Cr()||!qe.shiftKey&&qe.target?.value?.trim())?!1:(qe.preventDefault(),qe.stopPropagation(),tt.text()?tt.dismiss():F.active()?F.cancel():t.abort(),!0)',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.7.3+)",
+      },
+      {
+        feature: "mention-escape",
+        original:
+          'let nt=ft.substring(0,Re),bt=nt.match(lU);if(!bt){Ne();return}let Pt=bt[1]??"";if(ze=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),Ue&&Ue.at===ze&&Pt.startsWith(Ue.query)){Ne();return}',
+        patched:
+          'let nt=ft.substring(0,Re),bt=nt.match(lU);if(!bt){Ue&&ft[Ue.at]!=="@"&&(Ue=void 0),Ne();return}let Pt=bt[1]??"";if(ze=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),Ue&&Ue.at===ze&&Pt.startsWith(Ue.query)){Ne();return}',
+        description:
+          "Mention menu Escape: drops Kilo's recorded @ query once that @ is gone, so deleting and retyping the @ reopens the menu (v7.7.3+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if((qe.key==="ArrowUp"||qe.key==="ArrowDown")&&!qe.altKey&&!qe.ctrlKey&&!qe.metaKey&&!qe.shiftKey){let Bt=w?.selectionStart??0,jt=w?.selectionEnd??0;if(Bt!==jt)return;let Tn=Bt,qn=qe.key==="ArrowUp"?"up":"down",Yn=k.navigate(qn,Z(),Tn)',
+        patched:
+          'if((qe.key==="ArrowUp"||qe.key==="ArrowDown")&&(qe.metaKey||qe.ctrlKey)&&!qe.altKey&&!qe.shiftKey){let Bt=w?.selectionStart??0,jt=w?.selectionEnd??0;if(Bt!==jt)return;let Tn=qe.key==="ArrowUp"?0:Z().length,qn=qe.key==="ArrowUp"?"up":"down",Yn=k.navigate(qn,Z(),Tn)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.7.3+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'he.key==="Enter":Oe?!0:Ue?!1:Y(X)',
+        patched:
+          'he.key==="Enter":Oe?!0:Ue?he.target?.value?.trim()?(he.key==="Enter"&&!he.metaKey&&!he.ctrlKey||he.key===" "||he.key==="Escape"&&!he.shiftKey&&!he.ctrlKey):!1:Y(X)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.7.3+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'le=he=>{if(he.key==="Escape"){pe(he);return}}',
+        patched:
+          'le=he=>{if(he.key==="Escape"&&(he.shiftKey||!he.target?.value?.trim())){pe(he);return}}',
+        description:
+          "Permission Escape: bare Escape reaches the dialog only when the textarea is empty/whitespace-only; Shift+Escape always does (v7.7.3+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(W(he)&&!w()){ee(he,"once");return}}};',
+        patched:
+          'if((W(he)||he.key===" "&&!he.metaKey&&!he.ctrlKey&&!he.target?.value?.trim()||he.key==="Enter"&&(he.metaKey||he.ctrlKey))&&!w()){ee(he,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.7.3+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'ye.key!=="Escape"||!t.submitting()&&t.status()==="idle"&&!m()?.active||ye.defaultPrevented||(ye.preventDefault(),t.abort())',
+        patched:
+          'ye.key!=="Escape"||!t.submitting()&&t.status()==="idle"&&!m()?.active||ye.defaultPrevented||!ye.shiftKey&&ye.target?.value?.trim()||(ye.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.7.3+)",
+      },
       // --- v7.7.2+ patterns. A pure re-minify of webview.js, the opposite of
       //     7.7.0: every patch point kept its shape, so tools/lib/rules.js
       //     needed no change and all thirteen rules derived cleanly from the
@@ -1732,6 +1852,8 @@ const PATCHES: FilePatches[] = [
     ],
   },
   {
+    // Kilo ships this file up to 7.7.2 and not after; see RETIRED_FILES for
+    // what its absence means and what it would otherwise cost.
     filename: "kiloclaw.js",
     patches: [
       // --- v7.6.0+ patterns. First kiloclaw re-minify since 7.5.4:
@@ -2030,6 +2152,19 @@ function statusForFile(
   }));
 }
 
+// Every feature a retired file used to carry, in FEATURE_ORDER, all "unneeded".
+// Read off the variants rather than from a second list, so a file that goes
+// away reports exactly the behaviors it was covering.
+function retiredFeatures(
+  patches: PatchDef[],
+): { label: string; state: FeatureState }[] {
+  const intended = new Set(patches.map((p) => p.feature));
+  return FEATURE_ORDER.filter((k) => intended.has(k)).map((k) => ({
+    label: FEATURE_LABELS[k],
+    state: "unneeded" as FeatureState,
+  }));
+}
+
 // Rows in FEATURE_ORDER, whichever derivation they came from.
 function inFeatureOrder<T extends { label: string }>(rows: T[]): T[] {
   const rank = new Map<string, number>(
@@ -2074,7 +2209,16 @@ function computeStatus(distDir: string): {
   for (const fp of PATCHES) {
     const fpath = path.join(distDir, fp.filename);
     if (!fs.existsSync(fpath)) {
-      files.push({ filename: fp.filename, found: false, features: [] });
+      // A file Kilo retired still gets its rows, each reading "not needed":
+      // dropping them would hide which behaviors are inert on this build, and
+      // "missing" would read as a pattern waiting to be re-targeted.
+      files.push({
+        filename: fp.filename,
+        found: false,
+        features: RETIRED_FILES.has(fp.filename)
+          ? retiredFeatures(fp.patches)
+          : [],
+      });
       continue;
     }
     const content = fs.readFileSync(fpath, "utf8");
@@ -2147,10 +2291,13 @@ function statusHtml(
   const sections = files
     .map((f) => {
       let rows: string;
-      if (!f.found) {
-        rows = `<div class="row muted">file not found in dist/</div>`;
-      } else if (f.features.length === 0) {
-        rows = `<div class="row muted">no matching patch points</div>`;
+      // A retired file is absent and still has rows (see RETIRED_FILES), so
+      // the row list decides what to draw and `found` only picks the wording
+      // when there is nothing to list.
+      if (f.features.length === 0) {
+        rows = `<div class="row muted">${
+          f.found ? "no matching patch points" : "file not found in dist/"
+        }</div>`;
       } else {
         rows = f.features
           .map((ft) => {
@@ -2623,6 +2770,30 @@ type AttachButtonDef = WebviewVariant;
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   {
+    // v7.7.3: container Lu→ho, tooltip In→Ln, icon-button hn→kn, controller
+    // h→b and sync oa→St. Insert P, create B, textarea w, setter Y, indexing
+    // accessor a and the glyph "plus" held, and the when-wrapper with its
+    // predicate (pe→me, Xn→On) is captured by the anchor without being named.
+    // Kilo's own mention-menu row, b.selectMention(ao,w,Y,St), still occurs
+    // exactly once and pins all four closure locals, and its sibling
+    // selectSession and selectWorktree rows name the same quadruple; the
+    // textarea w is corroborated by the chat-history rule, which derives it
+    // too. Caption stays the literal "Attach file": prompt.action.attachFile
+    // still scores 0 across all 508 js/json entries of the vsix.
+    //
+    // The 7.6.2 sizing class is closed by reading the bundle, as in 7.7.2:
+    // every ghost-variant call in the rule's 2048-byte window is
+    // B(kn,{icon:"...",variant:"ghost",size:"small" (database, shield,
+    // wand-sparkles, send) with no generic-Button shape there at all, and
+    // function kn(e) provably sets "data-component":"icon-button" with
+    // data-size defaulting to normal, so the injected button differs from its
+    // neighbours in the glyph alone.
+    original:
+      "P(ho,B(me,{get when(){return On()},get children(){return B(Ln,{get value(){return a.status().message||a.label()}",
+    patched:
+      'P(ho,B(Ln,{get value(){return "Attach file"},placement:"top",get children(){return B(kn,{icon:"plus",variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");b.selectMention({type:"file-picker"},w,Y,St)},get"aria-label"(){return "Attach file"}})}}),null),P(ho,B(me,{get when(){return On()},get children(){return B(Ln,{get value(){return a.status().message||a.label()}',
+  },
+  {
     // v7.7.2: container uc→Lu, tooltip Dn→In, icon-button vn→hn, controller
     // b→h, setter Z→Y, sync ia→oa. Insert P, create B, textarea w, indexing
     // accessor a and the glyph "plus" held, and the when-wrapper with its
@@ -3061,6 +3232,13 @@ function reconcileAttachFileButton(extPath: string): boolean {
 // differed and did not, even though they ship distinct bundles.
 const MATH_EXTENSIONS: WebviewVariant[] = [
   {
+    // v7.7.3: the render helper fQ→NQ. Nothing else in the tail anchor moved.
+    original:
+      "renderer(n){return NQ(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      'renderer(n){return NQ(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return NQ(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return NQ(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return NQ(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
+  },
+  {
     // v7.7.2: the render helper cQ→fQ. Nothing else in the tail anchor moved.
     original:
       "renderer(n){return fQ(n.text,{displayMode:!0,throwOnError:!1})}}]});",
@@ -3169,6 +3347,16 @@ function reconcileMathRendering(extPath: string): boolean {
 // this component Solid sets no attributes on, and the block is appended
 // alongside a child Solid's insert placed once and does not track.
 const RAW_MARKDOWN_TOGGLES: WebviewVariant[] = [
+  {
+    // v7.7.3: tooltip In→Ln and icon-button hn→kn, the same two components the
+    // attach button takes, plus Kilo's memo helper at→dt inside the captured
+    // copy-button text. Insert P, footer w, create B, the copy handler f and
+    // the raw-text accessor o all held.
+    original:
+      'P(w,B(Ln,{get value(){return dt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return B(kn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return dt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null)',
+    patched:
+      'P(w,B(Ln,{get value(){return dt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return B(kn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return dt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null),P(w,B(Ln,{value:"Markdown source",placement:"top",gutter:4,get children(){return B(kn,{icon:"code-lines",size:"normal",variant:"ghost","data-slot":"kbp-raw-markdown-toggle","aria-label":"Markdown source","aria-pressed":"false",onMouseDown:_e=>_e.preventDefault(),onClick:_e=>{let _btn=_e.currentTarget,_part=_btn.closest("[data-component=text-part]"),_body=_part&&_part.querySelector("[data-slot=text-part-body]");if(!_body)return;let _pre=_body.querySelector("pre[data-slot=kbp-raw-markdown]");if(_pre){_pre.remove(),_part.removeAttribute("data-kbp-raw-markdown"),_btn.setAttribute("aria-pressed","false");return}_pre=document.createElement("pre"),_pre.setAttribute("data-slot","kbp-raw-markdown"),_pre.textContent=o(),_body.appendChild(_pre),_part.setAttribute("data-kbp-raw-markdown",""),_btn.setAttribute("aria-pressed","true")}})}}),null)',
+  },
   {
     // v7.7.2: tooltip Dn→In and icon-button vn→hn, the same two components the
     // attach button takes, plus Kilo's memo helper rt→at inside the captured
@@ -4909,7 +5097,11 @@ async function runPatch(
       results.push({
         filename: fp.filename,
         applied: [],
-        skipped: ["file not found in dist/"],
+        skipped: [
+          RETIRED_FILES.has(fp.filename)
+            ? "not shipped by this Kilo Code build"
+            : "file not found in dist/",
+        ],
         reverted: [],
         noChanges: true,
       });
@@ -5192,8 +5384,12 @@ function installFingerprint(extPath: string): string | undefined {
       const s = fs.statSync(path.join(extPath, "dist", name));
       parts.push(`${name}:${s.size}:${s.mtimeMs}`);
     } catch {
-      // A file we cannot stat means we cannot claim the install is settled.
-      return undefined;
+      // A file we cannot stat means we cannot claim the install is settled,
+      // unless Kilo has simply stopped shipping it (see RETIRED_FILES). Its
+      // absence is recorded as a value of its own, so the shortcut survives on
+      // such a build and still gives way the moment the file comes back.
+      if (!RETIRED_FILES.has(name)) return undefined;
+      parts.push(`${name}:absent`);
     }
   }
   // The bonus settings decide what the reconcilers would write, so a change to
@@ -5341,6 +5537,7 @@ export function deactivate(): void {}
 // exports, so this has no effect at runtime.
 export const __test = {
   PATCHES,
+  RETIRED_FILES,
   // The offline harness has no extension host, so it supplies its own context
   // to exercise the derivation record that Apply writes and Restore reads.
   setExtensionContext(context: vscode.ExtensionContext | undefined) {

@@ -13,7 +13,8 @@
 // Each rule lands in one of five states:
 //   covered     the derived pattern is already in src/extension.ts, nothing to do
 //   n/a         the feature's gate says this build predates the Kilo behavior
-//               it fixes, and the rule agrees by finding no site
+//               it fixes, and the rule agrees by finding no site, or Kilo no
+//               longer ships the file the rule patches at all
 //   NEW         derived cleanly and not yet present, emitted below for pasting
 //   AMBIGUOUS   0 or >1 matches, so the shape moved or now aliases; needs a human
 //   ERROR       an anchor inside the shape went missing; needs a human
@@ -112,6 +113,16 @@ function main() {
   const run = (rule, isBonus) => {
     const content = bundles[rule.file];
     if (content === undefined) {
+      // A file the extension knows Kilo retired is the same kind of state as a
+      // gated-out feature below: there is nothing on this build to patch, and
+      // nothing for a human to do about it. Any other absent file is a
+      // structural surprise and still needs one.
+      if (test.RETIRED_FILES.has(rule.file)) {
+        console.log(
+          `  n/a        ${rule.key}: this build does not ship ${rule.file}`,
+        );
+        return;
+      }
       console.log(
         `  ERROR      ${rule.key}: ${rule.file} not present in dist/`,
       );

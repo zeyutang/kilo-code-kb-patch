@@ -26,7 +26,7 @@ When a Kilo Code update renames the code these patches target, KB Patch works ou
 | `Up` / `Down`            | Previous / next message at the edges | **Caret movement only**                                   |
 | `Cmd/Ctrl+Up` / `Down`   | Caret to start / end                 | **Previous / next message**                               |
 
-Applies to the chat input, the permission prompt, and the KiloClaw edit/chat panels.
+Applies to the chat input, the permission prompt, and, on Kilo Code 7.7.2 and earlier, the KiloClaw edit/chat panels.
 
 What `Escape` does once it reaches a permission prompt is Kilo Code's own behavior, and it changed in 7.7.0: earlier releases deny straight away, while 7.7.0 and later open a box for a denial reason, which `Escape` closes again.
 The patch decides whether `Escape` reaches the prompt at all, not what happens there.

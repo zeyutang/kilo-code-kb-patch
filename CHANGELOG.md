@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.2
+
+- Support Kilo Code 7.7.3, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes
+- Re-target the opt-in attach-file `+` button, the opt-in chat math rendering, and the opt-in markdown-source button to 7.7.3 and later, where they were unavailable
+- Kilo Code 7.7.3 removes KiloClaw, so **Show Status** now reports its two keyboard rows as **not needed** on that release instead of as a file it could not find; both still apply on 7.7.2 and earlier
+- Keep the startup shortcut working on Kilo Code 7.7.3, which otherwise re-ran the full check on every window launch
+- Keep all earlier versions' patterns, so this release still applies on older Kilo Code releases
+
 ## 2.1.1
 
 - Support Kilo Code 7.7.2, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, and permission prompt keys) to their re-minified scopes

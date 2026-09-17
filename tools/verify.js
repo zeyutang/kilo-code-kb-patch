@@ -266,6 +266,30 @@ function main() {
       );
     }
 
+    // A file Kilo retired keeps its section and reports every behavior it used
+    // to carry as "not needed", which the loop above cannot check because it
+    // only walks the files a build ships. Dropping those rows would hide which
+    // behaviors are inert here, and "missing" would read as a stale pattern.
+    for (const file of status.files.filter((f) => !f.found)) {
+      const declared = new Set(
+        (
+          test.PATCHES.find((f) => f.filename === file.filename)?.patches ?? []
+        ).map((p) => p.feature),
+      );
+      const retired = test.RETIRED_FILES.has(file.filename);
+      check(
+        file.features.length === (retired ? declared.size : 0),
+        retired
+          ? `${file.filename}: not shipped here, and all ${declared.size} of its feature(s) still report`
+          : `${file.filename}: absent and unaccounted for, so it reports no rows`,
+        `got ${file.features.length} row(s)`,
+      );
+      check(
+        file.features.every((ft) => ft.state === "unneeded"),
+        `${file.filename}: every row reads "not needed on this Kilo Code build"`,
+      );
+    }
+
     // A gate and its shape rule are two readings of the same fact, that a
     // build has the Kilo behavior a feature fixes, so the two must agree: a
     // gate that opens where the rule finds no site would report "missing"
@@ -1931,10 +1955,15 @@ function main() {
         `the bundle carries all ${derivedTotal} derived pattern(s)`,
         `found ${onDisk.length}`,
       );
-      check(
-        onDisk.some((p) => p.filename === "kiloclaw.js"),
-        "webview.js's record covers kiloclaw.js too",
-      );
+      // One record in webview.js covers every file, which is only observable
+      // on a build that ships a second one. Kilo dropped kiloclaw.js in 7.7.3,
+      // so there the claim has nothing to demonstrate rather than being false.
+      if (pristine["kiloclaw.js"] !== undefined) {
+        check(
+          onDisk.some((p) => p.filename === "kiloclaw.js"),
+          "webview.js's record covers kiloclaw.js too",
+        );
+      }
       const rawJs = fs.readFileSync(path.join(box, "webview.js"), "utf8");
       // The record is base64 precisely so it does not reproduce the patched
       // text: a second literal copy would break both the guard's
@@ -2128,11 +2157,31 @@ function main() {
           "clearSettled invalidates it (what Restore does)",
         );
 
-        fs.rmSync(path.join(fake, "dist", "kiloclaw.js"));
+        // A file Kilo retired is accounted for by its absence, so the
+        // shortcut survives on a build that does not ship it. Recorded and
+        // re-read here rather than reasoned about, because getting this wrong
+        // silently costs every launch on every such install the full check.
+        const retired = path.join(fake, "dist", "kiloclaw.js");
+        fs.rmSync(retired);
+        test.markSettled(fake);
+        check(
+          test.isSettled(fake) === true,
+          "an install without a retired file still settles",
+        );
+        fs.writeFileSync(retired, "// kiloclaw.js\n");
+        check(
+          test.isSettled(fake) === false,
+          "that file coming back invalidates it",
+        );
+        fs.rmSync(retired);
+
+        // Any other missing file is a state we make no claim about.
+        fs.rmSync(path.join(fake, "dist", "webview.js"));
+        test.clearSettled();
         test.markSettled(fake);
         check(
           test.isSettled(fake) === false,
-          "an install missing a file is never recorded as settled",
+          "an install missing a file we expect is never recorded as settled",
         );
       } finally {
         test.setExtensionContext(undefined);

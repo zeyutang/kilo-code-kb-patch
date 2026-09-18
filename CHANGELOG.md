@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.3
+
+- The opt-in chat math rendering now survives a Kilo Code update that only re-minifies the code it patches, where before it read **unavailable** until the next KB Patch release. The keyboard patches have worked this way since 2.0.0
+- The same change makes it available on Kilo Code releases older than 7.5.6, which never had a pattern of their own
+- The opt-in attach-file `+` button and markdown-source button still wait for a KB Patch release after such an update
+
 ## 2.1.2
 
 - Support Kilo Code 7.7.3, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

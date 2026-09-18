@@ -413,22 +413,47 @@ function runMath(test, content) {
     failures++;
     return;
   }
-  // Exercise what ships, not what the rule rebuilds.
-  const entry = test.MATH_EXTENSIONS.find((m) => content.includes(m.original));
-  if (!entry) {
-    console.log("  FAIL  no shipped math-rendering entry matches this build");
-    failures++;
+  // Exercise what the extension would actually apply here: a shipped entry
+  // where one matches, else what it derives, since 2.2.0 wired this bonus into
+  // apply-time derivation. Before that, a build with no entry could only be
+  // reported as a gap, which said nothing about whether the splice worked
+  // there.
+  const shipped = test.MATH_EXTENSIONS.find((m) =>
+    content.includes(m.original),
+  );
+  const entry = shipped ?? { original: rule.original, patched: rule.patched };
+  if (shipped) {
+    check(
+      shipped.original === rule.original && shipped.patched === rule.patched,
+      "the math entry that applies here is the one the shape rule derives",
+      "shipped and derived text differ; run retarget",
+    );
+  } else {
+    check(
+      test.DERIVABLE_BONUSES.includes("math-rendering"),
+      "no shipped entry matches, so the derived splice is what applies",
+    );
+  }
+
+  // Running the pack means slicing Kilo's marked out of the bundle, which is
+  // located by Kilo's own renderer overrides. Those are absent from 7.4.17, so
+  // there the extensions cannot be exercised at all. That is a limit of this
+  // harness rather than a fact about the splice, and it must not read as a
+  // failure or abort the run: what the patch does there is still admissible,
+  // unique, self-contained and reversible, it is simply untested by this tool.
+  let sliced;
+  try {
+    const instance = markedInstance(content);
+    const module_ = markedModule(content, instance);
+    const helpers = { ...katexHelpers(content), marked: instance };
+    sliced = { instance, module_, helpers };
+  } catch (e) {
+    console.log(
+      `  n/a   this build's markdown pipeline cannot be sliced here: ${e.message}`,
+    );
     return;
   }
-  check(
-    entry.original === rule.original && entry.patched === rule.patched,
-    "the math entry that applies here is the one the shape rule derives",
-    "shipped and derived text differ; run retarget",
-  );
-
-  const instance = markedInstance(content);
-  const module_ = markedModule(content, instance);
-  const helpers = { ...katexHelpers(content), marked: instance };
+  const { instance, module_, helpers } = sliced;
   const stockPack = katexPack(content, entry.original);
   const patchedBundle = content.replace(entry.original, entry.patched);
   const patchedPack = katexPack(patchedBundle, entry.patched);

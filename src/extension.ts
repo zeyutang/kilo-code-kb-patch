@@ -42,8 +42,14 @@ interface ShapeRule {
   derive: (content: string) => DeriveResult;
 }
 
+// A bonus rule carries no description, since the bonus lists it feeds are
+// captioned in the status view rather than in an apply log.
+type BonusRule = Omit<ShapeRule, "description">;
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const RULES: ShapeRule[] = require("./rules").RULES;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const MATH_RULE: BonusRule = require("./rules").MATH_RULE;
 
 interface PatchDef {
   // Which logical behavior this pattern implements. Declared rather than
@@ -3143,21 +3149,15 @@ function matchingVariant(
   );
 }
 
-// Apply or remove one opt-in edit in Kilo's webview bundle to match its
-// setting. Returns true only when the file actually changed. "Already patched"
-// is tested before "is pristine", because the attach button's patched text
-// contains its original as a suffix. Fails safe: a missing bundle, or a site a
-// future Kilo has re-minified past every known variant, is a silent no-op.
-function reconcileVariant(
-  extPath: string,
-  variants: WebviewVariant[],
+// Which way a reconcile has to move one variant, given the bytes on disk: the
+// text to replace and what to put there, or nothing when the file already
+// agrees with the setting. "Already patched" is tested before "is pristine",
+// because the attach button's patched text contains its original as a suffix.
+function variantEdit(
+  content: string,
+  variant: WebviewVariant,
   enabled: boolean,
-): boolean {
-  const webviewPath = path.join(extPath, "dist", "webview.js");
-  if (!fs.existsSync(webviewPath)) return false;
-  const content = fs.readFileSync(webviewPath, "utf8");
-  const variant = matchingVariant(content, variants);
-  if (!variant) return false;
+): { from: string; to: string } | undefined {
   const isPatched = content.includes(variant.patched);
   // An older form of this variant is an edit that is present but out of date.
   // It must be rewritten in place, never treated as pristine, or enabling would
@@ -3165,14 +3165,46 @@ function reconcileVariant(
   const stale = isPatched
     ? undefined
     : variant.previous?.find((p) => content.includes(p));
-  if (enabled === isPatched && !stale) return false;
+  if (enabled === isPatched && !stale) return undefined;
+  return {
+    from: stale ?? (enabled ? variant.original : variant.patched),
+    to: enabled ? variant.patched : variant.original,
+  };
+}
 
-  const from = stale ?? (enabled ? variant.original : variant.patched);
-  const to = enabled ? variant.patched : variant.original;
-  const updated = content.replace(from, to);
+// The write half of a reconcile, given bytes the caller already has. Split from
+// the read because the bundle is 21 MB and reading it twice on the path every
+// activation and every settings change takes is the cost trap this codebase
+// keeps re-learning.
+function writeVariantEdit(
+  webviewPath: string,
+  content: string,
+  variant: WebviewVariant,
+  enabled: boolean,
+): boolean {
+  const edit = variantEdit(content, variant, enabled);
+  if (!edit) return false;
+  const updated = content.replace(edit.from, edit.to);
   if (updated === content) return false;
   fs.writeFileSync(webviewPath, updated, "utf8");
   return true;
+}
+
+// Apply or remove one opt-in edit in Kilo's webview bundle to match its
+// setting. Returns true only when the file actually changed. Fails safe: a
+// missing bundle, or a site a future Kilo has re-minified past every known
+// variant, is a silent no-op.
+function reconcileVariant(
+  extPath: string,
+  variants: WebviewVariant[],
+  enabled: boolean,
+): boolean {
+  const webviewPath = path.join(extPath, "dist", CHAT_SCRIPT_FILE);
+  if (!fs.existsSync(webviewPath)) return false;
+  const content = fs.readFileSync(webviewPath, "utf8");
+  const variant = matchingVariant(content, variants);
+  if (!variant) return false;
+  return writeVariantEdit(webviewPath, content, variant, enabled);
 }
 
 function matchingAttachFileButton(
@@ -3315,8 +3347,57 @@ function matchingMathExtension(content: string): WebviewVariant | undefined {
   return matchingVariant(content, MATH_EXTENSIONS);
 }
 
-function reconcileMathRendering(extPath: string): boolean {
-  return reconcileVariant(extPath, MATH_EXTENSIONS, chatMathRenderingEnabled());
+// The one bonus that falls back to working the splice out from the build (see
+// DERIVABLE_BONUSES), so a Kilo release that only re-minified this site keeps
+// rendering `$...$` instead of waiting for a kb-patch release.
+//
+// A reviewed variant wins wherever one matches, as everywhere else: a build
+// someone has tested gets the bytes that were tested, and there is then
+// nothing to record. The derived path is reached only when no shipped variant
+// does, and it writes the record in the same write as the edit, because an
+// edit this bundle carries and nothing can name is the one state Restore
+// cannot undo.
+function reconcileMathRendering(
+  extPath: string,
+  // Passed in on the restore path, which rewrites the core files (dropping the
+  // record block) before this runs, so reading it here would be too late.
+  record?: DerivedPatch[],
+): boolean {
+  const enabled = chatMathRenderingEnabled();
+  const webviewPath = path.join(extPath, "dist", CHAT_SCRIPT_FILE);
+  if (!fs.existsSync(webviewPath)) return false;
+  const content = fs.readFileSync(webviewPath, "utf8");
+  const shipped = matchingMathExtension(content);
+  if (shipped) return writeVariantEdit(webviewPath, content, shipped, enabled);
+
+  const known = record ?? readDerivedRecord(content);
+  const remembered = recordedBonus(known, "math-rendering", content);
+  // Deriving is for turning the bonus on. With the setting off and nothing
+  // remembered, there is no edit of ours here to take away.
+  const variant =
+    remembered ??
+    (enabled ? deriveBonus("math-rendering", content) : undefined);
+  if (!variant) return false;
+  const edit = variantEdit(content, variant, enabled);
+  if (!edit) return false;
+  const updated = content.replace(edit.from, edit.to);
+  if (updated === content) return false;
+
+  // Enabling records the derivation, disabling takes it out, and either way
+  // whatever else the record holds is carried over untouched. Filtered by
+  // feature rather than by identity so the result holds one entry for this
+  // bonus whatever the record arrived with.
+  const rest = known.filter((p) => p.feature !== "math-rendering");
+  const next = enabled ? [...rest, variant] : rest;
+  const written = withDerivedRecord(updated, next);
+  // Removing our own edit puts Kilo's bytes back, so only the adding direction
+  // has to earn the write: it must have landed exactly once, and the assembled
+  // bundle must still parse.
+  if (enabled && !derivedGuard(CHAT_SCRIPT_FILE, [variant])(written)) {
+    return false;
+  }
+  fs.writeFileSync(webviewPath, written, "utf8");
+  return true;
 }
 
 // --- Bonus raw-markdown toggle ----------------------------------------------
@@ -4512,7 +4593,13 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   let math: BonusState = "off";
   if (chatMathRenderingEnabled()) {
     const content = read(path.join(extPath, "dist", "webview.js"));
-    const variant = matchingMathExtension(content);
+    // A derived splice is named by the record rather than by a shipped
+    // variant, and the record lives in this same file, so reading it costs
+    // nothing extra here. Without this the one bonus that can derive would
+    // report "unavailable" on exactly the builds where it is working.
+    const variant =
+      matchingMathExtension(content) ??
+      recordedBonus(readDerivedRecord(content), "math-rendering", content);
     math = !variant
       ? "unavailable"
       : content.includes(variant.patched) && chatCssApplied(extPath, "math")
@@ -4633,13 +4720,58 @@ const DERIVABLE: readonly FeatureKey[] = [
   "kiloclaw-chat",
 ];
 
+// The bonus splices are held to the same bar, and the math extensions are the
+// one that clears it: the only symbols that edit names are the renderer
+// argument and the render helper, both of which sit inside the text the rule
+// matched, so it cannot bind something this build spells differently
+// elsewhere. The other two name a symbol from outside their span (the attach
+// button five, the raw-markdown toggle its raw-text accessor) and stay on
+// reviewed literals, where retarget's MISMATCH check puts a human in the way.
+//
+// Worth knowing before adding to this list: `admissible` tests self-containment
+// with `includes`, which is a *substring* test, so a one-character name passes
+// whenever it happens to sit inside a longer word in the span. The
+// raw-markdown accessor `o` passes that way while failing the real property,
+// which is why this list is written by hand rather than computed.
+const DERIVABLE_BONUSES = ["math-rendering"] as const;
+type DerivedBonusKey = (typeof DERIVABLE_BONUSES)[number];
+
+const BONUS_RULES: Record<DerivedBonusKey, BonusRule> = {
+  "math-rendering": MATH_RULE,
+};
+
+// The reviewed variants for each derivable bonus, which are what a derivation
+// defers to and what eventually retires a recorded one.
+const BONUS_VARIANTS: Record<DerivedBonusKey, WebviewVariant[]> = {
+  "math-rendering": MATH_EXTENSIONS,
+};
+
+// Text that only the bonus's own patched form contains, checked before its rule
+// is allowed to run. This is not belt-and-braces: the math patch appends
+// extensions whose last renderer ends in exactly the bytes the rule anchors
+// on, so deriving against a bundle this patch already wrote would match the
+// tail of its own injection and splice a second copy inside the first.
+const DERIVED_BONUS_MARKERS: Record<DerivedBonusKey, string> = {
+  "math-rendering": 'name:"kbpKatexInlineDollar"',
+};
+
+// One derivation, recorded in the bundle it patches. `feature` also carries the
+// derivable bonuses, which is what lets Restore reverse a bonus edit no
+// shipped entry names, and what makes "already patched by derivation"
+// recognizable on the next launch.
 interface DerivedPatch {
-  feature: FeatureKey;
+  feature: FeatureKey | DerivedBonusKey;
   filename: string;
   original: string;
   patched: string;
   description: string;
 }
+
+// A recorded derivation of a core patch, which is the only kind the core
+// apply/status path may be handed. Stated as a type so that handing it a bonus
+// entry is a compile error rather than an opt-in edit applied to someone who
+// never asked for it.
+type DerivedCorePatch = DerivedPatch & { feature: FeatureKey };
 
 // Derivations are recorded in the bundle they patch, as one more appended
 // block, so the record cannot be separated from the thing it describes: it
@@ -4692,7 +4824,7 @@ function readDerivedRecord(js: string): DerivedPatch[] {
   }
 }
 
-function asPatchDef(p: DerivedPatch): PatchDef {
+function asPatchDef(p: DerivedCorePatch): PatchDef {
   return {
     feature: p.feature,
     original: p.original,
@@ -4701,19 +4833,82 @@ function asPatchDef(p: DerivedPatch): PatchDef {
   };
 }
 
-// The recorded derivations that apply to one file, keeping only those the file
-// still carries the text for, so a record that outlives what it describes is
-// inert rather than wrong.
+function isFeatureKey(key: string): key is FeatureKey {
+  return (FEATURE_ORDER as readonly string[]).includes(key);
+}
+
+function isCorePatch(p: DerivedPatch): p is DerivedCorePatch {
+  return isFeatureKey(p.feature);
+}
+
+// Whether a record entry still describes something this file carries. A record
+// that outlives what it describes is inert rather than wrong.
+function stillApplies(p: DerivedPatch, content: string): boolean {
+  return content.includes(p.patched) || content.includes(p.original);
+}
+
+// The recorded *core* derivations for one file. Bonus entries are filtered out
+// here rather than at each call site, because every caller feeds the core
+// apply/status path, which applies what it is given unconditionally: a bonus
+// entry leaking in would splice an opt-in edit into a build whose owner never
+// asked for it. `recordedBonus` is the door bonus entries come through.
 function recordedFor(
   record: DerivedPatch[],
   filename: string,
   content: string,
-): DerivedPatch[] {
+): DerivedCorePatch[] {
   return record.filter(
-    (p) =>
-      p.filename === filename &&
-      (content.includes(p.patched) || content.includes(p.original)),
+    (p): p is DerivedCorePatch =>
+      isCorePatch(p) && p.filename === filename && stillApplies(p, content),
   );
+}
+
+// The recorded derivation for one bonus, if this bundle still carries it.
+function recordedBonus(
+  record: DerivedPatch[],
+  key: DerivedBonusKey,
+  content: string,
+): DerivedPatch | undefined {
+  return record.find(
+    (p) =>
+      p.feature === key &&
+      p.filename === CHAT_SCRIPT_FILE &&
+      stillApplies(p, content),
+  );
+}
+
+// The bonus entries a rewritten record has to carry over: those whose edit is
+// still here and which no shipped variant has caught up to. Written for Apply,
+// which rewrites the whole record while the bonus reconcilers that own these
+// entries run outside it.
+function bonusDerivationsToKeep(
+  record: DerivedPatch[],
+  distDir: string,
+): DerivedPatch[] {
+  if (!record.some((p) => !isFeatureKey(p.feature))) return [];
+  let content: string;
+  try {
+    content = fs.readFileSync(path.join(distDir, CHAT_SCRIPT_FILE), "utf8");
+  } catch {
+    return [];
+  }
+  // Walks the record rather than the known bonuses, so an entry written by a
+  // newer kb-patch for a bonus this build has never heard of is carried over
+  // instead of dropped. Dropping it would leave that edit on disk with nothing
+  // able to name it, which is the one state Restore cannot undo, and a
+  // downgrade is the ordinary way to arrive there.
+  return record.filter((p) => {
+    if (isFeatureKey(p.feature) || !stillApplies(p, content)) return false;
+    const variants = BONUS_VARIANTS[p.feature as DerivedBonusKey];
+    if (!variants) return true;
+    // A reviewed variant describing the same edit byte-for-byte makes the
+    // entry redundant: the bonus reconciler recognizes those bytes on its own
+    // from here, and keeping it would leave this install carrying a record
+    // block a freshly applied one does not have.
+    return !variants.some(
+      (v) => v.original === p.original && v.patched === p.patched,
+    );
+  });
 }
 
 // A feature is unresolved when nothing known names a site for it in this
@@ -4814,11 +5009,14 @@ function deriveFor(
   // second pass over every stale variant, which on an unrecognized build is
   // the single most expensive thing here.
   wantedFeatures?: Set<FeatureKey>,
-): DerivedPatch[] {
+  // Core only, by construction: the loop below walks RULES filtered by
+  // DERIVABLE, which is typed against FEATURE_ORDER. A bonus derivation comes
+  // from deriveBonus and goes nowhere near the core patch set.
+): DerivedCorePatch[] {
   const wanted = wantedFeatures ?? unresolvedFeatures(content, known);
   if (wanted.size === 0) return [];
 
-  const found: DerivedPatch[] = [];
+  const found: DerivedCorePatch[] = [];
   for (const rule of RULES) {
     if (rule.file !== filename) continue;
     if (!DERIVABLE.includes(rule.key as FeatureKey)) continue;
@@ -4849,6 +5047,27 @@ function deriveFor(
   // Whether the assembled file parses is checked on the bytes applyPatches is
   // about to write, so that assembly happens once. See derivedGuard.
   return found;
+}
+
+// One bonus splice worked out from the build, for a bonus whose rule is
+// self-contained (see DERIVABLE_BONUSES). Same admissibility bar as a core
+// derivation, plus the marker check that keeps the rule away from bytes this
+// patch already wrote. The caller still has to prove the assembled file parses
+// and that the edit landed once, which derivedGuard does.
+function deriveBonus(
+  key: DerivedBonusKey,
+  content: string,
+): DerivedPatch | undefined {
+  if (content.includes(DERIVED_BONUS_MARKERS[key])) return undefined;
+  const edit = admissible(BONUS_RULES[key], content);
+  if (!edit) return undefined;
+  return {
+    feature: key,
+    filename: CHAT_SCRIPT_FILE,
+    original: edit.original,
+    patched: edit.patched,
+    description: `${key} [derived]`,
+  };
 }
 
 // The gate applyPatches runs before writing a file any derivation touched: the
@@ -5116,9 +5335,20 @@ async function runPatch(
 
   // Apply keeps every derivation still doing a job and adds the new ones;
   // Restore keeps none, so the block goes with the edits.
+  //
+  // A derived bonus splice is recorded here too, and this write would drop it
+  // otherwise: the bonus reconcilers run outside runPatch (from activation and
+  // from a settings change), so on Apply its entry has to be carried across
+  // rather than recomputed, or the edit is left on disk with nothing naming
+  // it. A shipped variant that now describes the same edit byte-for-byte
+  // retires the entry, which is the same convergence patchSetFor applies to
+  // the core ones.
   const nextRecord =
     mode === "apply"
-      ? plans.flatMap((p) => [...p.remembered, ...p.derived])
+      ? [
+          ...bonusDerivationsToKeep(record, distDir),
+          ...plans.flatMap((p) => [...p.remembered, ...p.derived]),
+        ]
       : [];
   const recordWriter = (filename: string) =>
     filename === CHAT_SCRIPT_FILE
@@ -5198,7 +5428,10 @@ async function runPatch(
         manifestChanged = true;
         reverted.title = true;
       }
-      if (reconcileMathRendering(extPath)) {
+      // `record` as read at the top of this run: the core restore above has
+      // already rewritten webview.js without its record block, so a derived
+      // math splice could not be named from the file any more.
+      if (reconcileMathRendering(extPath, record)) {
         bonusReverted++;
         reverted.math = true;
       }
@@ -5561,6 +5794,10 @@ export const __test = {
   MATH_EXTENSIONS,
   matchingMathExtension,
   reconcileMathRendering,
+  DERIVABLE_BONUSES,
+  deriveBonus,
+  recordedBonus,
+  bonusDerivationsToKeep,
   RAW_MARKDOWN_TOGGLES,
   matchingRawMarkdownToggle,
   reconcileRawMarkdownToggle,

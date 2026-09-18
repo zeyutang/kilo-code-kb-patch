@@ -671,18 +671,33 @@ function main() {
         'the block reads "patched" in the bundle\'s rows',
         `got "${jsRow()}"`,
       );
+      // The core blocks have to come through a bonus toggle intact. Their
+      // position is not part of that: on a build where the math bonus derives,
+      // its record block is appended by that write and so lands after them,
+      // where an Apply puts it before them. Both orders parse, both read
+      // patched, and both restore to pristine (asserted below and in the
+      // derived-math section), so the invariant here is that the block is
+      // still there and still whole, not where in the tail it sits.
+      const coreBlocksWhole = () =>
+        test.CHAT_SCRIPT_CORE.every(
+          (key) =>
+            countOccurrences(
+              scriptOn(),
+              test.chatScriptBlock(key, pristineJs),
+            ) === 1,
+        );
       shim.setConfig({ addAttachFileButton: true, chatMathRendering: true });
       test.reconcileAttachFileButton(sandbox);
       test.reconcileMathRendering(sandbox);
       check(
-        scriptOn().endsWith(coreTail()) && jsRow() === "patched",
+        coreBlocksWhole() && jsRow() === "patched",
         "enabling the bundle bonuses leaves the block in place",
       );
       shim.setConfig({});
       test.reconcileAttachFileButton(sandbox);
       test.reconcileMathRendering(sandbox);
       check(
-        scriptOn().endsWith(coreTail()) && jsRow() === "patched",
+        coreBlocksWhole() && jsRow() === "patched",
         "disabling them does too",
       );
 
@@ -1126,15 +1141,225 @@ function main() {
         "re-enabling is a no-op",
       );
     } else {
+      // Since 2.2.0 "no shipped entry" is the derived path rather than a dead
+      // end, so what enabling does here depends on whether this build's own
+      // bytes can supply the splice. What that path writes is asserted in the
+      // next section; this one only has to agree with the row.
+      const derivable =
+        test.deriveBonus("math-rendering", beforeMath) !== undefined;
       check(
-        test.reconcileMathRendering(sandbox) === false,
-        "no variant for this build: enabling changes nothing",
+        test.reconcileMathRendering(sandbox) === derivable,
+        derivable
+          ? "no shipped entry: enabling applies the derived splice"
+          : "no shipped entry and nothing to derive: enabling changes nothing",
       );
+      const wanted = derivable ? "on" : "unavailable";
       check(
-        mathRow() === "unavailable",
-        'bonus reports "unavailable"',
+        mathRow() === wanted,
+        `bonus reports "${wanted}"`,
         `got "${mathRow()}"`,
       );
+    }
+
+    // The math splice is the one bonus a build's own bytes can supply
+    // (DERIVABLE_BONUSES), so the case worth proving is the one no shipped
+    // variant answers: a future Kilo that re-minified only this site. The
+    // reviewed variant is withheld to make this build look like that one, and
+    // what the derivation writes is then held against the bytes that variant
+    // would have written. A separate copy of the bundle, because everything
+    // here has to start from pristine.
+    console.log("\nmath rendering derived (the release that need not happen)");
+    {
+      const shippedMath = test.matchingMathExtension(
+        pristine[test.CHAT_SCRIPT_FILE],
+      );
+      const keptMath = [...test.MATH_EXTENSIONS];
+      const box = path.join(sandbox, "derived-math");
+      fs.mkdirSync(path.join(box, "dist"), { recursive: true });
+      for (const name of [test.CHAT_SCRIPT_FILE, test.CHAT_STYLE_FILE]) {
+        if (pristine[name] !== undefined) {
+          fs.writeFileSync(path.join(box, "dist", name), pristine[name]);
+        }
+      }
+      const js = () =>
+        fs.readFileSync(path.join(box, "dist", test.CHAT_SCRIPT_FILE), "utf8");
+      const mathDerivedRow = () =>
+        test.computeBonusStatus(box).find((b) => b.label.includes("math"))
+          ?.state;
+      const recordNow = () => test.readDerivedRecordAt(path.join(box, "dist"));
+      const entry = () =>
+        recordNow().find((p) => p.feature === "math-rendering");
+
+      test.MATH_EXTENSIONS.splice(
+        0,
+        test.MATH_EXTENSIONS.length,
+        ...keptMath.filter((v) => v !== shippedMath),
+      );
+      shim.setConfig({ chatMathRendering: true });
+      try {
+        check(
+          test.matchingMathExtension(js()) === undefined,
+          "with its variant withheld, no shipped pattern answers for this build",
+        );
+        const derived = test.deriveBonus("math-rendering", js());
+        // Keyed on whether this build's bytes can supply the splice, not on
+        // whether a variant was ever written for it. Those differ: the shipped
+        // list starts at 7.5.6 because that is when the bonus was added, while
+        // the rule reaches every build back to 7.4.17, and the extensions
+        // render there too (tools/behavior.js runs them against 7.5.0's own
+        // marked). A build with no katex pack to extend is the real floor.
+        if (derived === undefined) {
+          check(
+            shippedMath === undefined,
+            "no katex pack here, so nothing derives and nothing shipped either",
+          );
+        } else if (check(true, "the splice derives from the build")) {
+          // Only where this release reviewed a variant is there something to
+          // hold the derivation against. Where there is, they must agree.
+          if (shippedMath !== undefined) {
+            check(
+              derived.original === shippedMath.original &&
+                derived.patched === shippedMath.patched,
+              "byte-identical to the variant this release reviewed and ships",
+            );
+          }
+          check(
+            test.reconcileMathRendering(box),
+            "enabling applies the derived splice",
+          );
+          const after = js();
+          check(
+            countOccurrences(after, 'name:"kbpKatexInlineDollar"') === 1 &&
+              countOccurrences(after, 'name:"kbpKatexBlockBracket"') === 1 &&
+              countOccurrences(after, 'name:"kbpKatexInlineBracket"') === 1,
+            "exactly one copy of each added extension",
+          );
+          check(
+            after.includes('{name:"doubleKatexBlock",level:"block"') &&
+              after.includes('{name:"doubleKatexInline",level:"inline"'),
+            "Kilo's own extensions survive the splice",
+          );
+          try {
+            new vm.Script(after, { filename: test.CHAT_SCRIPT_FILE });
+            check(true, "the patched bundle parses");
+          } catch (e) {
+            check(false, "the patched bundle parses", String(e.message));
+          }
+          // Recorded, because nothing shipped can name this edit: without the
+          // record Restore reverts nothing and the next launch derives again.
+          check(
+            entry() !== undefined &&
+              entry().original === derived.original &&
+              entry().patched === derived.patched,
+            "the bundle records the derivation",
+          );
+          check(
+            test
+              .recordedFor(recordNow(), test.CHAT_SCRIPT_FILE, after)
+              .every((p) => p.feature !== "math-rendering"),
+            "and keeps it out of the core patch set, which applies unconditionally",
+          );
+          // Apply rewrites the whole record, and the reconciler that owns this
+          // entry runs outside it, so the entry has to survive that write or
+          // the edit is left on disk with nothing naming it.
+          check(
+            test
+              .bonusDerivationsToKeep(recordNow(), path.join(box, "dist"))
+              .some((p) => p.feature === "math-rendering"),
+            "Apply carries the entry across its rewrite of the record",
+          );
+          // A record written by a newer kb-patch names bonuses this build has
+          // never heard of, which a downgrade is the ordinary way to meet.
+          // Those are carried over too: dropping one would leave its edit on
+          // disk with nothing able to name it, the one state Restore cannot
+          // undo.
+          check(
+            test.bonusDerivationsToKeep(
+              [{ ...derived, feature: "a-bonus-from-a-later-release" }],
+              path.join(box, "dist"),
+            ).length === 1,
+            "and carries over an entry for a bonus it does not know",
+          );
+          // Until a release ships the variant, which is the retarget: the
+          // entry is then redundant and goes, the same convergence patchSetFor
+          // applies to a core derivation. Only checkable where this release
+          // does ship one; on a build older than the bonus itself there is no
+          // reviewed variant to converge on and the entry rightly stays.
+          if (shippedMath !== undefined) {
+            test.MATH_EXTENSIONS.splice(
+              0,
+              test.MATH_EXTENSIONS.length,
+              ...keptMath,
+            );
+            check(
+              test.bonusDerivationsToKeep(recordNow(), path.join(box, "dist"))
+                .length === 0,
+              "and retires it once a shipped variant describes the same edit",
+            );
+            test.MATH_EXTENSIONS.splice(
+              0,
+              test.MATH_EXTENSIONS.length,
+              ...keptMath.filter((v) => v !== shippedMath),
+            );
+          }
+          test.reconcileChatStyle(box);
+          check(
+            mathDerivedRow() === "on",
+            'the bonus reports "on" rather than "unavailable"',
+            `got "${mathDerivedRow()}"`,
+          );
+          check(
+            test.reconcileMathRendering(box) === false,
+            "re-enabling is a no-op",
+          );
+          // The guard that matters most here. This patch appends extensions
+          // whose last renderer ends in exactly the bytes the rule anchors on,
+          // so a second derivation would match the tail of its own injection
+          // and splice a copy inside the first.
+          check(
+            test.deriveBonus("math-rendering", after) === undefined,
+            "a second derivation against the patched bundle finds nothing",
+          );
+          // Restore's ordering: the core files are rewritten first, taking the
+          // record block with them, so the reconcile has to be handed the
+          // record that was read before that write.
+          const stripped = test.stripChatScript(after);
+          fs.writeFileSync(
+            path.join(box, "dist", test.CHAT_SCRIPT_FILE),
+            stripped,
+          );
+          check(
+            test.readDerivedRecordAt(path.join(box, "dist")).length === 0,
+            "with the block gone the file names no derivation",
+          );
+          shim.setConfig({ chatMathRendering: false });
+          check(
+            test.reconcileMathRendering(box, [derived]) &&
+              js() === pristine[test.CHAT_SCRIPT_FILE],
+            "and the passed-in record still reverses the edit, byte for byte",
+          );
+          // Then the ordinary path: apply again, turn it off with the record
+          // where it lives, and the entry goes with the edit.
+          shim.setConfig({ chatMathRendering: true });
+          test.reconcileMathRendering(box);
+          shim.setConfig({ chatMathRendering: false });
+          check(
+            test.reconcileMathRendering(box) && entry() === undefined,
+            "turning it off removes the edit and its record entry",
+          );
+          check(
+            js() === pristine[test.CHAT_SCRIPT_FILE],
+            "leaving the bundle as Kilo shipped it",
+          );
+        }
+      } finally {
+        test.MATH_EXTENSIONS.splice(
+          0,
+          test.MATH_EXTENSIONS.length,
+          ...keptMath,
+        );
+        shim.setConfig({ addAttachFileButton: true, chatMathRendering: true });
+      }
     }
 
     // The raw-markdown toggle has the same "no variant for this build is a

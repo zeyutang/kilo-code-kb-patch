@@ -33,6 +33,7 @@ const {
 } = require("./lib/bundle");
 const {
   RULES,
+  ATTACH_RULE,
   RAW_MARKDOWN_RULE,
   PROBES,
   longestLiteral,
@@ -96,6 +97,77 @@ class StubElement {
     }
     return null;
   }
+}
+
+// Runs the attach button a patched bundle carries, the same way the toggle's
+// handler is run below: the inserted text itself is evaluated against lazy
+// stubs, bound by the names the rule read off this build, so what is asserted
+// is the button that ships rather than a copy of it. The edit is the button
+// followed by the anchor it was inserted before, and the anchor is cut
+// mid-expression, so only the button half is evaluated.
+//
+// Returns what one click did for each draft, or an error string.
+function clickAttachButton(edit, symbols) {
+  if (!edit.patched.endsWith(edit.original))
+    return "the edit is not an insertion";
+  const button = edit.patched.slice(0, -edit.original.length).replace(/,$/, "");
+  const calls = [];
+  const textarea = {
+    value: "",
+    selectionStart: 0,
+    focus: () => calls.push("focus"),
+  };
+  const controller = {
+    selectMention: (...args) => calls.push({ selectMention: args }),
+  };
+  const setter = () => {};
+  const sync = () => {};
+  const inserted = [];
+  const context = {
+    [symbols.insert]: (parent, node) => inserted.push({ parent, node }),
+    [symbols.create]: (component, props) => ({ component, props }),
+    [symbols.tooltip]: "tooltip",
+    [symbols.ghost]: "icon-button",
+    [symbols.container]: "toolbar",
+    [symbols.controller]: controller,
+    [symbols.textarea]: textarea,
+    [symbols.setter]: setter,
+    [symbols.sync]: sync,
+    document: {
+      execCommand: (command, ui, text) => calls.push({ command, text }),
+    },
+  };
+  try {
+    vm.runInNewContext(button, context);
+  } catch (e) {
+    return `the button text does not run: ${e.message}`;
+  }
+  if (inserted.length !== 1 || inserted[0].parent !== "toolbar") {
+    return `expected one insert into the toolbar, got ${inserted.length}`;
+  }
+  const tip = inserted[0].node;
+  const iconButton = tip?.props?.children;
+  if (tip?.component !== "tooltip" || iconButton?.component !== "icon-button") {
+    return "the button is not the toolbar's tooltip-wrapped icon-button";
+  }
+  const results = [];
+  for (const draft of ["", "hello", "hello "]) {
+    calls.length = 0;
+    textarea.value = draft;
+    textarea.selectionStart = draft.length;
+    iconButton.props.onClick();
+    results.push({ draft, calls: [...calls] });
+  }
+  return {
+    label: tip.props.value,
+    ariaLabel: iconButton.props["aria-label"],
+    icon: iconButton.props.icon,
+    results,
+    controller,
+    textarea,
+    setter,
+    sync,
+  };
 }
 
 let failures = 0;
@@ -1006,35 +1078,94 @@ function main() {
       );
     }
 
-    // The bonus only ships variants for the releases it was targeted at, and on
-    // any other build it is contractually a silent no-op reported as
-    // "unavailable". Both halves of that contract are worth asserting: on a
-    // build with no variant the setting must change nothing, which is what keeps
-    // an unsupported release from being half-patched.
+    // A reviewed entry answers where one matches (and the rule agrees with
+    // it), the build's own bytes supply the button where none does, and a
+    // build the rule cannot read either is a silent no-op reported as
+    // "unavailable". Each half of that is asserted, since the last one is what
+    // keeps an unsupported release from being half-patched.
     console.log("\nattach-file button (opt-in bonus)");
     shim.setConfig({ addAttachFileButton: true });
     const webview = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
-    if (test.matchingAttachFileButton(webview)) {
+    const attachRow = () => test.computeBonusStatus(sandbox)[0]?.state;
+    const shippedAttach = test.matchingAttachFileButton(webview);
+    const derivedAttach = test.deriveBonus("attach-button", webview);
+    const attachEdit = shippedAttach ?? derivedAttach;
+    if (shippedAttach) {
       check(
         test.reconcileAttachFileButton(sandbox),
         "enabling adds the button",
       );
-      check(
-        test.computeBonusStatus(sandbox)[0]?.state === "on",
-        "bonus reports on",
-        `got "${test.computeBonusStatus(sandbox)[0]?.state}"`,
-      );
     } else {
       check(
-        test.reconcileAttachFileButton(sandbox) === false,
-        "no variant for this build: enabling changes nothing",
+        test.reconcileAttachFileButton(sandbox) === (attachEdit !== undefined),
+        attachEdit
+          ? "no reviewed entry: enabling applies the derived button"
+          : "no reviewed entry and nothing to derive: enabling changes nothing",
       );
-      const state = test.computeBonusStatus(sandbox)[0]?.state;
+    }
+    const attachWanted = attachEdit ? "on" : "unavailable";
+    check(
+      attachRow() === attachWanted,
+      `bonus reports "${attachWanted}"`,
+      `got "${attachRow()}"`,
+    );
+    if (attachEdit) {
       check(
-        state === "unavailable",
-        'bonus reports "unavailable"',
-        `got "${state}"`,
+        countOccurrences(
+          fs.readFileSync(path.join(dist, "webview.js"), "utf8"),
+          'selectMention({type:"file-picker"}',
+        ) === 1,
+        "exactly one button",
       );
+      // Click the button that landed. The names come from the rule, which is
+      // also how the derived path binds them, so a reviewed entry naming
+      // anything else fails here as well as in retarget.
+      const symbols = ATTACH_RULE.derive(webview).symbols;
+      const click =
+        symbols && !symbols.icon
+          ? clickAttachButton(attachEdit, symbols)
+          : undefined;
+      if (click === undefined) {
+        // The pre-7.6.0 text button takes its glyph from a sprite component
+        // passed as a child; its click is the same code, and that form ships
+        // only as reviewed entries.
+        check(
+          symbols !== undefined,
+          "the button's symbols are derivable (text-button form, not run)",
+        );
+      } else if (typeof click === "string") {
+        check(false, "the button runs", click);
+      } else {
+        check(
+          click.label === "Attach file" && click.ariaLabel === "Attach file",
+          'its tooltip and aria-label read "Attach file"',
+          `${JSON.stringify(click.label)} / ${JSON.stringify(click.ariaLabel)}`,
+        );
+        const [empty, word, spaced] = click.results;
+        const inserts = (r) =>
+          r.calls.filter((c) => c.command === "insertText").map((c) => c.text);
+        check(
+          inserts(empty).join() === "@" &&
+            inserts(word).join() === " @" &&
+            inserts(spaced).join() === "@",
+          'a click types "@", with a space first only after a word',
+          JSON.stringify(click.results.map(inserts)),
+        );
+        const opened = click.results.every((r) => {
+          const call = r.calls.find((c) => c.selectMention)?.selectMention;
+          return (
+            r.calls[0] === "focus" &&
+            call?.[0]?.type === "file-picker" &&
+            call[1] === click.textarea &&
+            call[2] === click.setter &&
+            call[3] === click.sync
+          );
+        });
+        check(
+          opened,
+          "then opens the file picker through Kilo's own mention controller, with its textarea, setter and sync",
+        );
+      }
     }
 
     // Upgrading kb-patch can change a variant's patched text while the user's
@@ -1141,7 +1272,7 @@ function main() {
         "re-enabling is a no-op",
       );
     } else {
-      // Since 2.2.0 "no shipped entry" is the derived path rather than a dead
+      // Since 2.1.3 "no shipped entry" is the derived path rather than a dead
       // end, so what enabling does here depends on whether this build's own
       // bytes can supply the splice. What that path writes is asserted in the
       // next section; this one only has to agree with the row.
@@ -1161,219 +1292,314 @@ function main() {
       );
     }
 
-    // The math splice is the one bonus a build's own bytes can supply
-    // (DERIVABLE_BONUSES), so the case worth proving is the one no shipped
-    // variant answers: a future Kilo that re-minified only this site. The
-    // reviewed variant is withheld to make this build look like that one, and
-    // what the derivation writes is then held against the bytes that variant
-    // would have written. A separate copy of the bundle, because everything
-    // here has to start from pristine.
-    console.log("\nmath rendering derived (the release that need not happen)");
-    {
-      const shippedMath = test.matchingMathExtension(
-        pristine[test.CHAT_SCRIPT_FILE],
-      );
-      const keptMath = [...test.MATH_EXTENSIONS];
-      const box = path.join(sandbox, "derived-math");
-      fs.mkdirSync(path.join(box, "dist"), { recursive: true });
-      for (const name of [test.CHAT_SCRIPT_FILE, test.CHAT_STYLE_FILE]) {
-        if (pristine[name] !== undefined) {
-          fs.writeFileSync(path.join(box, "dist", name), pristine[name]);
-        }
-      }
-      const js = () =>
-        fs.readFileSync(path.join(box, "dist", test.CHAT_SCRIPT_FILE), "utf8");
-      const mathDerivedRow = () =>
-        test.computeBonusStatus(box).find((b) => b.label.includes("math"))
-          ?.state;
-      const recordNow = () => test.readDerivedRecordAt(path.join(box, "dist"));
-      const entry = () =>
-        recordNow().find((p) => p.feature === "math-rendering");
+    // Every bundle splice a build's own bytes can supply (DERIVABLE_BONUSES),
+    // so the case worth proving is the one no reviewed entry answers: a future
+    // Kilo that re-minified only these sites. The entry that answers for this
+    // build is withheld to make it look like that one, and what the derivation
+    // writes is then held against the bytes that entry would have written.
+    // A separate copy of the bundle per bonus, because everything here has to
+    // start from pristine.
+    const DERIVED_SPECS = {
+      "attach-button": {
+        setting: "addAttachFileButton",
+        row: "Prompt toolbar",
+        reconcile: (box, record) => test.reconcileAttachFileButton(box, record),
+        injected: (js) =>
+          countOccurrences(js, 'selectMention({type:"file-picker"}') === 1,
+        kilo: (js) =>
+          countOccurrences(js, ".status().message||") ===
+          countOccurrences(pristineJs, ".status().message||"),
+        kiloLabel: "Kilo's own indexing button survives the splice",
+        // The same edit as a kb-patch that captioned the button differently
+        // would have written it.
+        restyle: (patched) =>
+          patched.replace(/"Attach file"/g, '"Attach a file"'),
+        // An entry whose button calls some other controller, as one reviewed
+        // for a build that shares this toolbar would (7.7.6 and 7.7.9).
+        impostor: (patched) =>
+          patched.replace(
+            /[A-Za-z_$][\w$]*\.selectMention\(\{type:"file-picker"\}/,
+            'kbpImpostor.selectMention({type:"file-picker"}',
+          ),
+      },
+      "math-rendering": {
+        setting: "chatMathRendering",
+        row: "math",
+        reconcile: (box, record) => test.reconcileMathRendering(box, record),
+        injected: (js) =>
+          countOccurrences(js, 'name:"kbpKatexInlineDollar"') === 1 &&
+          countOccurrences(js, 'name:"kbpKatexBlockBracket"') === 1 &&
+          countOccurrences(js, 'name:"kbpKatexInlineBracket"') === 1,
+        kilo: (js) =>
+          js.includes('{name:"doubleKatexBlock",level:"block"') &&
+          js.includes('{name:"doubleKatexInline",level:"inline"'),
+        kiloLabel: "Kilo's own $$ extensions survive the splice",
+      },
+      "raw-markdown": {
+        setting: "chatRawMarkdownButton",
+        row: "markdown source",
+        reconcile: (box, record) =>
+          test.reconcileRawMarkdownToggle(box, record),
+        injected: (js) =>
+          countOccurrences(js, '"data-slot":"kbp-raw-markdown-toggle"') === 1,
+        kilo: (js) =>
+          countOccurrences(js, '"ui.message.copyResponse"') ===
+          countOccurrences(pristineJs, '"ui.message.copyResponse"'),
+        kiloLabel: "Kilo's own copy button survives the splice",
+        restyle: (patched) =>
+          patched.replace(/"Markdown source"/g, '"Markdown"'),
+        impostor: (patched) =>
+          patched.replace(
+            /_pre\.textContent=[A-Za-z_$][\w$]*\(\)/,
+            "_pre.textContent=kbpImpostor()",
+          ),
+      },
+    };
+    for (const key of test.DERIVABLE_BONUSES) {
+      console.log(`\n${key} derived (the release that need not happen)`);
+      const spec = DERIVED_SPECS[key];
+      if (!check(spec !== undefined, "the harness knows this bonus")) continue;
+      const list = test.BONUS_VARIANTS[key];
+      const kept = [...list];
+      const shipped = test.shippedBonusVariant(pristineJs, key);
+      const withhold = () =>
+        list.splice(0, list.length, ...kept.filter((v) => v !== shipped));
+      const reinstate = () => list.splice(0, list.length, ...kept);
 
-      test.MATH_EXTENSIONS.splice(
-        0,
-        test.MATH_EXTENSIONS.length,
-        ...keptMath.filter((v) => v !== shippedMath),
-      );
-      shim.setConfig({ chatMathRendering: true });
+      const box = path.join(sandbox, `derived-${key}`);
+      const boxDist = path.join(box, "dist");
+      fs.mkdirSync(boxDist, { recursive: true });
+      const reset = (js) => {
+        for (const name of [test.CHAT_SCRIPT_FILE, test.CHAT_STYLE_FILE]) {
+          if (pristine[name] !== undefined) {
+            fs.writeFileSync(path.join(boxDist, name), pristine[name]);
+          }
+        }
+        if (js !== undefined) {
+          fs.writeFileSync(path.join(boxDist, test.CHAT_SCRIPT_FILE), js);
+        }
+      };
+      reset();
+      const js = () =>
+        fs.readFileSync(path.join(boxDist, test.CHAT_SCRIPT_FILE), "utf8");
+      const row = () =>
+        test.computeBonusStatus(box).find((b) => b.label.includes(spec.row))
+          ?.state;
+      const recordNow = () => test.readDerivedRecordAt(boxDist);
+      const entry = () => recordNow().find((p) => p.feature === key);
+
+      withhold();
+      shim.setConfig({ [spec.setting]: true });
       try {
         check(
-          test.matchingMathExtension(js()) === undefined,
-          "with its variant withheld, no shipped pattern answers for this build",
+          test.shippedBonusVariant(js(), key) === undefined,
+          "with its entry withheld, no reviewed entry answers for this build",
         );
-        const derived = test.deriveBonus("math-rendering", js());
-        // Keyed on whether this build's bytes can supply the splice, not on
-        // whether a variant was ever written for it. Those differ: the shipped
-        // list starts at 7.5.6 because that is when the bonus was added, while
-        // the rule reaches every build back to 7.4.17, and the extensions
-        // render there too (tools/behavior.js runs them against 7.5.0's own
-        // marked). A build with no katex pack to extend is the real floor.
+        const derived = test.deriveBonus(key, js());
         if (derived === undefined) {
+          // Refused at apply. That is only acceptable where a reviewed entry
+          // covers the build, so that the setting still does something there:
+          // the attach button's pre-7.6.0 text-button form is the one case.
+          const admission = test.admissibility(test.BONUS_RULES[key], js());
           check(
-            shippedMath === undefined,
-            "no katex pack here, so nothing derives and nothing shipped either",
+            shipped !== undefined,
+            `refused at apply (${admission.refused ?? "already patched"}), and a reviewed entry covers this build`,
           );
-        } else if (check(true, "the splice derives from the build")) {
-          // Only where this release reviewed a variant is there something to
-          // hold the derivation against. Where there is, they must agree.
-          if (shippedMath !== undefined) {
-            check(
-              derived.original === shippedMath.original &&
-                derived.patched === shippedMath.patched,
-              "byte-identical to the variant this release reviewed and ships",
-            );
-          }
+          continue;
+        }
+        check(true, "the splice derives from the build");
+        // Only where this release reviewed an entry is there something to
+        // hold the derivation against. Where there is, they must agree.
+        if (shipped !== undefined) {
           check(
-            test.reconcileMathRendering(box),
-            "enabling applies the derived splice",
-          );
-          const after = js();
-          check(
-            countOccurrences(after, 'name:"kbpKatexInlineDollar"') === 1 &&
-              countOccurrences(after, 'name:"kbpKatexBlockBracket"') === 1 &&
-              countOccurrences(after, 'name:"kbpKatexInlineBracket"') === 1,
-            "exactly one copy of each added extension",
-          );
-          check(
-            after.includes('{name:"doubleKatexBlock",level:"block"') &&
-              after.includes('{name:"doubleKatexInline",level:"inline"'),
-            "Kilo's own extensions survive the splice",
-          );
-          try {
-            new vm.Script(after, { filename: test.CHAT_SCRIPT_FILE });
-            check(true, "the patched bundle parses");
-          } catch (e) {
-            check(false, "the patched bundle parses", String(e.message));
-          }
-          // Recorded, because nothing shipped can name this edit: without the
-          // record Restore reverts nothing and the next launch derives again.
-          check(
-            entry() !== undefined &&
-              entry().original === derived.original &&
-              entry().patched === derived.patched,
-            "the bundle records the derivation",
-          );
-          check(
-            test
-              .recordedFor(recordNow(), test.CHAT_SCRIPT_FILE, after)
-              .every((p) => p.feature !== "math-rendering"),
-            "and keeps it out of the core patch set, which applies unconditionally",
-          );
-          // Apply rewrites the whole record, and the reconciler that owns this
-          // entry runs outside it, so the entry has to survive that write or
-          // the edit is left on disk with nothing naming it.
-          check(
-            test
-              .bonusDerivationsToKeep(recordNow(), path.join(box, "dist"))
-              .some((p) => p.feature === "math-rendering"),
-            "Apply carries the entry across its rewrite of the record",
-          );
-          // A record written by a newer kb-patch names bonuses this build has
-          // never heard of, which a downgrade is the ordinary way to meet.
-          // Those are carried over too: dropping one would leave its edit on
-          // disk with nothing able to name it, the one state Restore cannot
-          // undo.
-          check(
-            test.bonusDerivationsToKeep(
-              [{ ...derived, feature: "a-bonus-from-a-later-release" }],
-              path.join(box, "dist"),
-            ).length === 1,
-            "and carries over an entry for a bonus it does not know",
-          );
-          // Until a release ships the variant, which is the retarget: the
-          // entry is then redundant and goes, the same convergence patchSetFor
-          // applies to a core derivation. Only checkable where this release
-          // does ship one; on a build older than the bonus itself there is no
-          // reviewed variant to converge on and the entry rightly stays.
-          if (shippedMath !== undefined) {
-            test.MATH_EXTENSIONS.splice(
-              0,
-              test.MATH_EXTENSIONS.length,
-              ...keptMath,
-            );
-            check(
-              test.bonusDerivationsToKeep(recordNow(), path.join(box, "dist"))
-                .length === 0,
-              "and retires it once a shipped variant describes the same edit",
-            );
-            test.MATH_EXTENSIONS.splice(
-              0,
-              test.MATH_EXTENSIONS.length,
-              ...keptMath.filter((v) => v !== shippedMath),
-            );
-          }
-          test.reconcileChatStyle(box);
-          check(
-            mathDerivedRow() === "on",
-            'the bonus reports "on" rather than "unavailable"',
-            `got "${mathDerivedRow()}"`,
-          );
-          check(
-            test.reconcileMathRendering(box) === false,
-            "re-enabling is a no-op",
-          );
-          // The guard that matters most here. This patch appends extensions
-          // whose last renderer ends in exactly the bytes the rule anchors on,
-          // so a second derivation would match the tail of its own injection
-          // and splice a copy inside the first.
-          check(
-            test.deriveBonus("math-rendering", after) === undefined,
-            "a second derivation against the patched bundle finds nothing",
-          );
-          // Restore's ordering: the core files are rewritten first, taking the
-          // record block with them, so the reconcile has to be handed the
-          // record that was read before that write.
-          const stripped = test.stripChatScript(after);
-          fs.writeFileSync(
-            path.join(box, "dist", test.CHAT_SCRIPT_FILE),
-            stripped,
-          );
-          check(
-            test.readDerivedRecordAt(path.join(box, "dist")).length === 0,
-            "with the block gone the file names no derivation",
-          );
-          shim.setConfig({ chatMathRendering: false });
-          check(
-            test.reconcileMathRendering(box, [derived]) &&
-              js() === pristine[test.CHAT_SCRIPT_FILE],
-            "and the passed-in record still reverses the edit, byte for byte",
-          );
-          // Then the ordinary path: apply again, turn it off with the record
-          // where it lives, and the entry goes with the edit.
-          shim.setConfig({ chatMathRendering: true });
-          test.reconcileMathRendering(box);
-          shim.setConfig({ chatMathRendering: false });
-          check(
-            test.reconcileMathRendering(box) && entry() === undefined,
-            "turning it off removes the edit and its record entry",
-          );
-          check(
-            js() === pristine[test.CHAT_SCRIPT_FILE],
-            "leaving the bundle as Kilo shipped it",
+            derived.original === shipped.original &&
+              derived.patched === shipped.patched,
+            "byte-identical to the entry this release reviewed and ships",
           );
         }
-      } finally {
-        test.MATH_EXTENSIONS.splice(
-          0,
-          test.MATH_EXTENSIONS.length,
-          ...keptMath,
+        check(spec.reconcile(box), "enabling applies the derived splice");
+        const after = js();
+        check(spec.injected(after), "exactly one copy of the added code");
+        check(spec.kilo(after), spec.kiloLabel);
+        try {
+          new vm.Script(after, { filename: test.CHAT_SCRIPT_FILE });
+          check(true, "the patched bundle parses");
+        } catch (e) {
+          check(false, "the patched bundle parses", String(e.message));
+        }
+        // Recorded, because nothing shipped can name this edit: without the
+        // record Restore reverts nothing and the next launch derives again.
+        check(
+          entry() !== undefined &&
+            entry().original === derived.original &&
+            entry().patched === derived.patched,
+          "the bundle records the derivation",
         );
+        check(
+          test
+            .recordedFor(recordNow(), test.CHAT_SCRIPT_FILE, after)
+            .every((p) => p.feature !== key),
+          "and keeps it out of the core patch set, which applies unconditionally",
+        );
+        // Apply rewrites the whole record, and the reconciler that owns this
+        // entry runs outside it, so the entry has to survive that write or
+        // the edit is left on disk with nothing naming it.
+        check(
+          test
+            .bonusDerivationsToKeep(recordNow(), boxDist)
+            .some((p) => p.feature === key),
+          "Apply carries the entry across its rewrite of the record",
+        );
+        // A record written by a newer kb-patch names bonuses this build has
+        // never heard of, which a downgrade is the ordinary way to meet.
+        // Those are carried over too: dropping one would leave its edit on
+        // disk with nothing able to name it, the one state Restore cannot
+        // undo.
+        check(
+          test.bonusDerivationsToKeep(
+            [{ ...derived, feature: "a-bonus-from-a-later-release" }],
+            boxDist,
+          ).length === 1,
+          "and carries over an entry for a bonus it does not know",
+        );
+        // Until a release ships the entry, which is the retarget: the entry
+        // is then redundant and goes, the same convergence patchSetFor
+        // applies to a core derivation. Only checkable where this release
+        // does ship one.
+        if (shipped !== undefined) {
+          reinstate();
+          check(
+            test.bonusDerivationsToKeep(recordNow(), boxDist).length === 0,
+            "and retires it once a reviewed entry describes the same edit",
+          );
+          withhold();
+        }
+        test.reconcileChatStyle(box);
+        check(
+          row() === "on",
+          'the bonus reports "on" rather than "unavailable"',
+          `got "${row()}"`,
+        );
+        check(spec.reconcile(box) === false, "re-enabling is a no-op");
+        // A second derivation against the patched bundle must find nothing:
+        // the math extensions end in the bytes their rule anchors on, and the
+        // two buttons keep their anchor beside the insertion.
+        check(
+          test.deriveBonus(key, after) === undefined,
+          "a second derivation against the patched bundle finds nothing",
+        );
+        // Restore's ordering: the core files are rewritten first, taking the
+        // record block with them, so the reconcile has to be handed the
+        // record that was read before that write.
+        fs.writeFileSync(
+          path.join(boxDist, test.CHAT_SCRIPT_FILE),
+          test.stripChatScript(after),
+        );
+        check(
+          recordNow().length === 0,
+          "with the block gone the file names no derivation",
+        );
+        shim.setConfig({ [spec.setting]: false });
+        check(
+          spec.reconcile(box, [derived]) && js() === pristineJs,
+          "and the passed-in record still reverses the edit, byte for byte",
+        );
+        // Then the ordinary path: apply again, turn it off with the record
+        // where it lives, and the entry goes with the edit.
+        shim.setConfig({ [spec.setting]: true });
+        spec.reconcile(box);
+        shim.setConfig({ [spec.setting]: false });
+        check(
+          spec.reconcile(box) && entry() === undefined,
+          "turning it off removes the edit and its record entry",
+        );
+        check(js() === pristineJs, "leaving the bundle as Kilo shipped it");
+
+        // A reviewed entry is checked against the rule for the two bonuses
+        // whose anchor does not hold every name their edit writes, so an
+        // entry that names some other build's closure locals is declined
+        // rather than applied here. What lands instead is the rule's edit.
+        if (spec.impostor) {
+          const impostor = {
+            original: derived.original,
+            patched: spec.impostor(derived.patched),
+          };
+          if (
+            check(
+              impostor.patched !== derived.patched,
+              "an impostor entry can be built for this build",
+            )
+          ) {
+            list.splice(0, list.length, impostor, ...kept);
+            check(
+              test.shippedBonusVariant(pristineJs, key) === shipped,
+              "an entry naming other closure locals than this build's is declined",
+            );
+            reset();
+            shim.setConfig({ [spec.setting]: true });
+            spec.reconcile(box);
+            check(
+              js().includes(derived.patched) &&
+                !js().includes(impostor.patched),
+              "and the edit that lands is the one the rule derives",
+            );
+            withhold();
+          }
+        }
+
+        // A derivation recorded by a kb-patch whose rule wrote the edit
+        // differently, met by the reviewed entry for this build. The two
+        // buttons keep their anchor beside the insertion, so applying the
+        // reviewed edit on top would add a second copy; the stale one has to
+        // be reversed first.
+        if (spec.restyle && shipped !== undefined) {
+          const stale = { ...derived, patched: spec.restyle(derived.patched) };
+          reset(
+            test.withDerivedRecord(
+              pristineJs.replace(stale.original, stale.patched),
+              [stale],
+            ),
+          );
+          reinstate();
+          shim.setConfig({ [spec.setting]: true });
+          check(
+            spec.reconcile(box),
+            "a stale derived edit is replaced by the reviewed one",
+          );
+          check(
+            js() === pristineJs.replace(shipped.original, shipped.patched) &&
+              recordNow().length === 0,
+            "leaving exactly the reviewed edit and no record",
+          );
+          shim.setConfig({ [spec.setting]: false });
+          check(
+            spec.reconcile(box) && js() === pristineJs,
+            "which then turns off to the bundle Kilo shipped",
+          );
+          withhold();
+        }
+      } finally {
+        reinstate();
         shim.setConfig({ addAttachFileButton: true, chatMathRendering: true });
       }
     }
 
-    // The raw-markdown toggle has the same "no variant for this build is a
-    // silent no-op" contract as the other two splices. What is particular to it
-    // is that the patched text *begins* with the original (the splice appends
-    // after Kilo's copy button), so a patched bundle satisfies both of
-    // matchingVariant's includes() and only reconcileVariant's
-    // already-patched-before-pristine ordering keeps enabling from stacking a
-    // second button. That is what the re-enable check below is for, and the
-    // count assertions are what would catch it if the ordering ever changed.
+    // The raw-markdown toggle has the same contract as the other two splices:
+    // a reviewed entry where one answers, the build's own bytes where none
+    // does, and a silent no-op where neither can. What is particular to it is
+    // that the patched text *begins* with the original (the splice appends
+    // after Kilo's copy button), so a patched bundle shows both texts and only
+    // variantEdit's already-patched-before-pristine ordering keeps enabling
+    // from stacking a second button. That is what the re-enable check below is
+    // for, and the count assertions are what would catch it if the ordering
+    // ever changed.
     console.log("\nraw-markdown toggle (opt-in bonus)");
     shim.setConfig({ chatRawMarkdownButton: true });
     const beforeRaw = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
-    const rawVariant = test.matchingRawMarkdownToggle(beforeRaw);
+    const rawVariant =
+      test.matchingRawMarkdownToggle(beforeRaw) ??
+      test.deriveBonus("raw-markdown", beforeRaw);
+    const rawReviewed = test.matchingRawMarkdownToggle(beforeRaw) !== undefined;
     const rawRow = () =>
       test
         .computeBonusStatus(sandbox)
@@ -1385,7 +1611,9 @@ function main() {
       );
       check(
         test.reconcileRawMarkdownToggle(sandbox),
-        "enabling adds the toggle",
+        rawReviewed
+          ? "enabling adds the toggle"
+          : "no reviewed entry: enabling applies the derived toggle",
       );
       const afterRaw = fs.readFileSync(path.join(dist, "webview.js"), "utf8");
       check(
@@ -1538,7 +1766,7 @@ function main() {
     } else {
       check(
         test.reconcileRawMarkdownToggle(sandbox) === false,
-        "no variant for this build: enabling changes nothing",
+        "no reviewed entry and nothing to derive: enabling changes nothing",
       );
       check(
         rawRow() === "unavailable",
@@ -2298,6 +2526,140 @@ function main() {
         );
       } finally {
         live.patches.splice(0, live.patches.length, ...kept);
+      }
+    }
+
+    // Restore Originals in its own order, on an install where nothing reviewed
+    // answered: the core edits and every bonus derived, all of them named only
+    // by the record. runPatch reverses the core files first (taking the record
+    // block with them) and then hands each bonus reconciler the record as it
+    // stood before. Until the reconcilers learned to keep only entries whose
+    // edit is still on disk, the math one wrote the reverted core entries back
+    // into the restored bundle, which the zero-leakage check at the end cannot
+    // see: it turns the bonuses off before restoring, the other way round.
+    console.log("\nrestore order (core patches and every bonus derived)");
+    {
+      const version = source.version;
+      const box = path.join(sandbox, "restore-order");
+      const boxDist = path.join(box, "dist");
+      fs.mkdirSync(boxDist, { recursive: true });
+      for (const [name, body] of Object.entries(pristine)) {
+        fs.writeFileSync(path.join(boxDist, name), body);
+      }
+      const keptCore = test.PATCHES.map((fp) => fp.patches.slice());
+      const keptBonus = test.DERIVABLE_BONUSES.map((k) =>
+        test.BONUS_VARIANTS[k].slice(),
+      );
+      const runPatch = (mode) => {
+        const record = test.readDerivedRecordAt(boxDist);
+        const plans = test.PATCHES.filter(
+          (fp) => pristine[fp.filename] !== undefined,
+        ).map((fp) => ({
+          fp,
+          fpath: path.join(boxDist, fp.filename),
+          ...test.patchSetFor(
+            fp.filename,
+            path.join(boxDist, fp.filename),
+            version,
+            fp.patches,
+            mode,
+            record,
+          ),
+        }));
+        const next =
+          mode === "apply"
+            ? [
+                ...test.bonusDerivationsToKeep(record, boxDist),
+                ...plans.flatMap((p) => [...p.remembered, ...p.derived]),
+              ]
+            : [];
+        const writer = (filename) =>
+          filename === test.CHAT_SCRIPT_FILE
+            ? (m) => test.withDerivedRecord(m, next)
+            : undefined;
+        for (const p of plans) {
+          if (mode === "apply") {
+            test.applyPatches(
+              p.fpath,
+              p.patches,
+              p.derived.length > 0
+                ? test.derivedGuard(p.fp.filename, p.derived)
+                : undefined,
+              writer(p.fp.filename),
+            );
+          } else {
+            test.restorePatches(p.fpath, p.patches, writer(p.fp.filename));
+          }
+        }
+        if (mode === "apply") {
+          test.reconcileChatStyle(box, coreOn);
+          test.reconcileChatScript(box, true);
+        } else {
+          shim.setConfig(Object.fromEntries(test.BONUS_SETTING_DEFAULTS));
+          test.reconcileAttachFileButton(box, record);
+          test.reconcileMathRendering(box, record);
+          test.reconcileRawMarkdownToggle(box, record);
+          test.reconcileChatStyle(box, coreOff);
+          test.reconcileChatScript(box, false);
+        }
+      };
+      try {
+        // Nothing reviewed answers for this build, so every edit that lands
+        // is a derivation only the record names.
+        for (const fp of test.PATCHES) {
+          const body = pristine[fp.filename];
+          if (body === undefined) continue;
+          const keep = fp.patches.filter((p) => !body.includes(p.original));
+          fp.patches.splice(0, fp.patches.length, ...keep);
+        }
+        for (const k of test.DERIVABLE_BONUSES) {
+          const list = test.BONUS_VARIANTS[k];
+          const keep = list.filter((v) => !pristineJs.includes(v.original));
+          list.splice(0, list.length, ...keep);
+        }
+        shim.setConfig({
+          ...Object.fromEntries(test.BONUS_SETTING_DEFAULTS),
+          addAttachFileButton: true,
+          chatMathRendering: true,
+          chatRawMarkdownButton: true,
+        });
+        runPatch("apply");
+        test.reconcileAttachFileButton(box);
+        test.reconcileMathRendering(box);
+        test.reconcileRawMarkdownToggle(box);
+        test.reconcileChatStyle(box);
+        const record = test.readDerivedRecordAt(boxDist);
+        const bonuses = record
+          .filter((p) => test.DERIVABLE_BONUSES.includes(p.feature))
+          .map((p) => p.feature);
+        check(
+          record.some((p) => test.DERIVABLE.includes(p.feature)) &&
+            bonuses.length > 0,
+          `the record names core and bonus derivations (${bonuses.join(", ")})`,
+        );
+        runPatch("restore");
+        for (const [name, body] of Object.entries(pristine)) {
+          check(
+            fs.readFileSync(path.join(boxDist, name), "utf8") === body,
+            `${name}: pristine after Restore Originals' own order`,
+          );
+        }
+        check(
+          test.readDerivedRecordAt(boxDist).length === 0,
+          "and no record of reverted edits is written back",
+        );
+      } finally {
+        test.PATCHES.forEach((fp, i) =>
+          fp.patches.splice(0, fp.patches.length, ...keptCore[i]),
+        );
+        test.DERIVABLE_BONUSES.forEach((k, i) =>
+          test.BONUS_VARIANTS[k].splice(
+            0,
+            test.BONUS_VARIANTS[k].length,
+            ...keptBonus[i],
+          ),
+        );
+        shim.setConfig(Object.fromEntries(test.BONUS_SETTING_DEFAULTS));
       }
     }
 

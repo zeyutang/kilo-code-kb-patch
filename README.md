@@ -58,8 +58,7 @@ Enable them from the Settings UI (search "Kilo Code KB Patch") or in your `setti
 The editor-title rename is the one extra that needs a window reload instead, and its offer says so.
 To turn one off, put it back to its default (or run **Restore Originals**, which switches every extra off) and restart the same way.
 
-The attach-file and markdown-source buttons are the two extras that wait for a KB Patch release after a Kilo Code update renames the code they attach to.
-**Show Status** reports either as **unavailable** until then; everything else works the new target out from the updated build.
+The extras follow a Kilo Code update the same way the keyboard patches do: when the update renames the code an extra attaches to, KB Patch works out the new target from the updated build.
 
 - **Attach-file button.**
   Adds a `+` button to the prompt toolbar that opens Kilo Code's file picker directly, instead of typing `@` and choosing "Browse files...".

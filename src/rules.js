@@ -20,6 +20,12 @@
 //   { original, patched, symbols }  exactly one match, pattern derived
 //   { matches: n }                  0 or >1 matches; the shape moved or aliased
 //   { error }                       a sub-anchor inside the shape went missing
+//
+// A derived result may also carry `hops`, the further matches a rule read a
+// symbol from when the edit names something its anchor does not contain, and
+// `data`, values the edit writes that are not names in the bundle's scope (a
+// glyph key, say). The extension derives at apply only when every symbol is a
+// whole token of the anchor or of a hop, and every hop lies near the edit.
 
 const ID = "[A-Za-z_$][A-Za-z0-9_$]*";
 
@@ -178,6 +184,24 @@ function countIn(haystack, needle) {
     i += needle.length;
   }
   return count;
+}
+
+// Whether a span of the bundle enters another function body. Two of the bonus
+// rules bind a symbol from a second match (a hop) near their anchor, and a hop
+// is only sound while it reads the same component the edit lands in. Arrows
+// are everywhere in minified code and are fine to cross, since they close over
+// the scope they sit in, while the `function` keyword is how this bundle opens
+// a component or a helper with a scope of its own. A quote beside the word is
+// Solid's `typeof ref=="function"` check rather than a declaration.
+function crossesFunction(text) {
+  return /(?<![\w$."'`])function(?![\w$"'`])/.test(text);
+}
+
+// A matched span as a rule reports it to apply-time admission: where it sits
+// in the bundle and the text it matched, so the extension can check that the
+// symbols read from it lie near the edit (see `hops` in DeriveResult).
+function hop(match) {
+  return { index: match.index, text: match[0] };
 }
 
 // The identifier a capture group holds, for the emitted symbol map.
@@ -688,7 +712,10 @@ function attachLabelExpression(content, i18n) {
 // one we must not use is the more common of the two, so counting usages picks
 // wrong. Identify the sprite component by behavior instead: it is the function
 // that builds the `#opencode-icon-<name>` href. Walk back from that reference to
-// the enclosing function declaration to get its minified name.
+// the enclosing function declaration to get its minified name. Returns that
+// declaration as a hop, since the component is module-level and sits nowhere
+// near the toolbar, which is also why the form that needs it (the pre-7.6.0
+// text button) is left to reviewed entries rather than derived at apply.
 function deriveIconComponent(content) {
   // findAll rather than String.match so these two scans are prefiltered like
   // every other; taking the first hit of an ordered list is what an unanchored
@@ -705,17 +732,33 @@ function deriveIconComponent(content) {
   )[0];
   if (!use) return undefined;
 
-  const before = content.slice(Math.max(0, use.index - 3000), use.index);
-  const declarations = findAll(before, `function (${ID})\\(`);
+  const from = Math.max(0, use.index - 3000);
+  const declarations = findAll(
+    content.slice(from, use.index),
+    `function (${ID})\\(`,
+  );
   if (declarations.length === 0) return undefined;
-  return declarations[declarations.length - 1][1];
+  const last = declarations[declarations.length - 1];
+  return { name: last[1], hop: { index: from + last.index, text: last[0] } };
 }
+
+// How far before the toolbar anchor Kilo's own mention row may sit. Measured
+// at 3.5 to 4.1 KB on every build from 7.4.17 through 7.8.1, inside the same
+// render function as the toolbar, so twice the largest leaves the menu room to
+// grow while a call in some other component is still refused.
+const MENTION_WINDOW = 8192;
 
 // The opt-in attach-file button is not a rewrite of an existing expression but
 // an insertion before the indexing button, so it lives outside PATCHES (in
 // ATTACH_FILE_BUTTONS) and needs symbols from three places: the toolbar render
-// site, the mention menu's own selectMention call, and the shared button/icon
-// components.
+// site, the mention menu's own selectMention call, and the neighbouring
+// button's component.
+//
+// Those symbols come from outside the anchor, which long kept this rule off
+// apply-time derivation. Each one is now read from a hop the rule
+// pins to the toolbar's own render function, by properties no re-minify can
+// move, and the extension additionally checks that every hop lies near the
+// edit before it lets a derived button be written (see `admissible`).
 const ATTACH_RULE = {
   key: "attach-button",
   file: "webview.js",
@@ -728,17 +771,59 @@ const ATTACH_RULE = {
         `get children\\(\\)\\{return \\3\\((${ID}),\\{get value\\(\\)\\{return (${ID})\\.status\\(\\)\\.message\\|\\|\\7\\.label\\(\\)\\}`,
     );
     if (anchors.length !== 1) return { matches: anchors.length };
-    const [, insert, container, create, , , tooltip] = anchors[0];
+    const anchor = anchors[0];
+    const [, insert, container, create, , , tooltip] = anchor;
 
     // The mention menu's "Browse files..." row calls selectMention with exactly
-    // the four PromptInput locals the button needs.
+    // the four PromptInput locals the button needs. The lookbehind keeps a
+    // member call such as `e.controller.selectMention(...)` from yielding
+    // `controller`, which would be a property name rather than a local.
     const mentions = findAll(
       content,
-      `(${ID})\\.selectMention\\((${ID}),(${ID}),(${ID}),(${ID})\\)`,
+      `(?<![\\w$.])(${ID})\\.selectMention\\((${ID}),(${ID}),(${ID}),(${ID})\\)`,
     );
     if (mentions.length !== 1)
       return { error: "selectMention call not unique" };
-    const [, controller, , textarea, setter, sync] = mentions[0];
+    const mention = mentions[0];
+    const [, controller, , textarea, setter, sync] = mention;
+
+    // A unique call is not yet a call in the right scope: had Kilo moved the
+    // menu into a component of its own, the one call would name that
+    // component's locals, and a button spliced here would reach for names this
+    // scope does not bind. Three properties pin it to the toolbar's own render
+    // function, and none of them depends on a spelling. The call sits a few KB
+    // before the toolbar with no function body opening in between. The
+    // textarea it passes is the one the prompt's <textarea> is assigned to as
+    // a Solid ref, which happens just before the toolbar in the same
+    // expression. And the textarea, setter and sync travel together through at
+    // least one more of Kilo's calls there (selectSession, selectWorktree, the
+    // slash-command select), so the three are this scope's set rather than
+    // arguments that happen to line up once.
+    const gap = anchor.index - mention.index;
+    if (gap <= 0 || gap > MENTION_WINDOW) {
+      return {
+        error: "Kilo's own selectMention call is not beside the toolbar",
+      };
+    }
+    const between = content.slice(mention.index, anchor.index);
+    if (crossesFunction(between)) {
+      return {
+        error: "a function body opens between selectMention and the toolbar",
+      };
+    }
+    const ref = new RegExp(
+      `typeof (${ID})=="function"\\?(${ID})\\(\\1,(${ID})\\):${esc(textarea)}=\\3`,
+    ).exec(between);
+    if (!ref) {
+      return {
+        error: "the textarea selectMention passes is not the prompt's own ref",
+      };
+    }
+    if (countIn(between, `,${textarea},${setter},${sync})`) < 2) {
+      return {
+        error: "no second call names the textarea, setter and sync together",
+      };
+    }
 
     // The button has to be the component its neighbours are, not merely one
     // that looks like them. Kilo's toolbar buttons are icon-buttons, a fixed
@@ -758,22 +843,36 @@ const ATTACH_RULE = {
     // beyond this window is some other component, and the right answer there
     // is to report rather than to reach.
     const NEIGHBOUR_WINDOW = 2048;
-    const nearAnchor = (m) =>
-      m.index > anchors[0].index &&
-      m.index - anchors[0].index < NEIGHBOUR_WINDOW;
+    // Searched in the window itself rather than across the bundle and then
+    // filtered, which finds the same matches for a fraction of the scanning
+    // (the check the extension runs on a reviewed entry repeats this rule).
+    // The slice runs past the window by more than a match is long, so a match
+    // that starts inside it is never cut short, and it starts after the
+    // anchor, which is where the neighbour has to be.
+    const windowStart = anchor.index + 1;
+    const windowText = content.slice(
+      windowStart,
+      anchor.index + NEIGHBOUR_WINDOW + 1024,
+    );
+    const nearAnchor = (source) =>
+      [...windowText.matchAll(new RegExp(source, "g"))]
+        .map((m) => {
+          m.index += windowStart;
+          return m;
+        })
+        .filter((m) => m.index - anchor.index < NEIGHBOUR_WINDOW);
 
-    const iconButtons = findAll(
-      content,
+    const iconButtons = nearAnchor(
       `${esc(create)}\\((${ID}),\\{icon:"[a-z-]+",variant:"ghost",size:"small",onClick:`,
-    ).filter(nearAnchor);
-    const ghosts = findAll(
-      content,
+    );
+    const ghosts = nearAnchor(
       `${esc(create)}\\((${ID}),\\{variant:"ghost",size:"small",onClick:`,
-    ).filter(nearAnchor);
+    );
     if (iconButtons.length === 0 && ghosts.length === 0)
       return { error: "no ghost toolbar button beside the indexing status" };
     const asIconButton = iconButtons.length > 0;
-    const ghost = (asIconButton ? iconButtons[0] : ghosts[0])[1];
+    const neighbour = asIconButton ? iconButtons[0] : ghosts[0];
+    const ghost = neighbour[1];
 
     // An icon-button resolves the glyph from its own `icon` prop, so that
     // branch needs no icon component at all. The legacy Button form still
@@ -783,12 +882,20 @@ const ATTACH_RULE = {
     if (!asIconButton && !icon)
       return { error: "sprite icon component not found" };
 
-    const i18nMatches = findAll(
-      content,
-      `(${ID})\\.t\\("prompt\\.action\\.indexing"\\)`,
-    );
-    if (i18nMatches.length === 0) return { error: "i18n accessor not found" };
-    const i18n = i18nMatches[0][1];
+    // The caption reads Kilo's catalog only where the catalog still carries
+    // the key, which no build since 7.4.17 does, so the accessor is looked up
+    // (and reported as a symbol the edit names) only then.
+    let i18n;
+    let i18nHop;
+    if (content.includes('"prompt.action.attachFile":')) {
+      const i18nMatches = findAll(
+        content,
+        `(${ID})\\.t\\("prompt\\.action\\.indexing"\\)`,
+      );
+      if (i18nMatches.length === 0) return { error: "i18n accessor not found" };
+      i18n = i18nMatches[0][1];
+      i18nHop = hop(i18nMatches[0]);
+    }
 
     // Icons are referenced dynamically, so a glyph only exists if the sprite map
     // declares it; check the map keys rather than a rendered reference.
@@ -811,7 +918,7 @@ const ATTACH_RULE = {
       : `{variant:"ghost",size:"small",`;
     const child = asIconButton
       ? ""
-      : `,get children(){return ${create}(${icon},{name:"${glyph}",size:"small"})}`;
+      : `,get children(){return ${create}(${icon.name},{name:"${glyph}",size:"small"})}`;
     const button =
       `${insert}(${container},${create}(${tooltip},{get value(){return ${label}},` +
       `placement:"top",get children(){return ${create}(${ghost},${open}` +
@@ -824,20 +931,30 @@ const ATTACH_RULE = {
     return {
       original,
       patched: button + original,
+      // Every name the edit binds in the bundle's scope. The glyph is not one
+      // (it is a key the sprite map declares, written as a string), so it is
+      // reported as data instead.
       symbols: {
         insert,
         container,
         create,
         tooltip,
         ghost,
-        ...(icon ? { icon } : {}),
-        i18n,
+        ...(icon ? { icon: icon.name } : {}),
+        ...(i18n ? { i18n } : {}),
         controller,
         textarea,
         setter,
         sync,
-        glyph,
       },
+      data: { glyph },
+      hops: [
+        hop(mention),
+        { index: mention.index + ref.index, text: ref[0] },
+        hop(neighbour),
+        ...(icon ? [icon.hop] : []),
+        ...(i18nHop ? [i18nHop] : []),
+      ],
     };
   },
 };
@@ -947,8 +1064,20 @@ const RAW_MARKDOWN_LABEL = "Markdown source";
 // One symbol still comes from outside it: the accessor for the part's raw
 // text. The copy handler is the only place that reads it, and the anchor
 // captures that handler by name, so the second hop is pinned to this component
-// rather than matched loose across the bundle. That one outside symbol is also
-// why this rule is not DERIVABLE.
+// rather than matched loose across the bundle. That hop is also held to where
+// the handler actually sits, in the same component's `let` chain a few KB
+// before the footer, which is what lets the extension derive this rule at
+// apply rather than wait for a reviewed entry.
+//
+// Measured at 2870 bytes on every build from 7.5.0 through 7.8.1 (829 on
+// 7.4.17), so this leaves the component room to grow.
+const COPY_HANDLER_WINDOW = 8192;
+
+// Kilo's own glyph for the button. Its sprite injector emits a symbol for every
+// entry in the map whether or not Kilo references it, so the map declaring the
+// name is what makes the icon render.
+const RAW_MARKDOWN_GLYPH = "code-lines";
+
 const RAW_MARKDOWN_RULE = {
   key: "raw-markdown",
   file: "webview.js",
@@ -965,21 +1094,40 @@ const RAW_MARKDOWN_RULE = {
         `\\7\\.t\\("ui\\.message\\.copied"\\):\\7\\.t\\("ui\\.message\\.copyResponse"\\)\\}\\}\\)\\}\\}\\),null\\)`,
     );
     if (anchors.length !== 1) return { matches: anchors.length };
-    const [, insert, container, create, tooltip, , , , button, , copy] =
-      anchors[0];
+    const anchor = anchors[0];
+    const [, insert, container, create, tooltip, , , , button, , copy] = anchor;
 
     // Kilo's copy handler is `<copy>=async()=>{let v=<raw>();v&&(await
     // <clipboard>.write(v),...)}`, so the accessor it reads is the part's raw
     // markdown: exactly what Copy puts on the clipboard, which is the text
     // this button should show. Anchored on the handler name the footer already
-    // gave us, so this cannot match some other component's copy handler.
+    // gave us, so this cannot match some other component's copy handler. The
+    // lookbehind is not `\b`, which reads `$` as a boundary and so would let a
+    // handler spelled `$f` answer for `f`.
     const handlers = findAll(
       content,
-      `\\b${esc(copy)}=async\\(\\)=>\\{let (${ID})=(${ID})\\(\\);\\1&&\\(await (${ID})\\.write\\(\\1\\),`,
+      `(?<![\\w$.])${esc(copy)}=async\\(\\)=>\\{let (${ID})=(${ID})\\(\\);\\1&&\\(await (${ID})\\.write\\(\\1\\),`,
     );
     if (handlers.length !== 1)
       return { error: "the footer's copy handler is not unique" };
-    const raw = handlers[0][2];
+    const handler = handlers[0];
+    const raw = handler[2];
+    // The handler has to be this footer's: declared before it, close by, and
+    // in the same function body, so the accessor it reads is bound where the
+    // toggle is spliced.
+    const gap = anchor.index - handler.index;
+    if (gap <= 0 || gap > COPY_HANDLER_WINDOW) {
+      return { error: "the copy handler is not in the footer's component" };
+    }
+    if (crossesFunction(content.slice(handler.index, anchor.index))) {
+      return {
+        error: "a function body opens between the copy handler and the footer",
+      };
+    }
+
+    if (!hasSpriteGlyph(content, RAW_MARKDOWN_GLYPH)) {
+      return { error: `no ${RAW_MARKDOWN_GLYPH} glyph in the sprite map` };
+    }
 
     const missing = Object.entries(RAW_MARKDOWN_TEMPLATES)
       .filter(([, literal]) => !content.includes(literal))
@@ -1002,7 +1150,7 @@ const RAW_MARKDOWN_RULE = {
     // once and never tracks.
     const toggle =
       `${insert}(${container},${create}(${tooltip},{value:"${RAW_MARKDOWN_LABEL}",placement:"top",gutter:4,` +
-      `get children(){return ${create}(${button},{icon:"code-lines",size:"normal",variant:"ghost",` +
+      `get children(){return ${create}(${button},{icon:"${RAW_MARKDOWN_GLYPH}",size:"normal",variant:"ghost",` +
       `"data-slot":"kbp-raw-markdown-toggle","aria-label":"${RAW_MARKDOWN_LABEL}","aria-pressed":"false",` +
       `onMouseDown:_e=>_e.preventDefault(),onClick:_e=>{let _btn=_e.currentTarget,` +
       `_part=_btn.closest("[data-component=text-part]"),` +
@@ -1014,7 +1162,7 @@ const RAW_MARKDOWN_RULE = {
       `_pre.textContent=${raw}(),_body.appendChild(_pre),` +
       `_part.setAttribute("data-kbp-raw-markdown",""),_btn.setAttribute("aria-pressed","true")}})}}),null)`;
 
-    const original = anchors[0][0];
+    const original = anchor[0];
     return {
       // Appended after the copy button rather than before it, so the two text
       // actions sit together at the head of the row and the feedback buttons
@@ -1022,6 +1170,8 @@ const RAW_MARKDOWN_RULE = {
       original,
       patched: `${original},${toggle}`,
       symbols: { insert, container, create, tooltip, button, copy, raw },
+      data: { glyph: RAW_MARKDOWN_GLYPH },
+      hops: [hop(handler)],
     };
   },
 };

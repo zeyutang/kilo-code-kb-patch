@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.5
+
+- Support Kilo Code 7.7.6 through 7.8.1, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes
+- Re-target the opt-in attach-file `+` button, the opt-in chat math rendering, and the opt-in markdown-source button to 7.7.6 and later
+- The opt-in attach-file `+` button and markdown-source button now survive a Kilo Code update that only re-minifies the code they patch, where before they read **unavailable** until the next KB Patch release.
+  The keyboard patches and math rendering already work this way
+- The same change makes the markdown-source button available on Kilo Code releases older than 7.6.2, which never had a pattern of their own
+- Fix **Restore Originals** leaving KB Patch data at the end of Kilo Code's webview bundle on a Kilo Code release newer than the installed KB Patch while math rendering was on
+- Keep all earlier versions' patterns, so this release still applies on older Kilo Code releases
+
 ## 2.1.4
 
 - Support Kilo Code 7.7.4 and 7.7.5, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

@@ -59,8 +59,18 @@ function resolveInstall(test, explicitPath) {
 
 // Reverse every known patch (core, their `previous` forms, and the opt-in
 // bonuses) so callers see the bytes Kilo shipped. Pure string work on a copy.
-function unpatched(content, filename, test) {
+//
+// `record` is the derivation record the install carries (in webview.js, for
+// every file). Its entries are reversed first: they describe exactly what was
+// derived and written on this machine, which on a build newer than this
+// checkout is the only description there is of edits no shipped entry names.
+function unpatched(content, filename, test, record = []) {
   let out = content;
+  for (const p of record) {
+    if (p.filename === filename && out.includes(p.patched)) {
+      out = out.replace(p.patched, p.original);
+    }
+  }
   const file = test.PATCHES.find((f) => f.filename === filename);
   if (file) {
     for (const p of file.patches) {
@@ -184,6 +194,7 @@ function patchedFilenames(test) {
 // Pristine contents of every file the patch set covers, keyed by filename.
 function readPristineBundles(extPath, test) {
   const bundles = {};
+  const record = test.readDerivedRecordAt(path.join(extPath, "dist"));
   for (const filename of patchedFilenames(test)) {
     const fpath = path.join(extPath, "dist", filename);
     if (!fs.existsSync(fpath)) continue;
@@ -191,6 +202,7 @@ function readPristineBundles(extPath, test) {
       fs.readFileSync(fpath, "utf8"),
       filename,
       test,
+      record,
     );
   }
   return bundles;

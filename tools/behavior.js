@@ -414,7 +414,7 @@ function runMath(test, content) {
     return;
   }
   // Exercise what the extension would actually apply here: a shipped entry
-  // where one matches, else what it derives, since 2.2.0 wired this bonus into
+  // where one matches, else what it derives, since 2.1.3 wired this bonus into
   // apply-time derivation. Before that, a build with no entry could only be
   // reported as a gap, which said nothing about whether the splice worked
   // there.

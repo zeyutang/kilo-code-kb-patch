@@ -33,6 +33,13 @@ interface DeriveResult {
   matches?: number;
   error?: string;
   legacy?: { original: string; patched: string };
+  // What the matched form does, for a rule whose forms differ in that.
+  description?: (version: string) => string;
+  // The further matches a rule read a symbol from, where the edit names
+  // something its own anchor does not contain. See `admissibility`.
+  hops?: { index: number; text: string }[];
+  // Values the edit writes that are not names in the bundle's scope.
+  data?: Record<string, string>;
 }
 
 interface ShapeRule {
@@ -50,6 +57,10 @@ type BonusRule = Omit<ShapeRule, "description">;
 const RULES: ShapeRule[] = require("./rules").RULES;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MATH_RULE: BonusRule = require("./rules").MATH_RULE;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ATTACH_RULE: BonusRule = require("./rules").ATTACH_RULE;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const RAW_MARKDOWN_RULE: BonusRule = require("./rules").RAW_MARKDOWN_RULE;
 
 interface PatchDef {
   // Which logical behavior this pattern implements. Declared rather than
@@ -90,6 +101,265 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.8.0+ patterns. 7.8.1 republished 7.8.0's bundles byte for
+      //     byte, so one block covers both. Seven entries: doc-escape still
+      //     reads off the v7.7.9+ entry below.
+      //
+      //     Kilo published six builds in a week (7.7.6, 7.7.7, 7.7.9, 7.7.12,
+      //     7.8.0, 7.8.1; 7.7.8, 7.7.10 and 7.7.11 never shipped), and they
+      //     form four pattern generations: 7.7.6-7.7.7, 7.7.9, 7.7.12 and
+      //     7.8.0-7.8.1, with the permission scope and doc-escape holding
+      //     across some of those boundaries. Every rule derived on every one
+      //     of them with no change to src/rules.js, and the shipped 2.1.4
+      //     had already applied all eight core patches and the math splice
+      //     by derivation on each. The two buttons are what broke, and they
+      //     now derive too (see DERIVABLE_BONUSES).
+      //
+      //     Against 7.7.12: the chat event $e→ze, so chat-input, chat-escape
+      //     and chat-history each moved that one name (Enter-check f1, send
+      //     Dn, popup HT, ghost Be, goal R, busy $r, store t and every history
+      //     local held). Mention: slice local nt→rt, trigger regex yU→vU
+      //     (7.7.9's spelling again) and the dead slot Ze→Ue. Permission: the
+      //     in-textarea guard ze→$e, helper Z→W, element-level handler le→me,
+      //     feedback opener me→pe, bare-Enter check ie→ae and dispatch ce→le,
+      //     while the event J and element arg Ne held. The chat event and the
+      //     permission guard traded letters outright ($e and ze), and three
+      //     permission names moved one role along (7.7.12's opener me is the
+      //     handler, its handler le the dispatch). ---
+      {
+        feature: "chat-input",
+        original: "f1(ze)&&!ze.shiftKey&&(ze.preventDefault(),Dn())",
+        patched: "f1(ze)&&(ze.metaKey||ze.ctrlKey)&&(ze.preventDefault(),Dn())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.8.0+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'ze.key!=="Escape"?!1:HT()?!0:!Be.text()&&!R.active()&&!$r()?!1:(ze.preventDefault(),ze.stopPropagation(),Be.text()?Be.dismiss():R.active()?R.cancel():t.abort(),!0)',
+        patched:
+          'ze.key!=="Escape"?!1:HT()?!0:!Be.text()&&!R.active()&&(!$r()||!ze.shiftKey&&ze.target?.value?.trim())?!1:(ze.preventDefault(),ze.stopPropagation(),Be.text()?Be.dismiss():R.active()?R.cancel():t.abort(),!0)',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.8.0+)",
+      },
+      {
+        feature: "mention-escape",
+        original:
+          'let rt=ft.substring(0,Le),bt=rt.match(vU);if(!bt){qe();return}let Ft=bt[1]??"";if(Ne=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),Ue&&Ue.at===Ne&&Ft.startsWith(Ue.query)){qe();return}',
+        patched:
+          'let rt=ft.substring(0,Le),bt=rt.match(vU);if(!bt){Ue&&ft[Ue.at]!=="@"&&(Ue=void 0),qe();return}let Ft=bt[1]??"";if(Ne=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),Ue&&Ue.at===Ne&&Ft.startsWith(Ue.query)){qe();return}',
+        description:
+          "Mention menu Escape: drops Kilo's recorded @ query once that @ is gone, so deleting and retyping the @ reopens the menu (v7.8.0+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if((ze.key==="ArrowUp"||ze.key==="ArrowDown")&&!ze.altKey&&!ze.ctrlKey&&!ze.metaKey&&!ze.shiftKey){let Bt=w?.selectionStart??0,Ot=w?.selectionEnd??0;if(Bt!==Ot)return;let Rn=Bt,Jn=ze.key==="ArrowUp"?"up":"down",Vn=k.navigate(Jn,U(),Rn)',
+        patched:
+          'if((ze.key==="ArrowUp"||ze.key==="ArrowDown")&&(ze.metaKey||ze.ctrlKey)&&!ze.altKey&&!ze.shiftKey){let Bt=w?.selectionStart??0,Ot=w?.selectionEnd??0;if(Bt!==Ot)return;let Rn=ze.key==="ArrowUp"?0:U().length,Jn=ze.key==="ArrowUp"?"up":"down",Vn=k.navigate(Jn,U(),Rn)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.8.0+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'J.key==="Enter":ge?!0:$e?!1:W(Ne)',
+        patched:
+          'J.key==="Enter":ge?!0:$e?J.target?.value?.trim()?(J.key==="Enter"&&!J.metaKey&&!J.ctrlKey||J.key===" "||J.key==="Escape"&&!J.shiftKey&&!J.ctrlKey):!1:W(Ne)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.8.0+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'me=J=>{if(J.key==="Escape"){pe(J);return}}',
+        patched:
+          'me=J=>{if(J.key==="Escape"&&(J.shiftKey||!J.target?.value?.trim())){pe(J);return}}',
+        description:
+          "Permission Escape: bare Escape reaches the dialog only when the textarea is empty/whitespace-only; Shift+Escape always does (v7.8.0+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(ae(J)&&!C()){le(J,"once");return}}};',
+        patched:
+          'if((ae(J)||J.key===" "&&!J.metaKey&&!J.ctrlKey&&!J.target?.value?.trim()||J.key==="Enter"&&(J.metaKey||J.ctrlKey))&&!C()){le(J,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.8.0+)",
+      },
+      // --- v7.7.12 patterns. Only the chat and mention scopes moved against
+      //     7.7.9: the chat send Mn→Dn, the Escape chain's popup VT→HT (7.7.6's
+      //     spelling again), the history caret Ln→Rn and the mention trigger
+      //     regex vU→yU. The permission scope and doc-escape are byte-identical
+      //     to 7.7.9's and read off the v7.7.9+ entries below. ---
+      {
+        feature: "chat-input",
+        original: "f1($e)&&!$e.shiftKey&&($e.preventDefault(),Dn())",
+        patched: "f1($e)&&($e.metaKey||$e.ctrlKey)&&($e.preventDefault(),Dn())",
+        description:
+          "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.7.12+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          '$e.key!=="Escape"?!1:HT()?!0:!Be.text()&&!R.active()&&!$r()?!1:($e.preventDefault(),$e.stopPropagation(),Be.text()?Be.dismiss():R.active()?R.cancel():t.abort(),!0)',
+        patched:
+          '$e.key!=="Escape"?!1:HT()?!0:!Be.text()&&!R.active()&&(!$r()||!$e.shiftKey&&$e.target?.value?.trim())?!1:($e.preventDefault(),$e.stopPropagation(),Be.text()?Be.dismiss():R.active()?R.cancel():t.abort(),!0)',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.7.12+)",
+      },
+      {
+        feature: "mention-escape",
+        original:
+          'let nt=ft.substring(0,Le),bt=nt.match(yU);if(!bt){qe();return}let Ft=bt[1]??"";if(Ne=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),Ze&&Ze.at===Ne&&Ft.startsWith(Ze.query)){qe();return}',
+        patched:
+          'let nt=ft.substring(0,Le),bt=nt.match(yU);if(!bt){Ze&&ft[Ze.at]!=="@"&&(Ze=void 0),qe();return}let Ft=bt[1]??"";if(Ne=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),Ze&&Ze.at===Ne&&Ft.startsWith(Ze.query)){qe();return}',
+        description:
+          "Mention menu Escape: drops Kilo's recorded @ query once that @ is gone, so deleting and retyping the @ reopens the menu (v7.7.12+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if(($e.key==="ArrowUp"||$e.key==="ArrowDown")&&!$e.altKey&&!$e.ctrlKey&&!$e.metaKey&&!$e.shiftKey){let Bt=w?.selectionStart??0,Ot=w?.selectionEnd??0;if(Bt!==Ot)return;let Rn=Bt,Jn=$e.key==="ArrowUp"?"up":"down",Vn=k.navigate(Jn,U(),Rn)',
+        patched:
+          'if(($e.key==="ArrowUp"||$e.key==="ArrowDown")&&($e.metaKey||$e.ctrlKey)&&!$e.altKey&&!$e.shiftKey){let Bt=w?.selectionStart??0,Ot=w?.selectionEnd??0;if(Bt!==Ot)return;let Rn=$e.key==="ArrowUp"?0:U().length,Jn=$e.key==="ArrowUp"?"up":"down",Vn=k.navigate(Jn,U(),Rn)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.7.12+)",
+      },
+      // --- v7.7.9+ patterns. Every webview scope moved against 7.7.6. Chat
+      //     Enter-check g1→f1 and event je→$e (send Mn held), with the Escape
+      //     chain's popup HT→VT, ghost Qe→Be and goal L→R (busy $r, store t
+      //     held). History moved its event and selectionStart Et→Bt only.
+      //     Mention: slice local tt→nt, trigger regex bU→vU, close He→qe, the
+      //     "@" offset Oe→Ne and the dead slot We→Ze. Permission: event be→J,
+      //     in-textarea guard We→ze, element arg X→Ne, helper Y→Z, the
+      //     element-level handler me→le and the feedback opener le→me (the two
+      //     traded letters), bare-Enter check W→ie, dispatch te→ce, and the
+      //     feedback-box signal perm-approve's last conjunct reads w→C.
+      //     doc-escape moved only its event he→Ae. The permission entries and
+      //     doc-escape here also serve 7.7.12, and doc-escape 7.8.0-7.8.1. ---
+      {
+        feature: "chat-input",
+        original: "f1($e)&&!$e.shiftKey&&($e.preventDefault(),Mn())",
+        patched: "f1($e)&&($e.metaKey||$e.ctrlKey)&&($e.preventDefault(),Mn())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.7.9+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          '$e.key!=="Escape"?!1:VT()?!0:!Be.text()&&!R.active()&&!$r()?!1:($e.preventDefault(),$e.stopPropagation(),Be.text()?Be.dismiss():R.active()?R.cancel():t.abort(),!0)',
+        patched:
+          '$e.key!=="Escape"?!1:VT()?!0:!Be.text()&&!R.active()&&(!$r()||!$e.shiftKey&&$e.target?.value?.trim())?!1:($e.preventDefault(),$e.stopPropagation(),Be.text()?Be.dismiss():R.active()?R.cancel():t.abort(),!0)',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.7.9+)",
+      },
+      {
+        feature: "mention-escape",
+        original:
+          'let nt=ft.substring(0,Le),bt=nt.match(vU);if(!bt){qe();return}let Ft=bt[1]??"";if(Ne=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),Ze&&Ze.at===Ne&&Ft.startsWith(Ze.query)){qe();return}',
+        patched:
+          'let nt=ft.substring(0,Le),bt=nt.match(vU);if(!bt){Ze&&ft[Ze.at]!=="@"&&(Ze=void 0),qe();return}let Ft=bt[1]??"";if(Ne=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),Ze&&Ze.at===Ne&&Ft.startsWith(Ze.query)){qe();return}',
+        description:
+          "Mention menu Escape: drops Kilo's recorded @ query once that @ is gone, so deleting and retyping the @ reopens the menu (v7.7.9+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if(($e.key==="ArrowUp"||$e.key==="ArrowDown")&&!$e.altKey&&!$e.ctrlKey&&!$e.metaKey&&!$e.shiftKey){let Bt=w?.selectionStart??0,Ot=w?.selectionEnd??0;if(Bt!==Ot)return;let Ln=Bt,Jn=$e.key==="ArrowUp"?"up":"down",Vn=k.navigate(Jn,U(),Ln)',
+        patched:
+          'if(($e.key==="ArrowUp"||$e.key==="ArrowDown")&&($e.metaKey||$e.ctrlKey)&&!$e.altKey&&!$e.shiftKey){let Bt=w?.selectionStart??0,Ot=w?.selectionEnd??0;if(Bt!==Ot)return;let Ln=$e.key==="ArrowUp"?0:U().length,Jn=$e.key==="ArrowUp"?"up":"down",Vn=k.navigate(Jn,U(),Ln)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.7.9+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'J.key==="Enter":ge?!0:ze?!1:Z(Ne)',
+        patched:
+          'J.key==="Enter":ge?!0:ze?J.target?.value?.trim()?(J.key==="Enter"&&!J.metaKey&&!J.ctrlKey||J.key===" "||J.key==="Escape"&&!J.shiftKey&&!J.ctrlKey):!1:Z(Ne)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.7.9+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'le=J=>{if(J.key==="Escape"){me(J);return}}',
+        patched:
+          'le=J=>{if(J.key==="Escape"&&(J.shiftKey||!J.target?.value?.trim())){me(J);return}}',
+        description:
+          "Permission Escape: bare Escape reaches the dialog only when the textarea is empty/whitespace-only; Shift+Escape always does (v7.7.9+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(ie(J)&&!C()){ce(J,"once");return}}};',
+        patched:
+          'if((ie(J)||J.key===" "&&!J.metaKey&&!J.ctrlKey&&!J.target?.value?.trim()||J.key==="Enter"&&(J.metaKey||J.ctrlKey))&&!C()){ce(J,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.7.9+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'Ae.key!=="Escape"||!t.submitting()&&t.status()==="idle"&&!m()?.active||Ae.defaultPrevented||(Ae.preventDefault(),t.abort())',
+        patched:
+          'Ae.key!=="Escape"||!t.submitting()&&t.status()==="idle"&&!m()?.active||Ae.defaultPrevented||!Ae.shiftKey&&Ae.target?.value?.trim()||(Ae.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.7.9+)",
+      },
+      // --- v7.7.6+ patterns (7.7.7 ships the same patterns). Against 7.7.5:
+      //     chat Enter-check m1→g1, event Fe→je and send Ut→Mn, with the Escape
+      //     chain's popup oU→HT, ghost Pe→Qe and busy Nr→$r (goal L, store t
+      //     held). History moved its event, selectionEnd jt→Ot, caret bn→Ln,
+      //     direction zn→Jn and result Mn→Vn (selectionStart Et, textarea w,
+      //     navigator k and text accessor U held). Mention: trigger regex
+      //     uU→bU and the dead slot Ke→We. Permission: in-textarea guard
+      //     Ke→We, element-level handler pe→me and feedback opener ce→le.
+      //     perm-approve and doc-escape did not move and read off the v7.7.4+
+      //     entries below, which is the one place on these two builds where a
+      //     keyboard row is served by an older entry. ---
+      {
+        feature: "chat-input",
+        original: "g1(je)&&!je.shiftKey&&(je.preventDefault(),Mn())",
+        patched: "g1(je)&&(je.metaKey||je.ctrlKey)&&(je.preventDefault(),Mn())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.7.6+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          'je.key!=="Escape"?!1:HT()?!0:!Qe.text()&&!L.active()&&!$r()?!1:(je.preventDefault(),je.stopPropagation(),Qe.text()?Qe.dismiss():L.active()?L.cancel():t.abort(),!0)',
+        patched:
+          'je.key!=="Escape"?!1:HT()?!0:!Qe.text()&&!L.active()&&(!$r()||!je.shiftKey&&je.target?.value?.trim())?!1:(je.preventDefault(),je.stopPropagation(),Qe.text()?Qe.dismiss():L.active()?L.cancel():t.abort(),!0)',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.7.6+)",
+      },
+      {
+        feature: "mention-escape",
+        original:
+          'let tt=ft.substring(0,Le),bt=tt.match(bU);if(!bt){He();return}let Ft=bt[1]??"";if(Oe=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),We&&We.at===Oe&&Ft.startsWith(We.query)){He();return}',
+        patched:
+          'let tt=ft.substring(0,Le),bt=tt.match(bU);if(!bt){We&&ft[We.at]!=="@"&&(We=void 0),He();return}let Ft=bt[1]??"";if(Oe=(bt.index??0)+(/^\\s/.test(bt[0])?1:0),We&&We.at===Oe&&Ft.startsWith(We.query)){He();return}',
+        description:
+          "Mention menu Escape: drops Kilo's recorded @ query once that @ is gone, so deleting and retyping the @ reopens the menu (v7.7.6+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if((je.key==="ArrowUp"||je.key==="ArrowDown")&&!je.altKey&&!je.ctrlKey&&!je.metaKey&&!je.shiftKey){let Et=w?.selectionStart??0,Ot=w?.selectionEnd??0;if(Et!==Ot)return;let Ln=Et,Jn=je.key==="ArrowUp"?"up":"down",Vn=k.navigate(Jn,U(),Ln)',
+        patched:
+          'if((je.key==="ArrowUp"||je.key==="ArrowDown")&&(je.metaKey||je.ctrlKey)&&!je.altKey&&!je.shiftKey){let Et=w?.selectionStart??0,Ot=w?.selectionEnd??0;if(Et!==Ot)return;let Ln=je.key==="ArrowUp"?0:U().length,Jn=je.key==="ArrowUp"?"up":"down",Vn=k.navigate(Jn,U(),Ln)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.7.6+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'be.key==="Enter":ze?!0:We?!1:Y(X)',
+        patched:
+          'be.key==="Enter":ze?!0:We?be.target?.value?.trim()?(be.key==="Enter"&&!be.metaKey&&!be.ctrlKey||be.key===" "||be.key==="Escape"&&!be.shiftKey&&!be.ctrlKey):!1:Y(X)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.7.6+)",
+      },
+      {
+        feature: "perm-escape",
+        original: 'me=be=>{if(be.key==="Escape"){le(be);return}}',
+        patched:
+          'me=be=>{if(be.key==="Escape"&&(be.shiftKey||!be.target?.value?.trim())){le(be);return}}',
+        description:
+          "Permission Escape: bare Escape reaches the dialog only when the textarea is empty/whitespace-only; Shift+Escape always does (v7.7.6+)",
+      },
       // --- v7.7.4+ patterns. Two Kilo builds landed the same day (7.7.4 at
       //     07:27Z, 7.7.5 at 12:28Z) and, for the first time here, *both* of
       //     them moved: neither derives 7.7.3's patterns and neither derives
@@ -107,7 +377,7 @@ const PATCHES: FilePatches[] = [
       //     never broke on either build. What derivation cannot cover is the
       //     attach button and the raw-markdown toggle, the two bonuses that
       //     name closure locals outside their matched span; math joined the
-      //     derivable set in 2.2.0, so its entry below is the reviewed
+      //     derivable set in 2.1.3, so its entry below is the reviewed
       //     literal rather than the thing that was broken.
       //
       //     The churn against 7.7.3 covers every webview scope again, so no
@@ -2874,9 +3144,11 @@ function invalidateExtensionScannerCache(): void {
 //
 // Opt-in: off unless "kiloCodeKbPatch.addAttachFileButton" is true in
 // settings.json. Like every webview.js pattern these symbols are re-minified per
-// Kilo release, so each supported version keeps its own variant here (newest
-// first); exactly one matches a given build. A build matching none is a silent
-// no-op. Per-version symbols: 7.4.20 uses ai/oe/gt/Mn
+// Kilo release, so each supported version keeps its own reviewed variant here
+// (newest first); at most one answers for a given build. A build no entry
+// answers for has the button derived from its own bytes
+// (reconcileDerivableBonus), and one the rule cannot read is a silent no-op.
+// Per-version symbols: 7.4.20 uses ai/oe/gt/Mn
 // (container/when-wrapper/when-pred/tooltip) with insert R and createComponent _,
 // ghost button _t, icon component Wi, textarea w (was k in every earlier build),
 // setter L, sync bt, icon name "plus"; 7.4.17 uses Pe/ce/Ke/Fn
@@ -2906,6 +3178,33 @@ interface WebviewVariant {
 type AttachButtonDef = WebviewVariant;
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
+  {
+    // v7.8.0+ (7.8.1 ships the same bundle): insert P→Q, the
+    // when-wrapper pe→ue and the setter W→K. Container fo, create E, tooltip
+    // Pn, icon-button Cn, controller A, textarea w, sync ct, the indexing
+    // accessor a and the glyph "plus" held. Kilo's own mention row,
+    // A.selectMention(Mo,w,K,ct), occurs once and pins the four closure
+    // locals, and prompt.action.attachFile still scores 0 across the vsix, so
+    // the caption stays the literal "Attach file".
+    original:
+      "Q(fo,E(ue,{get when(){return Sr()},get children(){return E(Pn,{get value(){return a.status().message||a.label()}",
+    patched:
+      'Q(fo,E(Pn,{get value(){return "Attach file"},placement:"top",get children(){return E(Cn,{icon:"plus",variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");A.selectMention({type:"file-picker"},w,K,ct)},get"aria-label"(){return "Attach file"}})}}),null),Q(fo,E(ue,{get when(){return Sr()},get children(){return E(Pn,{get value(){return a.status().message||a.label()}',
+  },
+  {
+    // v7.7.12: tooltip Qn→Pn against 7.7.9, everything else held.
+    //
+    // There is no reviewed entry for 7.7.6-7.7.7 or for 7.7.9. Those builds
+    // ship the toolbar anchor byte for byte (P(fo,E(pe,{... with tooltip Qn)
+    // while naming a different mention controller and setter (h and Z on
+    // 7.7.6-7.7.7, A and W on 7.7.9), so an entry recognized by its anchor
+    // would give one of them the other's button. They take the derived one,
+    // which reads both names from the build's own mention row.
+    original:
+      "P(fo,E(pe,{get when(){return Sr()},get children(){return E(Pn,{get value(){return a.status().message||a.label()}",
+    patched:
+      'P(fo,E(Pn,{get value(){return "Attach file"},placement:"top",get children(){return E(Cn,{icon:"plus",variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");A.selectMention({type:"file-picker"},w,W,ct)},get"aria-label"(){return "Attach file"}})}}),null),P(fo,E(pe,{get when(){return Sr()},get children(){return E(Pn,{get value(){return a.status().message||a.label()}',
+  },
   {
     // v7.7.4+ (7.7.5 derives the same form): container ho→Zo, tooltip Ln→Qn,
     // icon-button kn→Cn, setter Y→Z and sync St→ct, with the when-wrapper's
@@ -3287,24 +3586,6 @@ function addAttachFileButtonEnabled(): boolean {
     .get<boolean>("addAttachFileButton", false);
 }
 
-// Find the variant that matches this build. For the attach button each patched
-// string contains its own original as a suffix, so a patched build makes both
-// includes()-true for its variant only; for the math extensions the two are
-// mutually exclusive. Either way exactly one variant matches, since unmatched
-// releases' symbols are absent. Returns undefined when none does (a future Kilo
-// re-minify), which callers treat as a silent no-op.
-function matchingVariant(
-  content: string,
-  variants: WebviewVariant[],
-): WebviewVariant | undefined {
-  return variants.find(
-    (v) =>
-      content.includes(v.patched) ||
-      content.includes(v.original) ||
-      v.previous?.some((p) => content.includes(p)),
-  );
-}
-
 // Which way a reconcile has to move one variant, given the bytes on disk: the
 // text to replace and what to put there, or nothing when the file already
 // agrees with the setting. "Already patched" is tested before "is pristine",
@@ -3328,53 +3609,24 @@ function variantEdit(
   };
 }
 
-// The write half of a reconcile, given bytes the caller already has. Split from
-// the read because the bundle is 21 MB and reading it twice on the path every
-// activation and every settings change takes is the cost trap this codebase
-// keeps re-learning.
-function writeVariantEdit(
-  webviewPath: string,
-  content: string,
-  variant: WebviewVariant,
-  enabled: boolean,
-): boolean {
-  const edit = variantEdit(content, variant, enabled);
-  if (!edit) return false;
-  const updated = content.replace(edit.from, edit.to);
-  if (updated === content) return false;
-  fs.writeFileSync(webviewPath, updated, "utf8");
-  return true;
-}
-
-// Apply or remove one opt-in edit in Kilo's webview bundle to match its
-// setting. Returns true only when the file actually changed. Fails safe: a
-// missing bundle, or a site a future Kilo has re-minified past every known
-// variant, is a silent no-op.
-function reconcileVariant(
-  extPath: string,
-  variants: WebviewVariant[],
-  enabled: boolean,
-): boolean {
-  const webviewPath = path.join(extPath, "dist", CHAT_SCRIPT_FILE);
-  if (!fs.existsSync(webviewPath)) return false;
-  const content = fs.readFileSync(webviewPath, "utf8");
-  const variant = matchingVariant(content, variants);
-  if (!variant) return false;
-  return writeVariantEdit(webviewPath, content, variant, enabled);
-}
-
+// The reviewed entry that answers for this build, checked against the rule
+// (see RULE_CHECKED_BONUSES).
 function matchingAttachFileButton(
   content: string,
 ): AttachButtonDef | undefined {
-  return matchingVariant(content, ATTACH_FILE_BUTTONS);
+  return shippedBonusVariant(content, "attach-button");
 }
 
-function reconcileAttachFileButton(extPath: string): boolean {
-  return reconcileVariant(
-    extPath,
-    ATTACH_FILE_BUTTONS,
-    addAttachFileButtonEnabled(),
-  );
+// Falls back to working the button out from the build when no shipped variant
+// matches (see reconcileDerivableBonus), so a Kilo release that only
+// re-minified the toolbar keeps the button instead of waiting for a kb-patch
+// release.
+function reconcileAttachFileButton(
+  extPath: string,
+  // Passed in on the restore path; see reconcileDerivableBonus.
+  record?: DerivedPatch[],
+): boolean {
+  return reconcileDerivableBonus(extPath, "attach-button", record);
 }
 
 // --- Bonus math-rendering knob ----------------------------------------------
@@ -3419,6 +3671,29 @@ function reconcileAttachFileButton(extPath: string): boolean {
 // Note this is the first patch site where 7.5.11 and 7.5.14 could have
 // differed and did not, even though they ship distinct bundles.
 const MATH_EXTENSIONS: WebviewVariant[] = [
+  {
+    // v7.7.12+ (7.8.0 and 7.8.1 carry the same helper): the render
+    // helper VQ→HQ. Nothing else in the tail anchor moved.
+    original:
+      "renderer(n){return HQ(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      'renderer(n){return HQ(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return HQ(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return HQ(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return HQ(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
+  },
+  {
+    // v7.7.9: the render helper UQ→VQ.
+    original:
+      "renderer(n){return VQ(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      'renderer(n){return VQ(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return VQ(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return VQ(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return VQ(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
+  },
+  {
+    // v7.7.6+ (7.7.7 carries the same helper): the render helper
+    // zQ→UQ.
+    original:
+      "renderer(n){return UQ(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      'renderer(n){return UQ(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return UQ(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return UQ(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return UQ(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
+  },
   {
     // v7.7.5: the render helper NQ→zQ. Nothing else in the tail anchor moved,
     // and 7.7.4 still carries NQ, so that build reads off the v7.7.3 entry
@@ -3509,60 +3784,18 @@ function chatMathRenderingEnabled(): boolean {
 // incidental. Reusing the parameter name `n` would end the last extension with
 // exactly the original's bytes and make a patched bundle read as pristine.
 function matchingMathExtension(content: string): WebviewVariant | undefined {
-  return matchingVariant(content, MATH_EXTENSIONS);
+  return shippedBonusVariant(content, "math-rendering");
 }
 
-// The one bonus that falls back to working the splice out from the build (see
-// DERIVABLE_BONUSES), so a Kilo release that only re-minified this site keeps
-// rendering `$...$` instead of waiting for a kb-patch release.
-//
-// A reviewed variant wins wherever one matches, as everywhere else: a build
-// someone has tested gets the bytes that were tested, and there is then
-// nothing to record. The derived path is reached only when no shipped variant
-// does, and it writes the record in the same write as the edit, because an
-// edit this bundle carries and nothing can name is the one state Restore
-// cannot undo.
+// Falls back to working the splice out from the build (see
+// reconcileDerivableBonus), so a Kilo release that only re-minified this site
+// keeps rendering `$...$` instead of waiting for a kb-patch release.
 function reconcileMathRendering(
   extPath: string,
-  // Passed in on the restore path, which rewrites the core files (dropping the
-  // record block) before this runs, so reading it here would be too late.
+  // Passed in on the restore path; see reconcileDerivableBonus.
   record?: DerivedPatch[],
 ): boolean {
-  const enabled = chatMathRenderingEnabled();
-  const webviewPath = path.join(extPath, "dist", CHAT_SCRIPT_FILE);
-  if (!fs.existsSync(webviewPath)) return false;
-  const content = fs.readFileSync(webviewPath, "utf8");
-  const shipped = matchingMathExtension(content);
-  if (shipped) return writeVariantEdit(webviewPath, content, shipped, enabled);
-
-  const known = record ?? readDerivedRecord(content);
-  const remembered = recordedBonus(known, "math-rendering", content);
-  // Deriving is for turning the bonus on. With the setting off and nothing
-  // remembered, there is no edit of ours here to take away.
-  const variant =
-    remembered ??
-    (enabled ? deriveBonus("math-rendering", content) : undefined);
-  if (!variant) return false;
-  const edit = variantEdit(content, variant, enabled);
-  if (!edit) return false;
-  const updated = content.replace(edit.from, edit.to);
-  if (updated === content) return false;
-
-  // Enabling records the derivation, disabling takes it out, and either way
-  // whatever else the record holds is carried over untouched. Filtered by
-  // feature rather than by identity so the result holds one entry for this
-  // bonus whatever the record arrived with.
-  const rest = known.filter((p) => p.feature !== "math-rendering");
-  const next = enabled ? [...rest, variant] : rest;
-  const written = withDerivedRecord(updated, next);
-  // Removing our own edit puts Kilo's bytes back, so only the adding direction
-  // has to earn the write: it must have landed exactly once, and the assembled
-  // bundle must still parse.
-  if (enabled && !derivedGuard(CHAT_SCRIPT_FILE, [variant])(written)) {
-    return false;
-  }
-  fs.writeFileSync(webviewPath, written, "utf8");
-  return true;
+  return reconcileDerivableBonus(extPath, "math-rendering", record);
 }
 
 // --- Bonus raw-markdown toggle ----------------------------------------------
@@ -3593,6 +3826,32 @@ function reconcileMathRendering(
 // this component Solid sets no attributes on, and the block is appended
 // alongside a child Solid's insert placed once and does not track.
 const RAW_MARKDOWN_TOGGLES: WebviewVariant[] = [
+  {
+    // v7.8.0+ (7.8.1 ships the same bundle): insert P→Q. Footer w,
+    // create E, tooltip Pn, icon-button Cn, the copy handler f, the memo
+    // helper lt and the raw-text accessor o all held.
+    original:
+      'Q(w,E(Pn,{get value(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return E(Cn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null)',
+    patched:
+      'Q(w,E(Pn,{get value(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return E(Cn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null),Q(w,E(Pn,{value:"Markdown source",placement:"top",gutter:4,get children(){return E(Cn,{icon:"code-lines",size:"normal",variant:"ghost","data-slot":"kbp-raw-markdown-toggle","aria-label":"Markdown source","aria-pressed":"false",onMouseDown:_e=>_e.preventDefault(),onClick:_e=>{let _btn=_e.currentTarget,_part=_btn.closest("[data-component=text-part]"),_body=_part&&_part.querySelector("[data-slot=text-part-body]");if(!_body)return;let _pre=_body.querySelector("pre[data-slot=kbp-raw-markdown]");if(_pre){_pre.remove(),_part.removeAttribute("data-kbp-raw-markdown"),_btn.setAttribute("aria-pressed","false");return}_pre=document.createElement("pre"),_pre.setAttribute("data-slot","kbp-raw-markdown"),_pre.textContent=o(),_body.appendChild(_pre),_part.setAttribute("data-kbp-raw-markdown",""),_btn.setAttribute("aria-pressed","true")}})}}),null)',
+  },
+  {
+    // v7.7.12: tooltip Qn→Pn against 7.7.6-7.7.9.
+    original:
+      'P(w,E(Pn,{get value(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return E(Cn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null)',
+    patched:
+      'P(w,E(Pn,{get value(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return E(Cn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null),P(w,E(Pn,{value:"Markdown source",placement:"top",gutter:4,get children(){return E(Cn,{icon:"code-lines",size:"normal",variant:"ghost","data-slot":"kbp-raw-markdown-toggle","aria-label":"Markdown source","aria-pressed":"false",onMouseDown:_e=>_e.preventDefault(),onClick:_e=>{let _btn=_e.currentTarget,_part=_btn.closest("[data-component=text-part]"),_body=_part&&_part.querySelector("[data-slot=text-part-body]");if(!_body)return;let _pre=_body.querySelector("pre[data-slot=kbp-raw-markdown]");if(_pre){_pre.remove(),_part.removeAttribute("data-kbp-raw-markdown"),_btn.setAttribute("aria-pressed","false");return}_pre=document.createElement("pre"),_pre.setAttribute("data-slot","kbp-raw-markdown"),_pre.textContent=o(),_body.appendChild(_pre),_part.setAttribute("data-kbp-raw-markdown",""),_btn.setAttribute("aria-pressed","true")}})}}),null)',
+  },
+  {
+    // v7.7.6+ (7.7.7 and 7.7.9 ship the same footer): create B→E and
+    // Kilo's memo helper ut→lt inside the captured copy-button text. Insert
+    // P, footer w, tooltip Qn, icon-button Cn, the copy handler f and the
+    // raw-text accessor o held.
+    original:
+      'P(w,E(Qn,{get value(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return E(Cn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null)',
+    patched:
+      'P(w,E(Qn,{get value(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return E(Cn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return lt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null),P(w,E(Qn,{value:"Markdown source",placement:"top",gutter:4,get children(){return E(Cn,{icon:"code-lines",size:"normal",variant:"ghost","data-slot":"kbp-raw-markdown-toggle","aria-label":"Markdown source","aria-pressed":"false",onMouseDown:_e=>_e.preventDefault(),onClick:_e=>{let _btn=_e.currentTarget,_part=_btn.closest("[data-component=text-part]"),_body=_part&&_part.querySelector("[data-slot=text-part-body]");if(!_body)return;let _pre=_body.querySelector("pre[data-slot=kbp-raw-markdown]");if(_pre){_pre.remove(),_part.removeAttribute("data-kbp-raw-markdown"),_btn.setAttribute("aria-pressed","false");return}_pre=document.createElement("pre"),_pre.setAttribute("data-slot","kbp-raw-markdown"),_pre.textContent=o(),_body.appendChild(_pre),_part.setAttribute("data-kbp-raw-markdown",""),_btn.setAttribute("aria-pressed","true")}})}}),null)',
+  },
   {
     // v7.7.4+ (7.7.5 derives the same form): tooltip Ln→Qn and icon-button
     // kn→Cn, the same two components the attach button takes, plus Kilo's
@@ -3655,20 +3914,23 @@ function chatRawMarkdownEnabled(): boolean {
 
 // Like the attach button, each patched string here contains its own original
 // as a *prefix* (the splice appends after Kilo's copy button), so a patched
-// build makes both includes()-true and reconcileVariant's "already patched
-// before pristine" ordering is what keeps them apart.
+// build makes both includes()-true and variantEdit's "already patched before
+// pristine" ordering is what keeps them apart.
 function matchingRawMarkdownToggle(
   content: string,
 ): WebviewVariant | undefined {
-  return matchingVariant(content, RAW_MARKDOWN_TOGGLES);
+  return shippedBonusVariant(content, "raw-markdown");
 }
 
-function reconcileRawMarkdownToggle(extPath: string): boolean {
-  return reconcileVariant(
-    extPath,
-    RAW_MARKDOWN_TOGGLES,
-    chatRawMarkdownEnabled(),
-  );
+// Falls back to working the toggle out from the build (see
+// reconcileDerivableBonus), so a Kilo release that only re-minified the footer
+// keeps the button instead of waiting for a kb-patch release.
+function reconcileRawMarkdownToggle(
+  extPath: string,
+  // Passed in on the restore path; see reconcileDerivableBonus.
+  record?: DerivedPatch[],
+): boolean {
+  return reconcileDerivableBonus(extPath, "raw-markdown", record);
 }
 
 // --- Appended blocks ---------------------------------------------------------
@@ -4740,15 +5002,28 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   const read = (p: string) =>
     fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
 
+  // The three bundle splices read the same file, and each may be working off
+  // a derivation this file records rather than a shipped variant, so the
+  // bundle and its record are read once for all of them, and only when one
+  // of them is switched on.
+  let bundle: { content: string; record: DerivedPatch[] } | undefined;
+  const splice = (key: DerivedBonusKey) => {
+    if (!bundle) {
+      const content = read(path.join(extPath, "dist", CHAT_SCRIPT_FILE));
+      bundle = { content, record: readDerivedRecord(content) };
+    }
+    const variant = bonusVariantIn(bundle.content, bundle.record, key);
+    return {
+      variant,
+      applied:
+        variant !== undefined && bundle.content.includes(variant.patched),
+    };
+  };
+
   let attach: BonusState = "off";
   if (cfg.get<boolean>("addAttachFileButton", false)) {
-    const content = read(path.join(extPath, "dist", "webview.js"));
-    const variant = matchingAttachFileButton(content);
-    attach = !variant
-      ? "unavailable"
-      : content.includes(variant.patched)
-        ? "on"
-        : "pending";
+    const { variant, applied } = splice("attach-button");
+    attach = !variant ? "unavailable" : applied ? "on" : "pending";
   }
 
   let openInTab: BonusState = "off";
@@ -4768,17 +5043,10 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   // than a row of its own: with the bonus off there is nothing to size.
   let math: BonusState = "off";
   if (chatMathRenderingEnabled()) {
-    const content = read(path.join(extPath, "dist", "webview.js"));
-    // A derived splice is named by the record rather than by a shipped
-    // variant, and the record lives in this same file, so reading it costs
-    // nothing extra here. Without this the one bonus that can derive would
-    // report "unavailable" on exactly the builds where it is working.
-    const variant =
-      matchingMathExtension(content) ??
-      recordedBonus(readDerivedRecord(content), "math-rendering", content);
+    const { variant, applied } = splice("math-rendering");
     math = !variant
       ? "unavailable"
-      : content.includes(variant.patched) && chatCssApplied(extPath, "math")
+      : applied && chatCssApplied(extPath, "math")
         ? "on"
         : "pending";
   }
@@ -4788,12 +5056,10 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   // in place.
   let rawMarkdown: BonusState = "off";
   if (chatRawMarkdownEnabled()) {
-    const content = read(path.join(extPath, "dist", "webview.js"));
-    const variant = matchingRawMarkdownToggle(content);
+    const { variant, applied } = splice("raw-markdown");
     rawMarkdown = !variant
       ? "unavailable"
-      : content.includes(variant.patched) &&
-          chatCssApplied(extPath, "raw-markdown")
+      : applied && chatCssApplied(extPath, "raw-markdown")
         ? "on"
         : "pending";
   }
@@ -4875,14 +5141,14 @@ interface PatchResult {
 // for the human who used to read every pattern before it shipped:
 //   - its shape matches exactly once in the whole bundle (src/rules.js), and
 //     the derived original then occurs exactly once as literal bytes
-//   - every symbol it reports appears inside the text it matched, so the edit
+//   - every symbol it reports is a whole token of the text it matched, or of a
+//     hop the rule matched within HOP_LIMIT bytes of the edit, so the edit
 //     cannot name something the build binds elsewhere; this is the 7.4.22
-//     aliasing failure stated as a property rather than a review step
+//     aliasing failure and the 7.6.2 drift stated as properties rather than
+//     review steps
 //   - the feature's gate agrees the build has the behavior being fixed
 //   - the assembled file parses
 //   - re-applying is a no-op and reversing reproduces the original bytes
-// The attach button is deliberately excluded: it names five symbols from
-// outside its matched span, so only a MISMATCH read by a human guards it.
 const DERIVABLE: readonly FeatureKey[] = [
   "chat-input",
   "chat-escape",
@@ -4896,39 +5162,58 @@ const DERIVABLE: readonly FeatureKey[] = [
   "kiloclaw-chat",
 ];
 
-// The bonus splices are held to the same bar, and the math extensions are the
-// one that clears it: the only symbols that edit names are the renderer
-// argument and the render helper, both of which sit inside the text the rule
-// matched, so it cannot bind something this build spells differently
-// elsewhere. The other two name a symbol from outside their span (the attach
-// button five, the raw-markdown toggle its raw-text accessor) and stay on
-// reviewed literals, where retarget's MISMATCH check puts a human in the way.
-//
-// Worth knowing before adding to this list: `admissible` tests self-containment
-// with `includes`, which is a *substring* test, so a one-character name passes
-// whenever it happens to sit inside a longer word in the span. The
-// raw-markdown accessor `o` passes that way while failing the real property,
-// which is why this list is written by hand rather than computed.
-const DERIVABLE_BONUSES = ["math-rendering"] as const;
+// The three bonus splices are held to the same bar. The math extensions name
+// only symbols inside the text their rule matched. The attach button and the
+// markdown-source toggle each name symbols their anchor does not contain (the
+// button the mention controller, the textarea, its setter and sync, and the
+// neighbouring icon-button; the toggle the part's raw-text accessor), which
+// used to keep them on reviewed literals alone. Their rules now read each of
+// those from a hop pinned to the same component by properties no re-minify can
+// move (see src/rules.js), and admission checks that every hop lies near the
+// edit, so a hop that drifts into another component refuses rather than
+// binding the wrong name. The attach button's pre-7.6.0 text-button form still
+// reaches megabytes away for its sprite component and is refused on that
+// ground, which is fine: every build that has it ships a reviewed entry.
+const DERIVABLE_BONUSES = [
+  "attach-button",
+  "math-rendering",
+  "raw-markdown",
+] as const;
 type DerivedBonusKey = (typeof DERIVABLE_BONUSES)[number];
 
 const BONUS_RULES: Record<DerivedBonusKey, BonusRule> = {
+  "attach-button": ATTACH_RULE,
   "math-rendering": MATH_RULE,
+  "raw-markdown": RAW_MARKDOWN_RULE,
 };
 
 // The reviewed variants for each derivable bonus, which are what a derivation
 // defers to and what eventually retires a recorded one.
 const BONUS_VARIANTS: Record<DerivedBonusKey, WebviewVariant[]> = {
+  "attach-button": ATTACH_FILE_BUTTONS,
   "math-rendering": MATH_EXTENSIONS,
+  "raw-markdown": RAW_MARKDOWN_TOGGLES,
 };
 
 // Text that only the bonus's own patched form contains, checked before its rule
-// is allowed to run. This is not belt-and-braces: the math patch appends
+// is allowed to run. This is not belt-and-braces. The math patch appends
 // extensions whose last renderer ends in exactly the bytes the rule anchors
 // on, so deriving against a bundle this patch already wrote would match the
-// tail of its own injection and splice a second copy inside the first.
+// tail of its own injection and splice a second copy inside the first. The two
+// buttons keep their anchor intact beside the insertion, so a bundle carrying
+// an older form of either (a caption since changed, say) would otherwise read
+// as pristine and gain a second button.
 const DERIVED_BONUS_MARKERS: Record<DerivedBonusKey, string> = {
+  "attach-button": 'selectMention({type:"file-picker"}',
   "math-rendering": 'name:"kbpKatexInlineDollar"',
+  "raw-markdown": '"data-slot":"kbp-raw-markdown-toggle"',
+};
+
+// The setting each derivable bonus follows.
+const BONUS_ENABLED: Record<DerivedBonusKey, () => boolean> = {
+  "attach-button": () => addAttachFileButtonEnabled(),
+  "math-rendering": () => chatMathRenderingEnabled(),
+  "raw-markdown": () => chatRawMarkdownEnabled(),
 };
 
 // One derivation, recorded in the bundle it patches. `feature` also carries the
@@ -5137,39 +5422,124 @@ function occurrences(haystack: string, needle: string): number {
   return count;
 }
 
+// How far from the edit a rule may reach for a symbol its anchor does not
+// contain. The furthest any admitted hop sits on a build checked (7.4.17
+// through 7.8.1) is the attach button's mention row, 4.1 KB before the
+// toolbar, while the 7.6.2 drift that bound the permission dialog's button
+// instead of the toolbar's walked 18 KB. So this bound is not a tuning knob: it
+// is the line between "the same component" and "wherever the next match
+// happened to be".
+const HOP_LIMIT = 8192;
+
+// Whether `text` contains `name` as a whole identifier rather than inside a
+// longer one. The earlier substring test passed a one-character name whenever
+// it sat inside some word of the span (the raw-text accessor `o` passed on the
+// `o` of `onClick`), which is the property failing while the check reads it as
+// holding.
+function hasToken(text: string, name: string): boolean {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\w$])${escaped}([^\\w$]|$)`).test(text);
+}
+
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+type Admission =
+  | {
+      edit: {
+        original: string;
+        patched: string;
+        description?: (version: string) => string;
+      };
+    }
+  | { refused: string };
+
 // One rule's output, admitted only if it satisfies every property above that
 // can be judged from the rule alone. The file-level ones (parses, reverses)
-// are checked once on the assembled result by deriveFor.
-function admissible(
+// are checked once on the assembled result by deriveFor. A refusal says why,
+// for the harness; the extension only asks whether there is an edit.
+function admissibility(
   rule: { key: string; derive: (c: string) => DeriveResult },
   content: string,
-): { original: string; patched: string } | undefined {
+): Admission {
   const gate = FEATURE_GATES[rule.key as FeatureKey];
-  if (gate && !gate(content)) return undefined;
+  if (gate && !gate(content)) {
+    return { refused: "this build predates the behavior it fixes" };
+  }
 
   let result: DeriveResult;
   try {
     result = rule.derive(content);
-  } catch {
-    return undefined;
+  } catch (e) {
+    return { refused: `the rule threw: ${String(e)}` };
+  }
+  if (result.error) return { refused: result.error };
+  if (result.matches !== undefined) {
+    return { refused: `${result.matches} matches for its shape` };
   }
   if (
     result.original === undefined ||
     result.patched === undefined ||
     result.patched === result.original
   ) {
-    return undefined;
+    return { refused: "the rule derived no edit" };
   }
-  if (occurrences(content, result.original) !== 1) return undefined;
-  if (content.includes(result.patched)) return undefined;
-  // Self-containment: an edit that only rearranges what its own anchor matched
-  // cannot bind a symbol this build spells differently elsewhere.
-  for (const symbol of Object.values(result.symbols ?? {})) {
-    if (typeof symbol === "string" && !result.original.includes(symbol)) {
-      return undefined;
+  if (occurrences(content, result.original) !== 1) {
+    return { refused: "the derived original is not unique" };
+  }
+  if (content.includes(result.patched)) {
+    return { refused: "this build already carries the edit" };
+  }
+
+  // Locality: every hop the rule read a symbol from is really there, and near
+  // enough to the edit to be the same component.
+  const at = content.indexOf(result.original);
+  const hops = result.hops ?? [];
+  for (const h of hops) {
+    if (!content.startsWith(h.text, h.index)) {
+      return { refused: "a hop the rule reported is not in this build" };
+    }
+    const distance = Math.abs(h.index - at);
+    if (distance > HOP_LIMIT) {
+      return {
+        refused: `it reads a symbol ${distance} bytes from the edit (limit ${HOP_LIMIT})`,
+      };
     }
   }
-  return { original: result.original, patched: result.patched };
+  // Self-containment: every name the edit writes is a whole token of the text
+  // the rule matched, the anchor or a hop, so the edit cannot bind a symbol
+  // this build spells differently elsewhere. A captured expression (a guard,
+  // a handler body) is not a name and is only required to be present.
+  const evidence = [result.original, ...hops.map((h) => h.text)];
+  for (const [name, symbol] of Object.entries(result.symbols ?? {})) {
+    if (typeof symbol !== "string") continue;
+    const found = IDENTIFIER.test(symbol)
+      ? evidence.some((text) => hasToken(text, symbol))
+      : evidence.some((text) => text.includes(symbol));
+    if (!found) {
+      return { refused: `it names ${name} (${symbol}) from outside its match` };
+    }
+  }
+  return {
+    edit: {
+      original: result.original,
+      patched: result.patched,
+      description: result.description,
+    },
+  };
+}
+
+function admissible(
+  rule: { key: string; derive: (c: string) => DeriveResult },
+  content: string,
+):
+  | {
+      original: string;
+      patched: string;
+      description?: (version: string) => string;
+    }
+  | undefined {
+  const admission = admissibility(rule, content);
+  return "edit" in admission ? admission.edit : undefined;
 }
 
 // Derived patterns for one file: what the rules can add for features no
@@ -5199,12 +5569,16 @@ function deriveFor(
     if (!wanted.has(rule.key as FeatureKey)) continue;
     const edit = admissible(rule, content);
     if (!edit) continue;
+    // A rule with several live forms says what the matched one does, which
+    // the rule-level description cannot (mention-escape's 7.7.0+ form only
+    // clears Kilo's own record rather than writing one).
+    const describe = edit.description ?? rule.description;
     found.push({
       feature: rule.key as FeatureKey,
       filename,
       original: edit.original,
       patched: edit.patched,
-      description: `${rule.description(version)} [derived]`,
+      description: `${describe(version)} [derived]`,
     });
   }
   if (found.length === 0) return [];
@@ -5244,6 +5618,187 @@ function deriveBonus(
     patched: edit.patched,
     description: `${key} [derived]`,
   };
+}
+
+// The two buttons' reviewed entries cannot pin every name their edit writes by
+// their anchor alone. The attach button's anchor is the toolbar, while the
+// mention controller, the textarea, its setter and sync, and the icon-button
+// it renders with are read from elsewhere; the toggle's raw-text accessor
+// likewise. Kilo 7.7.6, 7.7.7 and 7.7.9 are the case in point: they ship the
+// toolbar anchor byte for byte while naming a different controller and setter
+// (h and Z, then A and W), so an entry recognized by its anchor alone would
+// give one of them the other's button, which renders and then throws when
+// clicked. An entry of either therefore applies only where the rule, run on
+// this build, derives that same edit, or cannot read the build at all, in
+// which case the reviewed entry is all there is to go on.
+//
+// Math needs no such check: its anchor holds every name its edit writes. It
+// could not take one either, since its rule run on a patched bundle matches
+// the tail of the injected extensions instead (see DERIVED_BONUS_MARKERS).
+const RULE_CHECKED_BONUSES: readonly DerivedBonusKey[] = [
+  "attach-button",
+  "raw-markdown",
+];
+
+// The reviewed variant of one bonus that answers for this build, or undefined
+// when none does (a future Kilo re-minify), which sends the reconciler to
+// derivation. An entry is found by any of its texts: for the two buttons each
+// patched string contains its own original, so a patched build shows both,
+// while for the math extensions the two are mutually exclusive. The rule runs
+// at most once, and only once some entry's text is found, so a build no entry
+// recognizes pays nothing here.
+function shippedBonusVariant(
+  content: string,
+  key: DerivedBonusKey,
+): WebviewVariant | undefined {
+  const checked = RULE_CHECKED_BONUSES.includes(key);
+  let derived: DeriveResult | undefined;
+  for (const v of BONUS_VARIANTS[key]) {
+    const present =
+      content.includes(v.patched) ||
+      content.includes(v.original) ||
+      v.previous?.some((p) => content.includes(p));
+    if (!present) continue;
+    if (!checked) return v;
+    if (derived === undefined) {
+      try {
+        derived = BONUS_RULES[key].derive(content);
+      } catch {
+        derived = {};
+      }
+    }
+    if (derived.original === undefined) return v;
+    if (derived.original === v.original && derived.patched === v.patched) {
+      return v;
+    }
+  }
+  return undefined;
+}
+
+// Whether the edit a record entry describes is on disk now. webview.js is
+// passed in, since the caller holds it; the record covers kiloclaw.js too, so
+// an entry for another file is checked against that file.
+function carried(
+  p: DerivedPatch,
+  js: string,
+  distDir: string,
+  others: Map<string, string>,
+): boolean {
+  if (p.filename === CHAT_SCRIPT_FILE) return js.includes(p.patched);
+  let content = others.get(p.filename);
+  if (content === undefined) {
+    try {
+      content = fs.readFileSync(path.join(distDir, p.filename), "utf8");
+    } catch {
+      content = "";
+    }
+    others.set(p.filename, content);
+  }
+  return content.includes(p.patched);
+}
+
+// Apply or remove one derivable bonus to match its setting. Returns true only
+// when the file actually changed. Fails safe: a missing bundle, or a build no
+// shipped variant matches and the rule cannot read, is a silent no-op.
+//
+// A reviewed variant wins wherever one matches, as everywhere else: a build
+// someone has tested gets the bytes that were tested, and there is then
+// nothing to record. The derived path is reached only when no shipped variant
+// does, and it writes the record in the same write as the edit, because an
+// edit this bundle carries and nothing can name is the one state Restore
+// cannot undo.
+function reconcileDerivableBonus(
+  extPath: string,
+  key: DerivedBonusKey,
+  // Passed in on the restore path, which rewrites the core files (dropping the
+  // record block) before this runs, so reading it here would be too late.
+  record?: DerivedPatch[],
+): boolean {
+  const enabled = BONUS_ENABLED[key]();
+  const distDir = path.join(extPath, "dist");
+  const webviewPath = path.join(distDir, CHAT_SCRIPT_FILE);
+  if (!fs.existsSync(webviewPath)) return false;
+  const content = fs.readFileSync(webviewPath, "utf8");
+  const known = record ?? readDerivedRecord(content);
+  const remembered = recordedBonus(known, key, content);
+  const others = new Map<string, string>();
+  // Whatever else the record names is carried into a rewrite while its edit is
+  // still on disk, and dropped once it is not. That matters on Restore, which
+  // hands this the record as it stood before the core edits were reversed:
+  // carrying those entries over wrote a record of reverted edits back into the
+  // restored bundle, so Restore Originals left it different from what Kilo
+  // shipped wherever both the core patches and a bonus had been derived.
+  const keep = (updated: string, p: DerivedPatch) =>
+    p.feature !== key && carried(p, updated, distDir, others);
+
+  const shipped = shippedBonusVariant(content, key);
+  if (shipped) {
+    // A derivation of this bonus that differs from the reviewed edit is an
+    // older form of it, from a kb-patch whose rule wrote the edit differently.
+    // The two buttons keep their anchor beside the insertion, so applying the
+    // reviewed edit on top would add a second button. The derived one is
+    // reversed first instead, the way a variant's `previous` forms are.
+    const stale =
+      remembered !== undefined &&
+      !(
+        remembered.original === shipped.original &&
+        remembered.patched === shipped.patched
+      ) &&
+      content.includes(remembered.patched);
+    const base = stale
+      ? content.replace(remembered.patched, remembered.original)
+      : content;
+    const edit = variantEdit(base, shipped, enabled);
+    let updated = edit ? base.replace(edit.from, edit.to) : base;
+    if (stale) {
+      updated = withDerivedRecord(
+        updated,
+        known.filter((p) => keep(updated, p)),
+      );
+    }
+    if (updated === content) return false;
+    fs.writeFileSync(webviewPath, updated, "utf8");
+    return true;
+  }
+
+  // Deriving is for turning the bonus on. With the setting off and nothing
+  // remembered, there is no edit of ours here to take away.
+  const variant =
+    remembered ?? (enabled ? deriveBonus(key, content) : undefined);
+  if (!variant) return false;
+  const edit = variantEdit(content, variant, enabled);
+  if (!edit) return false;
+  const updated = content.replace(edit.from, edit.to);
+  if (updated === content) return false;
+
+  // Enabling records the derivation and disabling takes it out. Filtered by
+  // feature rather than by identity, so the result holds one entry for this
+  // bonus whatever the record arrived with.
+  const rest = known.filter((p) => keep(updated, p));
+  const next = enabled ? [...rest, variant] : rest;
+  const written = withDerivedRecord(updated, next);
+  // Removing our own edit puts Kilo's bytes back, so only the adding direction
+  // has to earn the write: it must have landed exactly once, and the assembled
+  // bundle must still parse.
+  if (enabled && !derivedGuard(CHAT_SCRIPT_FILE, [variant])(written)) {
+    return false;
+  }
+  fs.writeFileSync(webviewPath, written, "utf8");
+  return true;
+}
+
+// The edit a bonus row is read against: the shipped variant that matches this
+// build, else the derivation this same bundle records. Without the second, a
+// bonus that is working by derivation would read "unavailable" on exactly the
+// builds where it is working.
+function bonusVariantIn(
+  content: string,
+  record: DerivedPatch[],
+  key: DerivedBonusKey,
+): WebviewVariant | undefined {
+  return (
+    shippedBonusVariant(content, key) ?? recordedBonus(record, key, content)
+  );
 }
 
 // The gate applyPatches runs before writing a file any derivation touched: the
@@ -5595,7 +6150,10 @@ async function runPatch(
         typography: false,
         rawMarkdown: false,
       };
-      if (reconcileAttachFileButton(extPath)) {
+      // `record` as read at the top of this run, for each bundle splice: the
+      // core restore above has already rewritten webview.js without its record
+      // block, so a derived splice could not be named from the file any more.
+      if (reconcileAttachFileButton(extPath, record)) {
         bonusReverted++;
         reverted.attach = true;
       }
@@ -5604,14 +6162,11 @@ async function runPatch(
         manifestChanged = true;
         reverted.title = true;
       }
-      // `record` as read at the top of this run: the core restore above has
-      // already rewritten webview.js without its record block, so a derived
-      // math splice could not be named from the file any more.
       if (reconcileMathRendering(extPath, record)) {
         bonusReverted++;
         reverted.math = true;
       }
-      if (reconcileRawMarkdownToggle(extPath)) {
+      if (reconcileRawMarkdownToggle(extPath, record)) {
         bonusReverted++;
         reverted.rawMarkdown = true;
       }
@@ -5971,7 +6526,12 @@ export const __test = {
   matchingMathExtension,
   reconcileMathRendering,
   DERIVABLE_BONUSES,
+  BONUS_RULES,
+  BONUS_VARIANTS,
+  DERIVED_BONUS_MARKERS,
   deriveBonus,
+  reconcileDerivableBonus,
+  shippedBonusVariant,
   recordedBonus,
   bonusDerivationsToKeep,
   RAW_MARKDOWN_TOGGLES,
@@ -6023,6 +6583,8 @@ export const __test = {
   markSettled,
   clearSettled,
   admissible,
+  admissibility,
+  HOP_LIMIT,
   unresolvedFeatures,
   deriveFor,
   derivedGuard,

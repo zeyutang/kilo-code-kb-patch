@@ -90,22 +90,38 @@ function main() {
       new Map(fp.patches.map((p) => [p.original, p.patched])),
     );
   }
-  // The two webview.js bonuses keep their own variant lists rather than living
-  // in PATCHES, so each is compared against its own list.
+  // The webview.js bonuses keep their own variant lists rather than living in
+  // PATCHES, so each is compared against its own list. Keyed by original with
+  // every patched form it ships, since two builds can share a bonus's anchor
+  // while needing different edits (the attach button on 7.7.6 and 7.7.9).
+  const byOriginal = (variants) => {
+    const map = new Map();
+    for (const v of variants) {
+      if (!map.has(v.original)) map.set(v.original, new Set());
+      map.get(v.original).add(v.patched);
+    }
+    return map;
+  };
   const knownBonus = new Map([
-    [
-      ATTACH_RULE.key,
-      new Map(test.ATTACH_FILE_BUTTONS.map((b) => [b.original, b.patched])),
-    ],
-    [
-      MATH_RULE.key,
-      new Map(test.MATH_EXTENSIONS.map((m) => [m.original, m.patched])),
-    ],
-    [
-      RAW_MARKDOWN_RULE.key,
-      new Map(test.RAW_MARKDOWN_TOGGLES.map((t) => [t.original, t.patched])),
-    ],
+    [ATTACH_RULE.key, byOriginal(test.ATTACH_FILE_BUTTONS)],
+    [MATH_RULE.key, byOriginal(test.MATH_EXTENSIONS)],
+    [RAW_MARKDOWN_RULE.key, byOriginal(test.RAW_MARKDOWN_TOGGLES)],
   ]);
+
+  // Whether the extension would derive this rule at apply on this build, and
+  // if not, why. Shown on every derivable rule's row, because a NEW there is
+  // a build users already have working, while a NEW elsewhere is one waiting
+  // on this release.
+  const applyNote = (rule, content) => {
+    const derivable =
+      test.DERIVABLE.includes(rule.key) ||
+      test.DERIVABLE_BONUSES.includes(rule.key);
+    if (!derivable) return "";
+    const admission = test.admissibility(rule, content);
+    return "edit" in admission
+      ? "  (derives at apply)"
+      : `  (apply refuses: ${admission.refused})`;
+  };
 
   const proposals = [];
   let unclear = 0;
@@ -173,31 +189,35 @@ function main() {
 
     let shipped = isBonus
       ? knownBonus.get(rule.key)?.get(result.original)
-      : known.get(rule.file)?.get(result.original);
+      : known.get(rule.file)?.has(result.original)
+        ? new Set([known.get(rule.file).get(result.original)])
+        : undefined;
     let derivedPatched = result.patched;
     // A rule that widened its anchor still recognizes entries shipped with the
     // narrower pre-widening one; those are compared on the legacy form.
     if (shipped === undefined && result.legacy && !isBonus) {
       const older = known.get(rule.file)?.get(result.legacy.original);
       if (older !== undefined) {
-        shipped = older;
+        shipped = new Set([older]);
         derivedPatched = result.legacy.patched;
       }
     }
+    const note = applyNote(rule, content);
     if (shipped !== undefined) {
-      if (shipped !== derivedPatched) {
+      if (!shipped.has(derivedPatched)) {
         console.log(
           `  MISMATCH   ${rule.key}: this site already ships, but the rule rebuilds ` +
-            `the edit differently\n             shipped: ${shipped}\n             derived: ${derivedPatched}`,
+            `the edit differently\n             shipped: ${[...shipped].join("\n                      ")}` +
+            `\n             derived: ${derivedPatched}`,
         );
         unclear++;
         return;
       }
-      console.log(`  covered    ${rule.key}`);
+      console.log(`  covered    ${rule.key}${note}`);
       return;
     }
 
-    console.log(`  NEW        ${rule.key}`);
+    console.log(`  NEW        ${rule.key}${note}`);
     proposals.push({ rule, result, isBonus });
     unclear++;
   };
@@ -307,6 +327,18 @@ function main() {
       );
       console.log(`// v${version}+ derived symbols:`);
       console.log(`//     ${JSON.stringify(result.symbols)}`);
+      if (result.data)
+        console.log(`//     data ${JSON.stringify(result.data)}`);
+      // An entry for a bonus whose anchor does not hold every name its edit
+      // writes can match a build it was not derived from. The extension
+      // declines it there, but only while the rule can read that build, so
+      // an entry whose anchor another build shares must not ship: run the
+      // cross-build sweep before pasting.
+      if (result.hops?.length) {
+        console.log(
+          "// the anchor does not pin every name: sweep other builds before pasting",
+        );
+      }
       console.log("  {");
       console.log(`    original: ${JSON.stringify(result.original)},`);
       console.log(`    patched: ${JSON.stringify(result.patched)},`);

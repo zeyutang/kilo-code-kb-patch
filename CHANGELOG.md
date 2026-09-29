@@ -8,6 +8,9 @@
   The keyboard patches and math rendering already work this way
 - The same change makes the markdown-source button available on Kilo Code releases older than 7.6.2, which never had a pattern of their own
 - Fix **Restore Originals** leaving KB Patch data at the end of Kilo Code's webview bundle on a Kilo Code release newer than the installed KB Patch while math rendering was on
+- **Apply Patches** now also applies the opt-in extras that are switched on, where before it left them to the next launch
+- **Show Status** now reads an extra that is switched on and not yet applied as **not applied — run Apply**, where before it asked for a restart that would not apply it
+- Fix the opt-in extras staying unapplied when KB Patch was installed again over the same version
 - Keep all earlier versions' patterns, so this release still applies on older Kilo Code releases
 
 ## 2.1.4

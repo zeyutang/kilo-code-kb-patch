@@ -20,9 +20,12 @@ class TabInputWebview {
     this.viewType = viewType;
   }
 }
+// Every value the caller supplied reads as set by the user, globally, which is
+// what lets Restore Originals' own settings pass run here: it writes a bonus
+// back to its off value only in a scope where inspect() reports one set.
 const configuration = {
   get: (key, fallback) => (key in config ? config[key] : fallback),
-  inspect: () => undefined,
+  inspect: (key) => (key in config ? { globalValue: config[key] } : undefined),
   update: async (key, value) => {
     config[key] = value;
   },

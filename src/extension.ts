@@ -2516,10 +2516,15 @@ function offerRestart(message: string, scope: RestartScope): void {
 // on disk agree with the setting, but the window the user is looking at was
 // built before they did, so the change is not in effect yet. Pending covers a
 // bonus just switched on and one just switched off alike, since either way what
-// is on screen still says otherwise. "unavailable": enabled but this Kilo build
-// has no matching code. `needs` is the restart that puts a change into effect,
-// and the pending hint names it.
-type BonusState = "on" | "off" | "pending" | "unavailable";
+// is on screen still says otherwise. "unapplied": enabled, and this Kilo build
+// has the code for it, but the files on disk do not carry the edit, so no
+// restart would show it. That is the bonus counterpart of a core row's
+// "unpatched", it takes the same hint, and Apply Patches is what writes it.
+// It used to read "pending" too, which told the reader to restart for an edit
+// that was never written. "unavailable": enabled but this Kilo build has no
+// matching code. `needs` is the restart that puts a change into effect, and
+// the pending hint names it.
+type BonusState = "on" | "off" | "pending" | "unapplied" | "unavailable";
 interface BonusStatus {
   label: string;
   state: BonusState;
@@ -2735,6 +2740,8 @@ function statusHtml(
     off: { mark: "○", cls: "off", hint: "" },
     // The pending hint names the restart the row needs, so it is built below.
     pending: { mark: "○", cls: "warn", hint: "" },
+    // The same words a core row uses for the same state.
+    unapplied: { mark: "○", cls: "warn", hint: marks.unpatched.hint },
     unavailable: {
       mark: "✗",
       cls: "bad",
@@ -4878,10 +4885,26 @@ function noteBonusChanges(changed: BonusChanges): void {
 
 // A row's state once the session is accounted for. A bonus whose file this host
 // rewrote reads pending until the restart that puts it into effect, whether it
-// was switched on or off. The "unavailable" reading is about the build rather
-// than the session, so it stands either way.
+// was switched on or off. The "unavailable" and "unapplied" readings are about
+// what is on disk rather than the session, so they stand either way.
 function pendingIfUnseen(state: BonusState, awaiting: boolean): BonusState {
   return awaiting && (state === "on" || state === "off") ? "pending" : state;
+}
+
+// Whether the last reconcile pass stopped short: a reconciler threw, which for
+// these means a file it could not read or write. Such a pass has not found the
+// bonuses in agreement with their settings, so it cannot be what an install is
+// recorded as settled on (see markSettled), or the launch shortcut would skip
+// every later attempt at the write that failed.
+let bonusReconcileFailed = false;
+
+// What a host restart does to the state above, for the offline harness: the
+// flags live and die with the host, and the harness has one process where the
+// editor has a host per session.
+function forgetSession(): void {
+  const keys = Object.keys(bonusAwaitingRestart) as (keyof BonusChanges)[];
+  for (const key of keys) bonusAwaitingRestart[key] = false;
+  bonusReconcileFailed = false;
 }
 
 // One reconcile pass over every bonus. Each reconciler fails safe on its own
@@ -4897,24 +4920,36 @@ function reconcileBonuses(extPath: string): BonusChanges {
   let math = false;
   let typography = false;
   let rawMarkdown = false;
+  let failed = false;
   try {
     title = reconcileOpenInTabTitle(extPath);
-  } catch {}
+  } catch {
+    failed = true;
+  }
   try {
     attach = reconcileAttachFileButton(extPath);
-  } catch {}
+  } catch {
+    failed = true;
+  }
   try {
     math = reconcileMathRendering(extPath);
-  } catch {}
+  } catch {
+    failed = true;
+  }
   try {
     rawMarkdown = reconcileRawMarkdownToggle(extPath);
-  } catch {}
+  } catch {
+    failed = true;
+  }
   try {
     const css = reconcileChatStyle(extPath);
     typography = css.typography;
     math = math || css.math;
     rawMarkdown = rawMarkdown || css["raw-markdown"];
-  } catch {}
+  } catch {
+    failed = true;
+  }
+  bonusReconcileFailed = failed;
   const changed = { title, attach, math, typography, rawMarkdown };
   noteBonusChanges(changed);
   return changed;
@@ -5007,23 +5042,29 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   // bundle and its record are read once for all of them, and only when one
   // of them is switched on.
   let bundle: { content: string; record: DerivedPatch[] } | undefined;
-  const splice = (key: DerivedBonusKey) => {
+  // The state of one bundle splice that is switched on. `rest` is whatever
+  // else the bonus needs on disk besides its splice (a stylesheet block).
+  const splice = (key: DerivedBonusKey, rest: () => boolean): BonusState => {
     if (!bundle) {
       const content = read(path.join(extPath, "dist", CHAT_SCRIPT_FILE));
       bundle = { content, record: readDerivedRecord(content) };
     }
     const variant = bonusVariantIn(bundle.content, bundle.record, key);
-    return {
-      variant,
-      applied:
-        variant !== undefined && bundle.content.includes(variant.patched),
-    };
+    if (variant) {
+      return bundle.content.includes(variant.patched) && rest()
+        ? "on"
+        : "unapplied";
+    }
+    // Nothing names an edit for this build yet. Whether one can be worked out
+    // from it is what separates a bonus waiting to be applied from one this
+    // build has no code for: reading "unavailable" here would tell the reader
+    // to wait for a release over an edit Apply Patches would write.
+    return deriveBonus(key, bundle.content) ? "unapplied" : "unavailable";
   };
 
   let attach: BonusState = "off";
   if (cfg.get<boolean>("addAttachFileButton", false)) {
-    const { variant, applied } = splice("attach-button");
-    attach = !variant ? "unavailable" : applied ? "on" : "pending";
+    attach = splice("attach-button", () => true);
   }
 
   let openInTab: BonusState = "off";
@@ -5035,7 +5076,7 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
       ? "unavailable"
       : match[0].includes(JSON.stringify(OPEN_IN_TAB_RENAMED))
         ? "on"
-        : "pending";
+        : "unapplied";
   }
 
   // The math bonus spans a bundle splice and a stylesheet block, so it reads
@@ -5043,12 +5084,7 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   // than a row of its own: with the bonus off there is nothing to size.
   let math: BonusState = "off";
   if (chatMathRenderingEnabled()) {
-    const { variant, applied } = splice("math-rendering");
-    math = !variant
-      ? "unavailable"
-      : applied && chatCssApplied(extPath, "math")
-        ? "on"
-        : "pending";
+    math = splice("math-rendering", () => chatCssApplied(extPath, "math"));
   }
 
   // Like math, this bonus spans a bundle splice and a stylesheet block, and
@@ -5056,12 +5092,9 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
   // in place.
   let rawMarkdown: BonusState = "off";
   if (chatRawMarkdownEnabled()) {
-    const { variant, applied } = splice("raw-markdown");
-    rawMarkdown = !variant
-      ? "unavailable"
-      : applied && chatCssApplied(extPath, "raw-markdown")
-        ? "on"
-        : "pending";
+    rawMarkdown = splice("raw-markdown", () =>
+      chatCssApplied(extPath, "raw-markdown"),
+    );
   }
 
   // Typography is requested from the settings alone, so a build whose own
@@ -5084,7 +5117,7 @@ function computeBonusStatus(extPath: string): BonusStatus[] {
         ? "unavailable"
         : chatCssApplied(extPath, "typography")
           ? "on"
-          : "pending";
+          : "unapplied";
   }
 
   return [
@@ -6016,7 +6049,20 @@ async function runPatch(
     );
     return false;
   }
+  return patchInstall(extPath, mode, pending);
+}
 
+// What a command does to one Kilo install. Apart from runPatch, which only
+// finds the install, so the offline harness can run a command against a copy
+// in the order the command really takes. An order written out again beside it
+// proves that order: Restore Originals wrote reverted derivations back into
+// the bundle through two releases while the harness restored the other way
+// round.
+async function patchInstall(
+  extPath: string,
+  mode: "apply" | "restore" | "status",
+  pending?: BonusChanges,
+): Promise<boolean> {
   const version = extractVersion(extPath);
   const distDir = path.join(extPath, "dist");
 
@@ -6134,9 +6180,26 @@ async function runPatch(
   // from re-applying them). The listener is suspended so its own reconcile
   // cannot double-fire mid-batch; the final settings and files agree.
   let bonusReverted = 0;
-  // Only the manifest needs the window: Apply never touches it, Restore does
-  // when it puts the editor-title rename back.
+  // Only the manifest needs the window, which either command can move: Apply
+  // when the editor-title rename is asked for and not yet written, Restore
+  // when it puts the title back.
   let manifestChanged = pending?.title ?? false;
+
+  // Apply Patches also brings every bonus in line with its setting. Activation
+  // does that before it offers to apply, but only on a launch the settled
+  // fingerprint did not skip, and this command can be run on one it did, or
+  // against a Kilo build that arrived after this host started. Recording the
+  // install as settled below claims the bonuses agree as well, so that is
+  // established here rather than assumed: left to activation, an install could
+  // be recorded as settled with a bonus unwritten, and every launch after
+  // would skip the pass that writes it.
+  let bonusApplied = 0;
+  if (mode === "apply") {
+    const changed = reconcileBonuses(extPath);
+    bonusApplied = Object.values(changed).filter(Boolean).length;
+    manifestChanged = manifestChanged || changed.title;
+  }
+
   if (mode === "restore") {
     suspendReconcile = true;
     try {
@@ -6204,7 +6267,8 @@ async function runPatch(
 
   const totalApplied =
     results.reduce((s, r) => s + r.applied.length + r.reverted.length, 0) +
-    bonusReverted;
+    bonusReverted +
+    bonusApplied;
 
   const verb = mode === "apply" ? "Patched" : "Restored";
 
@@ -6328,9 +6392,9 @@ function webviewNeedsPatching(
 //
 // The answer can only change if Kilo's files changed, our settings changed, or
 // kb-patch itself changed. All three are readable without opening a bundle:
-// three stat() calls, the settings we contribute, and our own version. When
-// that fingerprint matches the one recorded the last time the question was
-// answered in full, the answer is still the same.
+// stat() calls on Kilo's files and on our own, and the settings we contribute.
+// When that fingerprint matches the one recorded the last time the question
+// was answered in full, the answer is still the same.
 //
 // This is a cache, not a source of truth. Anything that does not match falls
 // through to the full check, so the worst case is what activation costs today,
@@ -6338,9 +6402,41 @@ function webviewNeedsPatching(
 const SETTLED_KEY = "settledFingerprint.v1";
 const FINGERPRINT_FILES = ["webview.js", "kiloclaw.js", CHAT_STYLE_FILE];
 
-function installFingerprint(extPath: string): string | undefined {
+// kb-patch's own code, named by the files that hold it rather than by its
+// version alone. The version says which release this is, and a build can
+// change without it: a package installed to test a release before the version
+// is bumped, which is how every release here is tested, or a reinstall. Keyed
+// on the version, the fingerprint kept matching under such a build, so the
+// launch skipped the reconcile that build existed to run, the bonuses it
+// could newly apply were never written, and Show Status asked for a restart
+// that changed nothing.
+const OWN_BUILD_FILES = ["extension.js", "rules.js"];
+
+function ownBuildIdentity(dir: string = __dirname): string | undefined {
+  const parts: string[] = [];
+  for (const name of OWN_BUILD_FILES) {
+    try {
+      const s = fs.statSync(path.join(dir, name));
+      parts.push(`${name}:${s.size}:${s.mtimeMs}`);
+    } catch {
+      // Code we cannot identify is code we cannot vouch for having run.
+      return undefined;
+    }
+  }
+  return parts.join(",");
+}
+
+function installFingerprint(
+  extPath: string,
+  // Where this build's code lives. Only the harness passes one, to stand a
+  // rebuilt kb-patch next to the one that recorded the fingerprint.
+  ownDir?: string,
+): string | undefined {
+  const own = ownBuildIdentity(ownDir);
+  if (own === undefined) return undefined;
   const parts: string[] = [
     extensionContext?.extension?.packageJSON?.version ?? "?",
+    own,
     path.basename(extPath),
   ];
   for (const name of FINGERPRINT_FILES) {
@@ -6368,8 +6464,8 @@ function installFingerprint(extPath: string): string | undefined {
   return parts.join("|");
 }
 
-function isSettled(extPath: string): boolean {
-  const now = installFingerprint(extPath);
+function isSettled(extPath: string, ownDir?: string): boolean {
+  const now = installFingerprint(extPath, ownDir);
   return (
     now !== undefined &&
     now === extensionContext?.globalState.get<string>(SETTLED_KEY)
@@ -6378,8 +6474,17 @@ function isSettled(extPath: string): boolean {
 
 // Recorded only where the full check has just run and found nothing left to
 // do. Recording it anywhere else would be a claim we have not verified.
-function markSettled(extPath: string): void {
-  const now = installFingerprint(extPath);
+//
+// A reconcile pass that stopped short is such a claim, and it takes the
+// record with it rather than leaving it alone: when the write that failed was
+// the only one the pass had to make, nothing on disk moved, so a fingerprint
+// recorded earlier still matches and would go on skipping the retry.
+function markSettled(extPath: string, ownDir?: string): void {
+  if (bonusReconcileFailed) {
+    clearSettled();
+    return;
+  }
+  const now = installFingerprint(extPath, ownDir);
   if (now !== undefined) {
     void extensionContext?.globalState.update(SETTLED_KEY, now);
   }
@@ -6387,6 +6492,61 @@ function markSettled(extPath: string): void {
 
 function clearSettled(): void {
   void extensionContext?.globalState.update(SETTLED_KEY, undefined);
+}
+
+// What a launch does to one Kilo install before anything is asked of the user:
+// nothing when the fingerprint says the install is settled, and otherwise the
+// bonus reconcile followed by the question of whether Apply has work to do.
+// Apart from activate, which finds the install and does the asking, so the
+// offline harness can take a launch against a copy.
+type StartupPass =
+  | { settled: true }
+  | { settled: false; bonuses: BonusChanges; needsPatching: boolean };
+
+function startupPass(extPath: string, ownDir?: string): StartupPass {
+  // Nothing Kilo owns has moved, our settings are the same, and we are the
+  // same build: the full check ran on an earlier launch and found nothing to
+  // do, and none of its inputs have changed since.
+  if (isSettled(extPath, ownDir)) return { settled: true };
+
+  // Reconcile the bonus knobs on startup (self-heals after a Kilo update resets
+  // the files) and whenever one of our settings changes. The settings are
+  // registered in package.json, so affectsConfiguration reports them reliably and
+  // limits the reconcile (which reads the webview bundle) to relevant changes.
+  // On the settings path the restart offer shows right away; the startup
+  // result is held until the apply-patches decision is settled.
+  const bonuses = reconcileBonuses(extPath);
+  refreshStatusPanel();
+
+  // Read after the bonus reconcile, which may itself rewrite webview.js, so the
+  // needs-patching check sees the reconciled bundle.
+  const webviewPath = path.join(extPath, "dist", "webview.js");
+  const content = fs.existsSync(webviewPath)
+    ? fs.readFileSync(webviewPath, "utf8")
+    : "";
+  const cssPath = path.join(extPath, "dist", CHAT_STYLE_FILE);
+  const cssNeedsPatching =
+    fs.existsSync(cssPath) &&
+    chatCssCoreStatus(fs.readFileSync(cssPath, "utf8")).some(
+      (f) => f.state === "unpatched",
+    );
+  const scriptNeedsPatching =
+    content !== "" &&
+    chatScriptCoreStatus(content).some((f) => f.state === "unpatched");
+  const needsPatching =
+    webviewNeedsPatching(
+      content,
+      recordedFor(readDerivedRecord(content), PATCHES[0].filename, content).map(
+        asPatchDef,
+      ),
+    ) ||
+    cssNeedsPatching ||
+    scriptNeedsPatching;
+
+  // The full check just ran and found nothing left to do, which is the one
+  // place that claim can be recorded.
+  if (!needsPatching) markSettled(extPath, ownDir);
+  return { settled: false, bonuses, needsPatching };
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -6424,49 +6584,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // Nothing Kilo owns has moved, our settings are the same, and we are the
-  // same build: the full check ran on an earlier launch and found nothing to
-  // do, and none of its inputs have changed since.
-  if (isSettled(extPath)) return;
-
-  // Reconcile the bonus knobs on startup (self-heals after a Kilo update resets
-  // the files) and whenever one of our settings changes. The settings are
-  // registered in package.json, so affectsConfiguration reports them reliably and
-  // limits the reconcile (which reads the webview bundle) to relevant changes.
-  // On the settings path the restart offer shows right away; the startup
-  // result is held until the apply-patches decision below is settled.
-  const startupBonuses = reconcileBonuses(extPath);
-  refreshStatusPanel();
-
-  // Read after the bonus reconcile, which may itself rewrite webview.js, so the
-  // needs-patching check sees the reconciled bundle.
-  const webviewPath = path.join(extPath, "dist", "webview.js");
-  const content = fs.existsSync(webviewPath)
-    ? fs.readFileSync(webviewPath, "utf8")
-    : "";
-  const cssPath = path.join(extPath, "dist", CHAT_STYLE_FILE);
-  const cssNeedsPatching =
-    fs.existsSync(cssPath) &&
-    chatCssCoreStatus(fs.readFileSync(cssPath, "utf8")).some(
-      (f) => f.state === "unpatched",
-    );
-  const scriptNeedsPatching =
-    content !== "" &&
-    chatScriptCoreStatus(content).some((f) => f.state === "unpatched");
-  const needsPatching =
-    webviewNeedsPatching(
-      content,
-      recordedFor(readDerivedRecord(content), PATCHES[0].filename, content).map(
-        asPatchDef,
-      ),
-    ) ||
-    cssNeedsPatching ||
-    scriptNeedsPatching;
-
-  if (!needsPatching) {
-    // The full check just ran and found nothing left to do, which is the one
-    // place that claim can be recorded.
-    markSettled(extPath);
+  const pass = startupPass(extPath);
+  if (pass.settled) return;
+  const startupBonuses = pass.bonuses;
+  if (!pass.needsPatching) {
     notifyBonusRestart(startupBonuses);
     return;
   }
@@ -6579,9 +6700,14 @@ export const __test = {
   DERIVABLE,
   RULES,
   installFingerprint,
+  ownBuildIdentity,
   isSettled,
   markSettled,
   clearSettled,
+  patchInstall,
+  startupPass,
+  reconcileBonuses,
+  forgetSession,
   admissible,
   admissibility,
   HOP_LIMIT,

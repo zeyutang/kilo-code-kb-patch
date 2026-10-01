@@ -197,6 +197,18 @@ function crossesFunction(text) {
   return /(?<![\w$."'`])function(?![\w$"'`])/.test(text);
 }
 
+// Whether a span reads the local `name`, for a rule that has to know a
+// captured span leaves that local alone. Three things spell the same letters
+// without being it, and a minified name is short enough to meet all of them (a
+// local the minifier called `id` beside an unrelated `.id`): a longer
+// identifier that contains it, a member of that name, and a quoted string.
+// Counting any of them would refuse a build the edit is sound on, which leaves
+// its users on stock Kilo for nothing. The boundary is not `\b`, which reads
+// `$` as one and would let `$e` answer for `e`.
+function namesToken(text, name) {
+  return new RegExp(`(?<![\\w$."'\`])${esc(name)}(?![\\w$"'\`])`).test(text);
+}
+
 // A matched span as a rule reports it to apply-time admission: where it sits
 // in the bundle and the text it matched, so the extension can check that the
 // symbols read from it lie near the edit (see `hops` in DeriveResult).
@@ -380,6 +392,13 @@ function deriveMentionRecordAndClear(content) {
   };
 }
 
+// How much Kilo may declare between the history handler's direction local and
+// its navigate() call before the chat-history rule stops reading it as one
+// `let` statement. The one declaration there since 7.8.2 is 33 bytes, so this
+// leaves room for several more while a span that long with no `;` and no brace
+// in it is still a declaration list rather than a run into other code.
+const HISTORY_DECLARATIONS_LIMIT = 160;
+
 const RULES = [
   shapeRule({
     key: "chat-input",
@@ -487,38 +506,100 @@ const RULES = [
   // is the first point at which the text accessor is bound, and the splice
   // references it; stopping any earlier would leave a symbol unpinned, which is
   // the 7.4.22 aliasing failure.
-  shapeRule({
+  //
+  // Two stretches of that span are Kilo's to grow, and the edit reads neither:
+  // what it declares between the direction and the call, and what the call
+  // passes after the caret. Through 7.8.1 both were empty. 7.8.2 taught the
+  // history to carry the draft's pasted chunks, which added one declaration
+  // (`<pastes>=<controller>.pastes().map(x=>x.text),`) and a fourth argument
+  // naming it, and that alone left a rule which spelled the call out matching
+  // nothing. So both are captured and written back verbatim, the treatment
+  // doc-escape's "nothing to abort" test and perm-approve's extra conjuncts
+  // get: the declarations as a span that cannot leave the `let` statement (no
+  // `;`, no brace) and ends on the comma before the result, the arguments as
+  // a list of names. With both empty the shape emits byte for byte what the
+  // entries for 7.8.1 and older ship.
+  //
+  // Capturing cannot bind a symbol wrongly, since every name the edit writes
+  // sits outside the two spans. What it could do is hide a second reader of
+  // the caret local. The edit changes what that local holds, from the caret to
+  // the boundary being travelled towards, which is sound only while the one
+  // thing reading it is the gate behind navigate()'s third argument (run
+  // against the build's own module by tools/behavior.js). A captured span
+  // naming it would be handed a value that is no longer the caret, so that is
+  // reported for a human instead of derived. What follows the anchor is not
+  // read here, as it never was: tools/behavior.js runs the whole statement.
+  {
     key: "chat-history",
     file: "webview.js",
-    shape:
-      `if\\(\\((${ID})\\.key==="ArrowUp"\\|\\|\\1\\.key==="ArrowDown"\\)` +
-      `&&!\\1\\.altKey&&!\\1\\.ctrlKey&&!\\1\\.metaKey&&!\\1\\.shiftKey\\)\\{` +
-      `let (${ID})=(${ID})\\?\\.selectionStart\\?\\?0,(${ID})=\\3\\?\\.selectionEnd\\?\\?0;` +
-      `if\\(\\2!==\\4\\)return;` +
-      `let (${ID})=\\2,(${ID})=\\1\\.key==="ArrowUp"\\?"up":"down",` +
-      `(${ID})=(${ID})\\.navigate\\(\\6,(${ID})\\(\\),\\5\\)`,
-    names: [
-      "event",
-      "selectionStart",
-      "textarea",
-      "selectionEnd",
-      "caret",
-      "direction",
-      "result",
-      "history",
-      "text",
-    ],
-    build: (m) =>
-      `if((${m[1]}.key==="ArrowUp"||${m[1]}.key==="ArrowDown")&&(${m[1]}.metaKey||${m[1]}.ctrlKey)` +
-      `&&!${m[1]}.altKey&&!${m[1]}.shiftKey){` +
-      `let ${m[2]}=${m[3]}?.selectionStart??0,${m[4]}=${m[3]}?.selectionEnd??0;` +
-      `if(${m[2]}!==${m[4]})return;` +
-      `let ${m[5]}=${m[1]}.key==="ArrowUp"?0:${m[9]}().length,` +
-      `${m[6]}=${m[1]}.key==="ArrowUp"?"up":"down",` +
-      `${m[7]}=${m[8]}.navigate(${m[6]},${m[9]}(),${m[5]})`,
     description: (v) =>
       `Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v${v}+)`,
-  }),
+    derive(content) {
+      const matches = findAll(
+        content,
+        `if\\(\\((${ID})\\.key==="ArrowUp"\\|\\|\\1\\.key==="ArrowDown"\\)` +
+          `&&!\\1\\.altKey&&!\\1\\.ctrlKey&&!\\1\\.metaKey&&!\\1\\.shiftKey\\)\\{` +
+          `let (${ID})=(${ID})\\?\\.selectionStart\\?\\?0,(${ID})=\\3\\?\\.selectionEnd\\?\\?0;` +
+          `if\\(\\2!==\\4\\)return;` +
+          `let (${ID})=\\2,(${ID})=\\1\\.key==="ArrowUp"\\?"up":"down",` +
+          `((?:[^;{}]{1,${HISTORY_DECLARATIONS_LIMIT}}?,)?)` +
+          `(${ID})=(${ID})\\.navigate\\(\\6,(${ID})\\(\\),\\5((?:,${ID})*)\\)`,
+      );
+      if (matches.length !== 1) return { matches: matches.length };
+      const [
+        original,
+        event,
+        selectionStart,
+        textarea,
+        selectionEnd,
+        caret,
+        direction,
+        declarations,
+        result,
+        history,
+        text,
+        extraArguments,
+      ] = matches[0];
+
+      if (namesToken(declarations, caret)) {
+        return {
+          error:
+            "a declaration ahead of navigate() reads the caret local the edit replaces",
+        };
+      }
+      if (namesToken(extraArguments, caret)) {
+        return {
+          error:
+            "navigate() is passed the caret local a second time, which the edit replaces",
+        };
+      }
+
+      return {
+        original,
+        patched:
+          `if((${event}.key==="ArrowUp"||${event}.key==="ArrowDown")&&(${event}.metaKey||${event}.ctrlKey)` +
+          `&&!${event}.altKey&&!${event}.shiftKey){` +
+          `let ${selectionStart}=${textarea}?.selectionStart??0,${selectionEnd}=${textarea}?.selectionEnd??0;` +
+          `if(${selectionStart}!==${selectionEnd})return;` +
+          `let ${caret}=${event}.key==="ArrowUp"?0:${text}().length,` +
+          `${direction}=${event}.key==="ArrowUp"?"up":"down",` +
+          `${declarations}${result}=${history}.navigate(${direction},${text}(),${caret}${extraArguments})`,
+        symbols: {
+          event,
+          selectionStart,
+          textarea,
+          selectionEnd,
+          caret,
+          direction,
+          declarations,
+          result,
+          history,
+          text,
+          extraArguments,
+        },
+      };
+    },
+  },
 
   // The skip-predicate's tail is only a few characters ("V?!1:L(G)"), far too
   // short to match safely on its own, so it is reached in two hops from the
@@ -1445,4 +1526,5 @@ module.exports = {
   esc,
   withoutPrefilter,
   longestLiteral,
+  HISTORY_DECLARATIONS_LIMIT,
 };

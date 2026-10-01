@@ -101,9 +101,103 @@ const PATCHES: FilePatches[] = [
   {
     filename: "webview.js",
     patches: [
+      // --- v7.8.2+ patterns. 7.8.3 republished 7.8.2's bundles byte for
+      //     byte, so one block covers both. Seven entries: perm-escape still
+      //     reads off the v7.8.0+ entry below, since its handler me, event J
+      //     and feedback opener pe all held.
+      //
+      //     The first build since 7.7.0 where a patch point changed shape
+      //     rather than only its names. Kilo taught the prompt history to
+      //     carry the draft's pasted chunks: the keydown handler computes them
+      //     in one more declaration and passes them as a fourth argument
+      //     (Yn=le.pastes().map(ta=>ta.text), then k.navigate(nr,U(),or,Yn)),
+      //     and navigate() answers with {text,pastes} where it returned a
+      //     string. The chat-history rule spelled that call out, so 2.1.5
+      //     derived the six other patches that moved here and left Up/Down on
+      //     Kilo's own routing. The rule now captures what Kilo declares ahead
+      //     of the call and passes after the caret (see src/rules.js). The
+      //     edit is what it always was: the gate that reads the caret is
+      //     byte-identical to 7.8.1's apart from its name.
+      //
+      //     Against 7.8.1: the chat event ze→$e, which chat-input, chat-escape
+      //     and chat-history all name, with the Enter-check f1→A1, send Dn→Ur
+      //     and the Escape chain's popup HT→ZT and ghost Be→Ee (goal R, busy
+      //     $r, store t held). History moved selectionStart Bt→St,
+      //     selectionEnd Ot→rn, caret Rn→or, direction Jn→nr and result Vn→Wr,
+      //     while the textarea w, navigator k and text accessor U held.
+      //     Mention: slice local rt→tt, text ft→At, caret Le→Re, match bt→ht,
+      //     trigger regex vU→CU, close qe→je, query local Ft→Qt, the "@"
+      //     offset Ne→Oe and the dead slot Ue→We. Permission: in-textarea
+      //     guard $e→rt, element arg Ne→Oe and bare-Enter check ae→re, while
+      //     the event J, dialog branch ge, helper W, dispatch le and the
+      //     feedback-box signal C held. doc-escape moved its event Ae→we, its
+      //     first move since 7.7.9. The chat event took back $e, the letter
+      //     7.8.1 gave the permission guard; that guard took rt, 7.8.1's
+      //     mention slice local; and Oe names both the mention "@" offset and
+      //     the permission element argument, the pair Ne held a build
+      //     earlier. ---
+      {
+        feature: "chat-input",
+        original: "A1($e)&&!$e.shiftKey&&($e.preventDefault(),Ur())",
+        patched: "A1($e)&&($e.metaKey||$e.ctrlKey)&&($e.preventDefault(),Ur())",
+        description: "Chat input: Enter→newline, Cmd/Ctrl+Enter→send (v7.8.2+)",
+      },
+      {
+        feature: "chat-escape",
+        original:
+          '$e.key!=="Escape"?!1:ZT()?!0:!Ee.text()&&!R.active()&&!$r()?!1:($e.preventDefault(),$e.stopPropagation(),Ee.text()?Ee.dismiss():R.active()?R.cancel():t.abort(),!0)',
+        patched:
+          '$e.key!=="Escape"?!1:ZT()?!0:!Ee.text()&&!R.active()&&(!$r()||!$e.shiftKey&&$e.target?.value?.trim())?!1:($e.preventDefault(),$e.stopPropagation(),Ee.text()?Ee.dismiss():R.active()?R.cancel():t.abort(),!0)',
+        description:
+          "Chat Escape: bare Escape aborts when textarea empty/whitespace-only; Shift+Escape always aborts (v7.8.2+)",
+      },
+      {
+        feature: "mention-escape",
+        original:
+          'let tt=At.substring(0,Re),ht=tt.match(CU);if(!ht){je();return}let Qt=ht[1]??"";if(Oe=(ht.index??0)+(/^\\s/.test(ht[0])?1:0),We&&We.at===Oe&&Qt.startsWith(We.query)){je();return}',
+        patched:
+          'let tt=At.substring(0,Re),ht=tt.match(CU);if(!ht){We&&At[We.at]!=="@"&&(We=void 0),je();return}let Qt=ht[1]??"";if(Oe=(ht.index??0)+(/^\\s/.test(ht[0])?1:0),We&&We.at===Oe&&Qt.startsWith(We.query)){je();return}',
+        description:
+          "Mention menu Escape: drops Kilo's recorded @ query once that @ is gone, so deleting and retyping the @ reopens the menu (v7.8.2+)",
+      },
+      {
+        feature: "chat-history",
+        original:
+          'if(($e.key==="ArrowUp"||$e.key==="ArrowDown")&&!$e.altKey&&!$e.ctrlKey&&!$e.metaKey&&!$e.shiftKey){let St=w?.selectionStart??0,rn=w?.selectionEnd??0;if(St!==rn)return;let or=St,nr=$e.key==="ArrowUp"?"up":"down",Yn=le.pastes().map(ta=>ta.text),Wr=k.navigate(nr,U(),or,Yn)',
+        patched:
+          'if(($e.key==="ArrowUp"||$e.key==="ArrowDown")&&($e.metaKey||$e.ctrlKey)&&!$e.altKey&&!$e.shiftKey){let St=w?.selectionStart??0,rn=w?.selectionEnd??0;if(St!==rn)return;let or=$e.key==="ArrowUp"?0:U().length,nr=$e.key==="ArrowUp"?"up":"down",Yn=le.pastes().map(ta=>ta.text),Wr=k.navigate(nr,U(),or,Yn)',
+        description:
+          "Chat history: plain Up/Down stay in the textarea, Cmd/Ctrl+Up/Down step through sent messages (v7.8.2+)",
+      },
+      {
+        feature: "perm-keys",
+        original: 'J.key==="Enter":ge?!0:rt?!1:W(Oe)',
+        patched:
+          'J.key==="Enter":ge?!0:rt?J.target?.value?.trim()?(J.key==="Enter"&&!J.metaKey&&!J.ctrlKey||J.key===" "||J.key==="Escape"&&!J.shiftKey&&!J.ctrlKey):!1:W(Oe)',
+        description:
+          "Permission skip-predicate: when textarea has non-whitespace content, skip bare Enter/Space/Escape; works regardless of focus (v7.8.2+)",
+      },
+      {
+        feature: "perm-approve",
+        original: 'if(re(J)&&!C()){le(J,"once");return}}};',
+        patched:
+          'if((re(J)||J.key===" "&&!J.metaKey&&!J.ctrlKey&&!J.target?.value?.trim()||J.key==="Enter"&&(J.metaKey||J.ctrlKey))&&!C()){le(J,"once");return}}};',
+        description:
+          "Permission approve: Cmd/Ctrl+Enter approves always; Space approves when empty/whitespace-only (v7.8.2+)",
+      },
+      {
+        feature: "doc-escape",
+        original:
+          'we.key!=="Escape"||!t.submitting()&&t.status()==="idle"&&!m()?.active||we.defaultPrevented||(we.preventDefault(),t.abort())',
+        patched:
+          'we.key!=="Escape"||!t.submitting()&&t.status()==="idle"&&!m()?.active||we.defaultPrevented||!we.shiftKey&&we.target?.value?.trim()||(we.preventDefault(),t.abort())',
+        description:
+          "Document Escape: bare Escape does not abort when textarea has non-whitespace content; Shift+Escape aborts (v7.8.2+)",
+      },
       // --- v7.8.0+ patterns. 7.8.1 republished 7.8.0's bundles byte for
       //     byte, so one block covers both. Seven entries: doc-escape still
-      //     reads off the v7.7.9+ entry below.
+      //     reads off the v7.7.9+ entry below. The perm-escape entry here also
+      //     serves 7.8.2-7.8.3.
       //
       //     Kilo published six builds in a week (7.7.6, 7.7.7, 7.7.9, 7.7.12,
       //     7.8.0, 7.8.1; 7.7.8, 7.7.10 and 7.7.11 never shipped), and they
@@ -3186,6 +3280,29 @@ type AttachButtonDef = WebviewVariant;
 
 const ATTACH_FILE_BUTTONS: AttachButtonDef[] = [
   {
+    // v7.8.2+ (7.8.3 ships the same bundle): container fo→go, tooltip Pn→Ln,
+    // icon-button Cn→xn and sync ct→nn, with the when-wrapper's predicate
+    // Sr→Ir. Insert Q, create E, the when-wrapper ue, controller A, textarea
+    // w, setter K, the indexing accessor a and the glyph "plus" held. Kilo's
+    // own mention row, A.selectMention(Mo,w,K,nn), occurs once and pins the
+    // four closure locals, and five more calls there name the same textarea,
+    // setter and sync (selectSession, selectWorktree, both onKeyDown calls
+    // and the slash-command select). prompt.action.attachFile still scores 0
+    // across all 508 js/json entries of the vsix, so the caption stays the
+    // literal "Attach file".
+    //
+    // The 7.6.2 sizing class is closed by reading the bundle again: every
+    // ghost-variant call in the rule's 2048-byte window is
+    // E(xn,{icon:"...",variant:"ghost",size:"small" (database, shield,
+    // wand-sparkles, send) with no generic-Button shape there at all, and
+    // function xn(e) sets "data-component":"icon-button" with data-size
+    // defaulting to normal.
+    original:
+      "Q(go,E(ue,{get when(){return Ir()},get children(){return E(Ln,{get value(){return a.status().message||a.label()}",
+    patched:
+      'Q(go,E(Ln,{get value(){return "Attach file"},placement:"top",get children(){return E(xn,{icon:"plus",variant:"ghost",size:"small",onClick:()=>{if(!w)return;w.focus();let _v=w.value,_s=w.selectionStart??_v.length,_b=_v.substring(0,_s);document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");A.selectMention({type:"file-picker"},w,K,nn)},get"aria-label"(){return "Attach file"}})}}),null),Q(go,E(ue,{get when(){return Ir()},get children(){return E(Ln,{get value(){return a.status().message||a.label()}',
+  },
+  {
     // v7.8.0+ (7.8.1 ships the same bundle): insert P→Q, the
     // when-wrapper pe→ue and the setter W→K. Container fo, create E, tooltip
     // Pn, icon-button Cn, controller A, textarea w, sync ct, the indexing
@@ -3679,6 +3796,14 @@ function reconcileAttachFileButton(
 // differed and did not, even though they ship distinct bundles.
 const MATH_EXTENSIONS: WebviewVariant[] = [
   {
+    // v7.8.2+ (7.8.3 ships the same bundle): the render helper HQ→ZQ.
+    // Nothing else in the tail anchor moved.
+    original:
+      "renderer(n){return ZQ(n.text,{displayMode:!0,throwOnError:!1})}}]});",
+    patched:
+      'renderer(n){return ZQ(n.text,{displayMode:!0,throwOnError:!1})}},{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);if(_m)return{type:"kbpKatexInlineDollar",raw:_m[0],text:_m[1].trim()}},renderer(_n){return ZQ(_n.text,{displayMode:!1,throwOnError:!1})}},{name:"kbpKatexBlockBracket",level:"block",tokenizer(_e){let _m=_e.match(/^\\\\\\[([\\s\\S]+?)\\\\\\](?:\\n|$)/);if(_m&&_m[1].trim())return{type:"kbpKatexBlockBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return ZQ(_n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},{name:"kbpKatexInlineBracket",level:"inline",start(_e){let _i=_e.indexOf("\\\\[");if(_i!==-1)return _i},tokenizer(_e){let _m=_e.match(/^\\\\\\[((?:\\\\.|[^\\\\\\n])*?)\\\\\\]/);if(_m&&_m[1].trim())return{type:"kbpKatexInlineBracket",raw:_m[0],text:_m[1].trim()}},renderer(_n){return ZQ(_n.text,{displayMode:!0,throwOnError:!1})}}]});',
+  },
+  {
     // v7.7.12+ (7.8.0 and 7.8.1 carry the same helper): the render
     // helper VQ→HQ. Nothing else in the tail anchor moved.
     original:
@@ -3833,6 +3958,17 @@ function reconcileMathRendering(
 // this component Solid sets no attributes on, and the block is appended
 // alongside a child Solid's insert placed once and does not track.
 const RAW_MARKDOWN_TOGGLES: WebviewVariant[] = [
+  {
+    // v7.8.2+ (7.8.3 ships the same bundle): tooltip Pn→Ln and icon-button
+    // Cn→xn, the same two components the attach button takes, plus Kilo's
+    // memo helper lt→dt inside the captured copy-button text. Insert Q,
+    // footer w, create E, the copy handler f and the raw-text accessor o all
+    // held.
+    original:
+      'Q(w,E(Ln,{get value(){return dt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return E(xn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return dt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null)',
+    patched:
+      'Q(w,E(Ln,{get value(){return dt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")},placement:"top",gutter:4,get children(){return E(xn,{get icon(){return m()?"check":"copy"},size:"normal",variant:"ghost",onMouseDown:C=>C.preventDefault(),onClick:f,get"aria-label"(){return dt(()=>!!m())()?r.t("ui.message.copied"):r.t("ui.message.copyResponse")}})}}),null),Q(w,E(Ln,{value:"Markdown source",placement:"top",gutter:4,get children(){return E(xn,{icon:"code-lines",size:"normal",variant:"ghost","data-slot":"kbp-raw-markdown-toggle","aria-label":"Markdown source","aria-pressed":"false",onMouseDown:_e=>_e.preventDefault(),onClick:_e=>{let _btn=_e.currentTarget,_part=_btn.closest("[data-component=text-part]"),_body=_part&&_part.querySelector("[data-slot=text-part-body]");if(!_body)return;let _pre=_body.querySelector("pre[data-slot=kbp-raw-markdown]");if(_pre){_pre.remove(),_part.removeAttribute("data-kbp-raw-markdown"),_btn.setAttribute("aria-pressed","false");return}_pre=document.createElement("pre"),_pre.setAttribute("data-slot","kbp-raw-markdown"),_pre.textContent=o(),_body.appendChild(_pre),_part.setAttribute("data-kbp-raw-markdown",""),_btn.setAttribute("aria-pressed","true")}})}}),null)',
+  },
   {
     // v7.8.0+ (7.8.1 ships the same bundle): insert P→Q. Footer w,
     // create E, tooltip Pn, icon-button Cn, the copy handler f, the memo

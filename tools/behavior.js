@@ -24,6 +24,11 @@
 //                 stubbed. The handler statement is sliced verbatim too, in
 //                 both its shipped-original and shipped-patched forms, and the
 //                 two are driven side by side through a table of keystrokes.
+//                 From 7.8.2 the history also carries the draft's pasted
+//                 chunks, through a declaration and an argument the rule
+//                 captures rather than reads, so on those builds the paste
+//                 controller is stubbed as well and the walk checks that the
+//                 chunks go out with the draft and come back with it.
 //
 //   math-render   its extensions only ever run if `marked` reaches them, which
 //                 is decided by registration order inside marked's own use(),
@@ -120,9 +125,53 @@ function historyModule(content) {
   return { source, factory, signal };
 }
 
+// What the handler statement binds past the rule's anchor: the text setter and
+// the auto-resize, and from 7.8.2 the paste controller. That release taught
+// the history to carry the draft's pasted chunks, so navigate() answers with
+// {text,pastes} where it returned a string, and the handler hands the chunks
+// back through `<controller>.load(text,pastes)`. Both generations are live
+// across the supported range, so each is a form here, tried newest first.
+//
+// Every interpolated symbol is escaped: "$e" is a real spelling.
+function historyTail(statement, symbols) {
+  const result = esc(symbols.result);
+  const event = esc(symbols.event);
+  const textarea = esc(symbols.textarea);
+  const carried = new RegExp(
+    `if\\(${result}!==null\\)\\{if\\(${event}\\.preventDefault\\(\\),` +
+      `(${ID})\\(${result}\\.text\\),(${ID})\\.load\\(${result}\\.text,${result}\\.pastes\\),${textarea}\\)\\{` +
+      `${textarea}\\.value=${result}\\.text,(${ID})\\(\\)`,
+  ).exec(statement);
+  if (carried) {
+    const [, setter, pastes, resize] = carried;
+    // The controller the chunks are handed back to has to be the one the
+    // anchor's captured declaration read them from, or the stub below would
+    // stand in for two different objects under one name.
+    if (!symbols.declarations.includes(`${pastes}.pastes()`)) return undefined;
+    return { setter, resize, pastes };
+  }
+  const plain = new RegExp(
+    `if\\(${result}!==null\\)\\{if\\(${event}\\.preventDefault\\(\\),` +
+      `(${ID})\\(${result}\\),${textarea}\\)\\{` +
+      `${textarea}\\.value=${result},(${ID})\\(\\)`,
+  ).exec(statement);
+  return plain ? { setter: plain[1], resize: plain[2] } : undefined;
+}
+
 // A callable copy of one keydown handler, closed over a live history navigator.
 function runner(module_, statement, symbols, tailSymbols) {
-  const { setter, resize } = tailSymbols;
+  const { setter, resize, pastes } = tailSymbols;
+  // Kilo's paste controller keeps one record per pasted chunk and the handler
+  // reads only each record's text, so a list of texts is all the stand-in
+  // holds: pastes() answers with records, load() takes texts back. load()
+  // keeps whatever it is handed, list or not, so a form that stopped passing
+  // the chunks along reads as a failed row rather than as a throw in here.
+  const pasteController = pastes
+    ? `const ${pastes} = {
+    pastes: () => (chunks ?? []).map((text) => ({ text })),
+    load: (_text, list) => { chunks = list; },
+  };`
+    : "";
   const src = `
 "use strict";
 let __storage = {};
@@ -136,13 +185,15 @@ const ${module_.signal} = (init) => {
   return [() => v, (n) => (v = typeof n === "function" ? n(v) : n)];
 };
 ${module_.source}
-return (seed, draft) => {
+return (seed, draft, pasted = []) => {
   const ${symbols.history} = ${module_.factory}();
   ${symbols.history}.seed(seed);
   let text = draft;
+  let chunks = pasted.slice();
   const ${symbols.text} = () => text;
   const ${setter} = (v) => { text = v; };
   const ${resize} = () => {};
+  ${pasteController}
   const ${symbols.textarea} = {
     value: draft, selectionStart: 0, selectionEnd: 0,
     setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; },
@@ -164,7 +215,11 @@ return (seed, draft) => {
       ${statement}
       return "fell-through";
     })() ?? "guard-return";
-    return { outcome, prevented, text, caret: ${symbols.textarea}.selectionStart };
+    return {
+      outcome, prevented, text,
+      caret: ${symbols.textarea}.selectionStart,
+      chunks,
+    };
   };
 };`;
   return new Function(src)();
@@ -247,6 +302,15 @@ const WALK = [
   { key: "ArrowDown", text: "third message" },
   { key: "ArrowDown", text: "my draft" },
 ];
+
+// What the draft holds besides its text, on a build whose history carries it
+// (7.8.2 and later): the chunks Kilo collapsed into paste chips. A recalled
+// message has none, and the draft gets its own back when the walk returns to
+// it. The stash is Kilo's and the edit touches none of it, which is exactly
+// the claim worth running in both forms: the rule writes the declaration that
+// collects the chunks, and the argument that passes them, back verbatim.
+const PASTED = ["a pasted chunk"];
+const WALK_CHUNKS = [[], [], [], PASTED];
 
 // --- math rendering ---------------------------------------------------------
 // Same argument as above, one step further. retarget proves the splice lands in
@@ -921,20 +985,14 @@ function main() {
     patchedBundle.indexOf(entry.patched),
   );
 
-  // Past the anchor the statement binds two more locals, the text setter and the
-  // auto-resize. Every interpolated symbol is escaped: "$e" is a real spelling.
-  const tail = new RegExp(
-    `if\\(${esc(symbols.result)}!==null\\)\\{if\\(${esc(symbols.event)}\\.preventDefault\\(\\),` +
-      `(${ID})\\(${esc(symbols.result)}\\),${esc(symbols.textarea)}\\)\\{` +
-      `${esc(symbols.textarea)}\\.value=${esc(symbols.result)},(${ID})\\(\\)`,
-  ).exec(patchedStatement);
-  if (!tail) {
+  const tailSymbols = historyTail(patchedStatement, symbols);
+  if (!tailSymbols) {
     console.log(
-      "  FAIL  could not bind the setter/resize locals from the statement tail",
+      "  FAIL  could not bind the locals the handler uses past the anchor " +
+        "(setter, resize, and the paste controller where there is one)",
     );
     return 1;
   }
-  const tailSymbols = { setter: tail[1], resize: tail[2] };
 
   // A bare `return` (Kilo's selection guard) yields undefined from the wrapper,
   // which the runner reports as "guard-return"; every other exit is explicit.
@@ -972,6 +1030,38 @@ function main() {
       `Cmd+${step.key.replace("Arrow", "")} recalls ${JSON.stringify(step.text)}`,
       `got "${r.outcome}" with ${JSON.stringify(r.text)}`,
     );
+  }
+
+  console.log("\npasted chunks (stashed with the draft, handed back with it)");
+  if (!tailSymbols.pastes) {
+    console.log(
+      "  n/a   this build's history holds text alone, so there is nothing to carry",
+    );
+  } else {
+    // The same walk in both forms, each by its own route to the history: the
+    // chord from mid-draft once patched, and on stock the bare key from the
+    // boundary Kilo's gate wants, which is where the handler itself leaves the
+    // caret after every recall.
+    const chord = patched(SENT, "my draft", PASTED);
+    const bare = stock(SENT, "my draft", PASTED);
+    let caret = 0;
+    for (const [i, step] of WALK.entries()) {
+      const want = WALK_CHUNKS[i];
+      const after = chord({ key: step.key, meta: true, caret: 3 });
+      const before = bare({ key: step.key, caret });
+      caret = before.caret;
+      const same = (r) =>
+        r.outcome === "handled" &&
+        r.text === step.text &&
+        JSON.stringify(r.chunks) === JSON.stringify(want);
+      check(
+        same(before) && same(after),
+        `${step.key.replace("Arrow", "")} to ${JSON.stringify(step.text)} ` +
+          `carries ${want.length === 0 ? "no chunks" : JSON.stringify(want)}, stock and patched alike`,
+        `stock "${before.outcome}" ${JSON.stringify(before.text)} ${JSON.stringify(before.chunks)}, ` +
+          `patched "${after.outcome}" ${JSON.stringify(after.text)} ${JSON.stringify(after.chunks)}`,
+      );
+    }
   }
 
   console.log("");

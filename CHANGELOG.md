@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.6
+
+- Fix message recall on Kilo Code 7.8.2 and 7.8.3, where `Cmd/Ctrl+Up` and `Cmd/Ctrl+Down` had stopped recalling and a bare `Up` or `Down` recalled a message as in native Kilo Code
+- Support Kilo Code 7.8.2 and 7.8.3, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes
+- Re-target the opt-in attach-file `+` button, the opt-in chat math rendering, and the opt-in markdown-source button to 7.8.2 and later
+- Keep all earlier versions' patterns, so this release still applies on older Kilo Code releases
+
 ## 2.1.5
 
 - Support Kilo Code 7.7.6 through 7.8.1, re-targeting every keyboard patch (chat input, chat Escape, mention menu Escape, message recall, permission prompt keys, and document-level Escape) to their re-minified scopes

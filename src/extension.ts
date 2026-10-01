@@ -61,6 +61,15 @@ const MATH_RULE: BonusRule = require("./rules").MATH_RULE;
 const ATTACH_RULE: BonusRule = require("./rules").ATTACH_RULE;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const RAW_MARKDOWN_RULE: BonusRule = require("./rules").RAW_MARKDOWN_RULE;
+// `text` with `put` where `find` first occurs, both taken as plain text. Every
+// edit below is written and reversed through it rather than through a bare
+// String.replace, whose replacement *string* reads `$&`, `$$`, `` $` `` and
+// `$'` as patterns. Patch text is minified code, where `$` and `$$` are
+// ordinary names, so a site holding `$&&x` or `$$()` would be written wrong,
+// and the second of those still parses (see src/rules.js).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const replaceLiteral: (text: string, find: string, put: string) => string =
+  require("./rules").replaceLiteral;
 
 interface PatchDef {
   // Which logical behavior this pattern implements. Declared rather than
@@ -5915,10 +5924,10 @@ function reconcileDerivableBonus(
       ) &&
       content.includes(remembered.patched);
     const base = stale
-      ? content.replace(remembered.patched, remembered.original)
+      ? replaceLiteral(content, remembered.patched, remembered.original)
       : content;
     const edit = variantEdit(base, shipped, enabled);
-    let updated = edit ? base.replace(edit.from, edit.to) : base;
+    let updated = edit ? replaceLiteral(base, edit.from, edit.to) : base;
     if (stale) {
       updated = withDerivedRecord(
         updated,
@@ -5937,7 +5946,7 @@ function reconcileDerivableBonus(
   if (!variant) return false;
   const edit = variantEdit(content, variant, enabled);
   if (!edit) return false;
-  const updated = content.replace(edit.from, edit.to);
+  const updated = replaceLiteral(content, edit.from, edit.to);
   if (updated === content) return false;
 
   // Enabling records the derivation and disabling takes it out. Filtered by
@@ -6080,12 +6089,12 @@ function applyPatches(
       continue;
     }
     if (modified.includes(p.original)) {
-      modified = modified.replace(p.original, p.patched);
+      modified = replaceLiteral(modified, p.original, p.patched);
       applied.push(p.description);
       continue;
     }
     if (p.previous && modified.includes(p.previous)) {
-      modified = modified.replace(p.previous, p.patched);
+      modified = replaceLiteral(modified, p.previous, p.patched);
       applied.push(`${p.description} (upgraded)`);
       continue;
     }
@@ -6132,12 +6141,12 @@ function restorePatches(
 
   for (const p of patches) {
     if (modified.includes(p.patched)) {
-      modified = modified.replace(p.patched, p.original);
+      modified = replaceLiteral(modified, p.patched, p.original);
       reverted.push(p.description);
       continue;
     }
     if (p.previous && modified.includes(p.previous)) {
-      modified = modified.replace(p.previous, p.original);
+      modified = replaceLiteral(modified, p.previous, p.original);
       reverted.push(`${p.description} (previous version)`);
       continue;
     }

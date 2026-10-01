@@ -33,6 +33,23 @@ function esc(literal) {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// `text` with `put` where `find` first occurs, both taken as plain text.
+//
+// String.replace reads four sequences in a replacement *string* as patterns:
+// `$&` (the match), `$$` (a dollar), and `` $` `` and `$'` (the text either
+// side of it). Minified code is made of exactly those. `$` and `$$` are
+// ordinary names to the minifier (7.8.3 calls a local of the chat scope `$`),
+// so `$&&x` is a local on the left of an `&&` and `$$()` is a call. Passed as
+// a replacement string, the first becomes the matched text followed by `&x`
+// and the second a call to a different function, and the second still parses.
+// A replacement function's result is not read that way, so everything that
+// moves patch text goes through here: the rules that build an edit by
+// replacing inside the text they matched, Apply, Restore, the bonus
+// reconcilers, and the harness when it reverses or stages one.
+function replaceLiteral(text, find, put) {
+  return text.replace(find, () => put);
+}
+
 // --- Candidate prefiltering --------------------------------------------------
 //
 // Most shapes open on an identifier placeholder, so the engine has to retry
@@ -49,61 +66,162 @@ function esc(literal) {
 // silently narrow the search; an extracted one cannot disagree with its shape.
 const CANDIDATE_WINDOW = 8192;
 
-// Regex-source constructs that end a literal run, because what follows is not
-// a plain character: groups, alternation, classes, backreferences and the
-// character escapes that stand for a set rather than a character.
-const NOT_LITERAL = new Set(["(", ")", "|", "]", ".", "^", "$"]);
-const QUANTIFIER = new Set(["?", "*", "+", "{"]);
-const CLASS_ESCAPE = new Set(["d", "D", "s", "S", "w", "W", "b", "B"]);
+// The escapes that stand for one fixed character, which a literal run can
+// carry as that character.
+const CHARACTER_ESCAPE = { n: "\n", r: "\r", t: "\t", f: "\f", v: "\v" };
 
-// The longest run of literal characters in a regex source, or "" when the
-// shape is all placeholders. Only used to nominate candidates, so a run this
-// misjudges as shorter than it is costs a little speed, never correctness; a
-// run it misjudged as literal when it is not would narrow the search, which is
-// why every construct not proven to be a plain character ends the run.
+// The longest run of literal characters that every match of a regex source is
+// certain to contain, or "" when nothing is certain. It nominates the offsets
+// a shape is run at, so the two ways of getting it wrong are not alike. A run
+// judged shorter than it is costs a little speed. A run judged certain when it
+// is not narrows the search to places some matches never are, and a rule then
+// reports "no match" on a build it fits, at apply, with nothing to say so.
+// Every construct is therefore read for what it guarantees rather than for
+// whether it looks like text, and anything not understood guarantees nothing.
+//
+// What is certain is settled per group, once the group has closed and what
+// follows it is known. A run inside a group counts only if the group must
+// match at least once (no `?`, `*` or `{0,` after it), holds no alternation
+// (either side of a `|` may be the one that matched), and is not a lookaround
+// (a negative one names text that must be absent, and a positive one names
+// text beside the match rather than in it). The characters that spell a
+// group's kind (`?:`, `?<name>`) are syntax, not text. An alternation at the
+// top level leaves nothing certain at all.
 function longestLiteral(source) {
-  let best = "";
-  let run = "";
-  const keep = () => {
-    if (run.length > best.length) best = run;
-    run = "";
-  };
-  for (let i = 0; i < source.length; i++) {
+  let i = 0;
+
+  // The quantifier that starts at `i`, if one does: the fewest repeats it
+  // allows. Moves past it and past the `?` that makes it lazy.
+  const quantifier = () => {
     const c = source[i];
-    // A quantifier makes the character before it optional or repeatable, so
-    // that character cannot be counted on to appear.
-    if (QUANTIFIER.has(c)) {
-      const held = run.slice(0, -1);
-      if (held.length > best.length) best = held;
+    let fewest;
+    if (c === "?" || c === "*") fewest = 0;
+    else if (c === "+") fewest = 1;
+    else if (c === "{") {
+      const close = source.indexOf("}", i);
+      const count = /^\d+/.exec(source.slice(i + 1));
+      fewest = count ? Number(count[0]) : 0;
+      i = close === -1 ? source.length : close;
+    } else return undefined;
+    i++;
+    if (source[i] === "?") i++;
+    return fewest;
+  };
+
+  // One list of alternatives, up to the `)` that closes it or the end of the
+  // source: the runs each match is certain to contain if this list is, in the
+  // order they appear, and whether it held a `|`.
+  const alternatives = () => {
+    const runs = [];
+    let run = "";
+    let alternated = false;
+    const end = () => {
+      if (run) runs.push(run);
       run = "";
-      if (c === "{") while (i < source.length && source[i] !== "}") i++;
-      continue;
-    }
-    // A character class stands for one of a set, so neither the class nor the
-    // characters spelling it out belong to a literal run. ID is written as two
-    // classes, so missing this reads the class body "A-Za-z_$" as text.
-    if (c === "[") {
-      keep();
-      i++;
-      while (i < source.length && source[i] !== "]") {
-        if (source[i] === "\\") i++;
+    };
+    while (i < source.length && source[i] !== ")") {
+      const c = source[i];
+      if (c === "|") {
+        alternated = true;
+        end();
         i++;
+        continue;
       }
-      continue;
+      if (c === "(") {
+        end();
+        i++;
+        let lookaround = false;
+        if (source[i] === "?") {
+          i++;
+          const named =
+            source[i] === "<" && source[i + 1] !== "=" && source[i + 1] !== "!";
+          if (source[i] === ":") i++;
+          else if (named) {
+            const close = source.indexOf(">", i);
+            i = close === -1 ? source.length : close + 1;
+          } else {
+            lookaround = true;
+            i += source[i] === "<" ? 2 : 1;
+          }
+        }
+        const inner = alternatives();
+        i++;
+        const fewest = quantifier() ?? 1;
+        if (!lookaround && !inner.alternated && fewest >= 1) {
+          runs.push(...inner.runs);
+        }
+        continue;
+      }
+      // A character class stands for one of a set, so neither the class nor
+      // the characters spelling it out belong to a run. ID is written as two
+      // classes, so missing this reads the class body "A-Za-z_$" as text.
+      if (c === "[") {
+        end();
+        i++;
+        while (i < source.length && source[i] !== "]") {
+          i += source[i] === "\\" ? 2 : 1;
+        }
+        i++;
+        continue;
+      }
+      if (c === "\\") {
+        const next = source[i + 1];
+        i += 2;
+        if (next === undefined) break;
+        const past = (closer) => {
+          const close = source.indexOf(closer, i);
+          i = close === -1 ? source.length : close + 1;
+        };
+        if (/[1-9]/.test(next)) {
+          // A backreference, however many digits it runs to: \11 is one, and
+          // reading it as \1 leaves a stray "1" at the head of the next run.
+          while (/[0-9]/.test(source[i] ?? "")) i++;
+          end();
+        } else if (next in CHARACTER_ESCAPE) {
+          run += CHARACTER_ESCAPE[next];
+        } else if (/[A-Za-z0-9]/.test(next)) {
+          // A set (\d, \w, \s), an assertion (\b), a named backreference, or a
+          // character written by its code. None is a plain character, and the
+          // ones that take an argument must not leave it behind as text.
+          if (next === "k" && source[i] === "<") past(">");
+          else if ((next === "p" || next === "P") && source[i] === "{") {
+            past("}");
+          } else if (next === "u" && source[i] === "{") past("}");
+          else if (next === "u") i += 4;
+          else if (next === "x") i += 2;
+          else if (next === "c") i += 1;
+          end();
+        } else {
+          // An escaped punctuation character is that character.
+          run += next;
+        }
+        continue;
+      }
+      if (c === "." || c === "^" || c === "$") {
+        end();
+        i++;
+        continue;
+      }
+      // A quantifier here applies to the single character before it, which
+      // makes that character optional or repeatable: it cannot be counted on,
+      // and what follows it is not adjacent to what came before.
+      if (quantifier() !== undefined) {
+        run = run.slice(0, -1);
+        end();
+        continue;
+      }
+      run += c;
+      i++;
     }
-    if (c === "\\") {
-      const next = source[++i];
-      if (next === undefined) break;
-      // \1..\9 is a backreference and \d and friends are sets; everything else
-      // escaped here is the literal character itself.
-      if (CLASS_ESCAPE.has(next) || /[0-9]/.test(next)) keep();
-      else run += next;
-      continue;
-    }
-    if (NOT_LITERAL.has(c)) keep();
-    else run += c;
-  }
-  keep();
+    end();
+    return { runs, alternated };
+  };
+
+  const top = alternatives();
+  // A `)` with nothing open is a source this does not understand.
+  if (i < source.length || top.alternated) return "";
+  let best = "";
+  for (const run of top.runs) if (run.length > best.length) best = run;
   return best;
 }
 
@@ -311,7 +429,8 @@ function deriveMentionClear(content) {
   }
   return {
     original,
-    patched: original.replace(
+    patched: replaceLiteral(
+      original,
       closeReturn,
       `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`,
     ),
@@ -375,12 +494,11 @@ function deriveMentionRecordAndClear(content) {
     };
   }
   const patched =
-    original
-      .replace(
-        closeReturn,
-        `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`,
-      )
-      .slice(0, -escapeTail.length) +
+    replaceLiteral(
+      original,
+      closeReturn,
+      `if(!${match}){${dead}&&${text}[${dead}.at]!=="@"&&(${dead}=void 0),${close}();return}`,
+    ).slice(0, -escapeTail.length) +
     `${dead}={at:${at},query:${mentionQuery}()??""},${escapeTail}`;
   return {
     original,
@@ -1524,6 +1642,8 @@ module.exports = {
   mathExtensions,
   ID,
   esc,
+  replaceLiteral,
+  findAll,
   withoutPrefilter,
   longestLiteral,
   HISTORY_DECLARATIONS_LIMIT,

@@ -25,11 +25,12 @@ const os = require("os");
 const path = require("path");
 const vm = require("vm");
 const { execFileSync } = require("child_process");
-const { loadExtension, shim } = require("./lib/load");
+const { loadExtension, shim, REPO_ROOT } = require("./lib/load");
 const {
   resolveBundleSource,
   assertPristine,
   countOccurrences,
+  unpatched,
 } = require("./lib/bundle");
 const {
   RULES,
@@ -37,7 +38,11 @@ const {
   RAW_MARKDOWN_RULE,
   PROBES,
   longestLiteral,
+  findAll,
+  withoutPrefilter,
+  replaceLiteral,
   ID,
+  esc,
   HISTORY_DECLARATIONS_LIMIT,
 } = require("./lib/rules");
 
@@ -98,6 +103,178 @@ class StubElement {
     }
     return null;
   }
+}
+
+// The contract of the literal a shape is prefiltered by, tried on shapes nobody
+// wrote: every match of a source contains the literal drawn from it. Sources
+// come from a small grammar over a four-letter alphabet (runs, classes,
+// quantified atoms, groups of every kind with and without a repeat,
+// alternation, lookarounds, backreferences, escapes), so random text over the
+// same letters matches them often, and each match is checked.
+//
+// The cases beside this pin constructs one at a time. This is for what they
+// cannot list: one construct inside another, where the extractor has to carry
+// what a group guarantees out through the groups around it.
+//
+// The generator is seeded, so a run is the same sources and the same text
+// every time. A group is never repeated without bound: an unbounded repeat
+// around an unbounded repeat backtracks exponentially, which would test the
+// regex engine's patience rather than the extractor.
+function randomShapeViolations(count, seed) {
+  let state = seed >>> 0;
+  const random = () => {
+    state ^= state << 13;
+    state >>>= 0;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    return state / 0x100000000;
+  };
+  const pick = (list) => list[Math.floor(random() * list.length)];
+  const LETTERS = ["a", "b", "c", "d"];
+  const ATOM_REPEATS = ["", "", "", "?", "*", "+", "{0,2}", "{1,2}", "{2}"];
+  const ATOM_REPEATS_MORE = ["{2,}", "{0,}", "??", "*?", "+?"];
+  const GROUP_REPEATS = ["", "", "", "?", "{0,2}", "{1,2}", "{2}", "??"];
+  const CLASSES = ["[ab]", "[^a]", ".", "[a-c]", "\\w", "[cd]", "\\S", "\\D"];
+  const CLASSES_MORE = ["[\\]a)(|]", "[a\\-c]"];
+  const ESCAPES = ["\\.", "\\n", "\\x61", "\\u0062", "\\b", "\\B", "^", "$"];
+  const ESCAPES_MORE = ["\\0", "\\cJ", "\\t", "\\/", "\\-"];
+
+  const generate = () => {
+    let groups = 0;
+    const named = [];
+    const run = () => {
+      let out = "";
+      const length = 1 + Math.floor(random() * 4);
+      for (let i = 0; i < length; i++) out += pick(LETTERS);
+      return out;
+    };
+    const repeat = () => pick([...ATOM_REPEATS, ...ATOM_REPEATS_MORE]);
+    let alternation;
+    const atom = (depth) => {
+      const r = random();
+      if (r < 0.42) return run();
+      if (r < 0.5) return pick(LETTERS) + repeat();
+      if (r < 0.56) return pick([...CLASSES, ...CLASSES_MORE]) + repeat();
+      if (r < 0.6 && groups > 0) {
+        return `\\${1 + Math.floor(random() * groups)}`;
+      }
+      if (r < 0.63) return pick([...ESCAPES, ...ESCAPES_MORE]);
+      if (r < 0.65 && named.length > 0) return `\\k<${pick(named)}>`;
+      if (depth >= 3) return run();
+      const kind = random();
+      if (kind < 0.3) {
+        groups++;
+        return `(${alternation(depth + 1)})${pick(GROUP_REPEATS)}`;
+      }
+      if (kind < 0.6) {
+        return `(?:${alternation(depth + 1)})${pick(GROUP_REPEATS)}`;
+      }
+      if (kind < 0.68) {
+        groups++;
+        const name = `g${groups}`;
+        const body = alternation(depth + 1);
+        named.push(name);
+        return `(?<${name}>${body})${pick(GROUP_REPEATS)}`;
+      }
+      if (kind < 0.76) return `(?=${alternation(depth + 1)})`;
+      if (kind < 0.84) return `(?!${alternation(depth + 1)})`;
+      if (kind < 0.92) return `(?<=${alternation(depth + 1)})`;
+      return `(?<!${alternation(depth + 1)})`;
+    };
+    const sequence = (depth) => {
+      let out = "";
+      const length = 1 + Math.floor(random() * 4);
+      for (let i = 0; i < length; i++) out += atom(depth);
+      return out;
+    };
+    alternation = (depth) => {
+      let out = sequence(depth);
+      while (random() < 0.18) out += `|${sequence(depth)}`;
+      return out;
+    };
+    return alternation(0);
+  };
+  const text = () => {
+    let out = "";
+    const length = 30 + Math.floor(random() * 60);
+    for (let i = 0; i < length; i++) {
+      out += random() < 0.03 ? pick([".", "\n", " "]) : pick(LETTERS);
+    }
+    return out;
+  };
+
+  const result = { shapes: 0, literals: 0, matches: 0, violations: [] };
+  for (let n = 0; n < count; n++) {
+    const source = generate();
+    let shape;
+    try {
+      shape = new RegExp(source, "g");
+    } catch {
+      continue;
+    }
+    result.shapes++;
+    const literal = longestLiteral(source);
+    if (literal) result.literals++;
+    for (let t = 0; t < 12; t++) {
+      for (const m of text().matchAll(shape)) {
+        result.matches++;
+        if (!m[0].includes(literal)) {
+          result.violations.push({ source, literal, match: m[0] });
+          break;
+        }
+      }
+    }
+  }
+  return result;
+}
+
+// Every call in a file that hands String.replace a replacement it will read
+// for patterns: a `replace` or `replaceAll` whose second argument is neither a
+// function nor a literal with no `$` in it. The regex-escaping idiom "\\$&"
+// is the one literal that means its pattern and is let through.
+//
+// `text.replace(find, put)` is the natural way to write a replacement and the
+// wrong one for patch text, so the files that move patch text are read for it
+// rather than trusted never to grow one. They are parsed with the compiler the
+// project already builds with, since telling a regex literal from a division
+// is not a job for a regex. Returns `file:line` for each call found.
+function patternReadingReplaces(file) {
+  // eslint-disable-next-line global-require
+  const ts = require("typescript");
+  const text = fs.readFileSync(file, "utf8");
+  const sourceFile = ts.createSourceFile(
+    file,
+    text,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.JS,
+  );
+  const found = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ["replace", "replaceAll"].includes(node.expression.name.text) &&
+      node.arguments.length >= 2
+    ) {
+      const put = node.arguments[1];
+      const isFunction =
+        ts.isArrowFunction(put) || ts.isFunctionExpression(put);
+      const isPlainLiteral =
+        (ts.isStringLiteral(put) || ts.isNoSubstitutionTemplateLiteral(put)) &&
+        (!put.text.includes("$") || put.text === "\\$&");
+      if (!isFunction && !isPlainLiteral) {
+        const at = sourceFile.getLineAndCharacterOfPosition(
+          node.getStart(sourceFile),
+        );
+        found.push(`${path.basename(file)}:${at.line + 1}`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
 }
 
 // Runs the attach button a patched bundle carries, the same way the toggle's
@@ -1185,14 +1362,15 @@ async function main() {
         fs.mkdirSync(path.join(migrate, "dist"));
         const target = path.join(migrate, "dist", "webview.js");
         const clean = pristine["webview.js"];
-        const fresh = clean.replace(
+        const fresh = replaceLiteral(
+          clean,
           attachVariant.original,
           attachVariant.patched,
         );
         for (const old of attachVariant.previous) {
           fs.writeFileSync(
             target,
-            clean.replace(attachVariant.original, old),
+            replaceLiteral(clean, attachVariant.original, old),
             "utf8",
           );
           shim.setConfig({ addAttachFileButton: true });
@@ -1217,7 +1395,7 @@ async function main() {
 
           fs.writeFileSync(
             target,
-            clean.replace(attachVariant.original, old),
+            replaceLiteral(clean, attachVariant.original, old),
             "utf8",
           );
           shim.setConfig({ addAttachFileButton: false });
@@ -1557,7 +1735,7 @@ async function main() {
           const stale = { ...derived, patched: spec.restyle(derived.patched) };
           reset(
             test.withDerivedRecord(
-              pristineJs.replace(stale.original, stale.patched),
+              replaceLiteral(pristineJs, stale.original, stale.patched),
               [stale],
             ),
           );
@@ -1568,7 +1746,8 @@ async function main() {
             "a stale derived edit is replaced by the reviewed one",
           );
           check(
-            js() === pristineJs.replace(shipped.original, shipped.patched) &&
+            js() ===
+              replaceLiteral(pristineJs, shipped.original, shipped.patched) &&
               recordNow().length === 0,
             "leaving exactly the reviewed edit and no record",
           );
@@ -2015,7 +2194,7 @@ async function main() {
           test.applyPatches(target, fp.patches);
           const fresh = fs.readFileSync(target, "utf8");
 
-          const older = clean.replace(p.original, p.previous);
+          const older = replaceLiteral(clean, p.original, p.previous);
           fs.writeFileSync(target, older, "utf8");
           const result = test.applyPatches(target, fp.patches);
           check(
@@ -2224,12 +2403,12 @@ async function main() {
         const tail = `${s.declarations}${call(s.extraArguments)}`;
         // This build's handler with other declarations ahead of the call and
         // other arguments after the caret, as anchor text and as a bundle.
-        // Replacements go through a function, since a minified name may hold
-        // a `$` that a replacement string would read as a pattern.
         const reshaped = (text, declarations, extra) =>
           text.slice(0, -tail.length) + declarations + call(extra);
         const bundleWith = (declarations, extra) =>
-          js.replace(own.original, () =>
+          replaceLiteral(
+            js,
+            own.original,
             reshaped(own.original, declarations, extra),
           );
         const derived = (declarations, extra) =>
@@ -2313,6 +2492,249 @@ async function main() {
       }
     }
 
+    // Patch text is minified code, and minified code is made of what
+    // String.replace takes for patterns in a replacement string. `$` and `$$`
+    // are ordinary names to the minifier (Kilo 7.8.3 calls a local of the chat
+    // scope `$`), so `$&&x` is a local on the left of an `&&`, `$$()` is a
+    // call, and `'$'` and `` `$` `` are strings: all four sequences between
+    // them. Written through a bare replace, `$&&x` becomes the matched text
+    // followed by `&x`, and `$$()` becomes a call to a different function,
+    // which still parses.
+    //
+    // No shipped entry holds one of these sequences, so nothing above this
+    // section would notice. Here a site is made to hold all four and is taken
+    // through every path that writes an edit or takes one back: Apply and
+    // Restore, the reconciler the three bonus splices share (a reviewed entry,
+    // an older form of one, a derived edit, and a derived edit a reviewed one
+    // supersedes), the rule that builds its edit by replacing inside what it
+    // matched, and the harness's own recovery of pristine bytes.
+    console.log("\nliteral replacement (a `$` in patch text is not a pattern)");
+    {
+      const SITE = "if($&&$$(a,'$',`$`))return 1;";
+      const EDIT = "if($&&$$(a,'$',`$`)&&!$.kbp)return 1;";
+      const OLDER = "if($&&$$(a,'$',`$`)&&$.kbp)return 1;";
+      const whole = (site) =>
+        `var $={},$$=()=>1,a=0;function kbpSite(){${site}return 0}`;
+      const BUTTON = "kbpButton($&&$$,'$',`$`);";
+      const OLD_BUTTON = "kbpOldButton($&&$$,'$',`$`);";
+      const DERIVED_BUTTON = "kbpDerivedButton($&&$$,'$',`$`);";
+
+      check(
+        replaceLiteral("a<x>b<x>", "<x>", "$&$$$`$'") === "a$&$$$`$'b<x>",
+        "the replacement goes in as written, at the first occurrence only",
+      );
+
+      const box = path.join(sandbox, "literal");
+      const boxDist = path.join(box, "dist");
+      fs.mkdirSync(boxDist, { recursive: true });
+      const target = path.join(boxDist, test.CHAT_SCRIPT_FILE);
+      const now = () => fs.readFileSync(target, "utf8");
+      const lay = (text) => fs.writeFileSync(target, text, "utf8");
+
+      const def = {
+        feature: "chat-input",
+        original: SITE,
+        patched: EDIT,
+        previous: OLDER,
+        description: "a site made of `$` sequences",
+      };
+      lay(whole(SITE));
+      test.applyPatches(target, [def]);
+      check(now() === whole(EDIT), "Apply writes the edit as it is spelled");
+      test.restorePatches(target, [def]);
+      check(
+        now() === whole(SITE),
+        "Restore puts Kilo's bytes back as they were",
+      );
+      lay(whole(OLDER));
+      test.applyPatches(target, [def]);
+      check(
+        now() === whole(EDIT),
+        "an older form of the edit upgrades to the same bytes",
+      );
+      lay(whole(OLDER));
+      test.restorePatches(target, [def]);
+      check(now() === whole(SITE), "and restores to the same original");
+
+      const webviewPatches = test.PATCHES.find(
+        (group) => group.filename === test.CHAT_SCRIPT_FILE,
+      ).patches;
+      const keptCore = webviewPatches.slice();
+      const keptAttach = test.ATTACH_FILE_BUTTONS.slice();
+      const defaults = Object.fromEntries(test.BONUS_SETTING_DEFAULTS);
+      try {
+        // A reviewed bonus entry. The attach rule cannot read this file, so
+        // the entry is all there is to go on and applies by its text.
+        const variant = {
+          original: SITE,
+          patched: BUTTON + SITE,
+          previous: [OLD_BUTTON + SITE],
+        };
+        test.ATTACH_FILE_BUTTONS.unshift(variant);
+        lay(whole(SITE));
+        shim.setConfig({ ...defaults, addAttachFileButton: true });
+        check(
+          test.reconcileAttachFileButton(box) && now() === whole(BUTTON + SITE),
+          "a reviewed bonus entry is written as it is spelled",
+        );
+        lay(whole(OLD_BUTTON + SITE));
+        check(
+          test.reconcileAttachFileButton(box) && now() === whole(BUTTON + SITE),
+          "an older form of it is rewritten in place to the same bytes",
+        );
+        // A derived edit the record names, met by a reviewed entry that spells
+        // the edit differently: the derived one is reversed first.
+        lay(
+          test.withDerivedRecord(whole(DERIVED_BUTTON + SITE), [
+            {
+              feature: "attach-button",
+              filename: test.CHAT_SCRIPT_FILE,
+              original: SITE,
+              patched: DERIVED_BUTTON + SITE,
+              description: "attach-button [derived]",
+            },
+          ]),
+        );
+        check(
+          test.reconcileAttachFileButton(box) && now() === whole(BUTTON + SITE),
+          "a derived edit the reviewed entry supersedes is reversed exactly first",
+        );
+        shim.setConfig(defaults);
+        check(
+          test.reconcileAttachFileButton(box) && now() === whole(SITE),
+          "and switching the bonus off puts Kilo's bytes back",
+        );
+
+        // The derived path, which has to earn its write (the edit lands once
+        // and the bundle parses): a katex pack whose render helper the
+        // minifier called `$$`, which no reviewed entry names.
+        const PACK =
+          "var $$=(t,o)=>t,kbpMarked={use(){}};kbpMarked.use({extensions:[" +
+          '{name:"doubleKatexBlock",level:"block",renderer(n){return $$(n.text,{displayMode:!0,throwOnError:!1})+"\\n"}},' +
+          '{name:"doubleKatexInline",level:"inline",renderer(n){return $$(n.text,{displayMode:!0,throwOnError:!1})}}]});';
+        lay(PACK);
+        shim.setConfig({ ...defaults, chatMathRendering: true });
+        const wrote = test.reconcileMathRendering(box);
+        const record = test.readDerivedRecordAt(boxDist);
+        check(
+          wrote &&
+            record.length === 1 &&
+            countOccurrences(now(), record[0].patched) === 1 &&
+            countOccurrences(now(), "return $$(_n.text,") === 3,
+          "a derived bonus edit that names `$$` is written once, with the name intact",
+          `wrote ${wrote}, ${record.length} recorded`,
+        );
+        shim.setConfig(defaults);
+        check(
+          test.reconcileMathRendering(box) && now() === PACK,
+          "and switching it off leaves the pack as Kilo wrote it",
+        );
+
+        // The harness's own recovery of pristine bytes, on every branch it
+        // takes: the install's record, a core entry and its older form, a
+        // bonus entry and its older form.
+        webviewPatches.unshift(def);
+        const recovered = (text, record = []) =>
+          unpatched(whole(text), test.CHAT_SCRIPT_FILE, test, record) ===
+          whole(SITE);
+        check(
+          recovered(DERIVED_BUTTON + SITE, [
+            {
+              filename: test.CHAT_SCRIPT_FILE,
+              original: SITE,
+              patched: DERIVED_BUTTON + SITE,
+            },
+          ]) &&
+            recovered(EDIT) &&
+            recovered(OLDER) &&
+            recovered(BUTTON + SITE) &&
+            recovered(OLD_BUTTON + SITE),
+          "the harness recovers pristine bytes from each of those states",
+        );
+      } finally {
+        webviewPatches.splice(0, webviewPatches.length, ...keptCore);
+        test.ATTACH_FILE_BUTTONS.splice(
+          0,
+          test.ATTACH_FILE_BUTTONS.length,
+          ...keptAttach,
+        );
+        shim.setConfig(defaults);
+      }
+
+      // The one rule that builds its edit by replacing inside the text it
+      // matched. Its own site on this build is respelled so the dead-query
+      // slot is called `$` and the close `$$`, which is what the edit then has
+      // to write: `$&&…` and `$$()`.
+      const mention = RULES.find((r) => r.key === "mention-escape");
+      const js = pristine[test.CHAT_SCRIPT_FILE];
+      const own = test.FEATURE_GATES["mention-escape"](js)
+        ? mention.derive(js)
+        : undefined;
+      const names = (text, name) =>
+        new RegExp(`(?<![\\w$.])${esc(name)}(?![\\w$])`).test(text);
+      if (own?.original === undefined) {
+        console.log("  n/a   this build has no mention-escape site to respell");
+      } else if (names(own.original, "$") || names(own.original, "$$")) {
+        console.log(
+          "  n/a   this build's mention site already names `$` or `$$`",
+        );
+      } else {
+        const respell = (text) =>
+          [
+            [own.symbols.dead, "$"],
+            [own.symbols.close, "$$"],
+          ].reduce(
+            (out, [from, to]) =>
+              out.replace(
+                new RegExp(`(?<![\\w$.])${esc(from)}(?![\\w$])`, "g"),
+                () => to,
+              ),
+            text,
+          );
+        const respelled = mention.derive(
+          replaceLiteral(js, own.original, respell(own.original)),
+        );
+        check(
+          respelled.original === respell(own.original) &&
+            respelled.patched === respell(own.patched),
+          "a rule that edits inside its match writes `$&&` and `$$()` as they are",
+          JSON.stringify(
+            respelled.error ?? respelled.matches ?? "the edit differs",
+          ),
+        );
+      }
+
+      // Everything above is about the paths that exist. This is about the next
+      // one: nothing in the code that ships, or in the harness that stages and
+      // reverses edits, may call replace with a replacement it would read for
+      // patterns, whatever it happens to be moving today.
+      const moving = [
+        "out/extension.js",
+        "out/rules.js",
+        "tools/lib/bundle.js",
+        "tools/behavior.js",
+        "tools/retarget.js",
+        "tools/verify.js",
+      ];
+      let reading;
+      try {
+        reading = moving.flatMap((file) =>
+          patternReadingReplaces(path.join(REPO_ROOT, file)),
+        );
+      } catch (err) {
+        console.log(
+          `  n/a   the sources could not be read for a bare replace: ${err.message.split("\n")[0]}`,
+        );
+      }
+      if (reading !== undefined) {
+        check(
+          reading.length === 0,
+          "no replace in the patching code or the harness reads its replacement for patterns",
+          reading.join(", "),
+        );
+      }
+    }
+
     // activate() asks "is any webview.js patch still waiting?" with a
     // per-feature scan that stops at the variant which matches, rather than
     // testing all of them, because each test scans a ~20 MB bundle and the
@@ -2338,7 +2760,7 @@ async function main() {
       for (const p of webviewPatches) {
         if (full.includes(p.patched)) continue;
         if (full.includes(p.original))
-          full = full.replace(p.original, p.patched);
+          full = replaceLiteral(full, p.original, p.patched);
       }
       const states = [
         ["pristine", pristineJs],
@@ -2349,7 +2771,7 @@ async function main() {
           )
           .map((p) => [
             `only ${p.feature} missing`,
-            full.replace(p.patched, p.original),
+            replaceLiteral(full, p.patched, p.original),
           ]),
       ];
       let parted = 0;
@@ -2394,9 +2816,16 @@ async function main() {
     // release shipped. This is the claim that a pure re-minify needs no
     // release, checked per build rather than argued.
     // The extractor that decides which literal nominates candidate sites. The
-    // retarget equivalence proof covers it for the shapes that exist today;
-    // these pin the two ways it silently went wrong while being written, both
-    // of which widen a run to text that is not guaranteed to be there.
+    // retarget equivalence proof covers it for the shapes that exist today, on
+    // the builds it is run against. These pin what it has to get right for a
+    // shape nobody has written yet, on a build nobody has reviewed: a literal
+    // counted as certain when it is not sends the scan to places some matches
+    // never are, and the rule then reports "no match" where it fits.
+    //
+    // The first seven are the ways it went wrong while being written. The rest
+    // are what an earlier version got wrong without it showing, because the
+    // runs it misread (the text of an optional group, the `?:` that opens a
+    // group, the second digit of `\11`) were never the longest in a shape.
     console.log("\nshape literal extraction (what prefilters a scan)");
     {
       const cases = [
@@ -2411,6 +2840,74 @@ async function main() {
         [`(${ID})x\\1yzwv`, "yzwv", "a backreference ends the run"],
         [`ab{2,3}cdefg`, "cdefg", "a counted quantifier ends the run"],
         [`(${ID})`, "", "an all-placeholder shape yields nothing"],
+        [
+          `prefix(?:optional)?suffix`,
+          "prefix",
+          "a run inside an optional group is not certain",
+        ],
+        [
+          `abcd(?:efghij)*klmno`,
+          "klmno",
+          "nor inside a group that may repeat zero times",
+        ],
+        [
+          `abcd(?:efghij){0,3}klmno`,
+          "klmno",
+          "nor inside one counted from zero",
+        ],
+        [
+          `abc(?:defghi)+jk`,
+          "defghi",
+          "a group that must match once keeps its runs",
+        ],
+        [
+          `ab(?:cdefgh|ij)klmn`,
+          "klmn",
+          "either side of an alternation may be the one that matched",
+        ],
+        [
+          `abcdef|ghijkl`,
+          "",
+          "an alternation at the top level leaves nothing certain",
+        ],
+        [
+          `abcd(?!efghijk)`,
+          "abcd",
+          "a negative lookahead names text that must be absent",
+        ],
+        [`(?<!abcdefg)hijk`, "hijk", "and so does a negative lookbehind"],
+        [
+          `abcd(?=efghijk)`,
+          "abcd",
+          "a lookahead names text beside the match, not in it",
+        ],
+        [
+          `(?:abcd)e`,
+          "abcd",
+          "the characters that spell a group's kind are not text",
+        ],
+        [`(?<name>abcd)e`, "abcd", "nor is a group's name"],
+        [
+          `a(?:bcdef(?:ghijklm)?no)+p`,
+          "bcdef",
+          "what is certain is settled group by group",
+        ],
+        [
+          `abcd\\11efgh`,
+          "abcd",
+          "a backreference is read whole, however many digits",
+        ],
+        [
+          `ab\\ncdef`,
+          "ab\ncdef",
+          "an escape for one fixed character is that character",
+        ],
+        [
+          `abcd\\x41efgh`,
+          "abcd",
+          "a character written by its code leaves no digits behind",
+        ],
+        [`abcd)efgh`, "", "a source it cannot follow yields nothing"],
       ];
       for (const [source, want, why] of cases) {
         const got = longestLiteral(source);
@@ -2420,6 +2917,54 @@ async function main() {
           `wanted ${JSON.stringify(want)}, got ${JSON.stringify(got)}`,
         );
       }
+
+      // What a wrong literal costs, run rather than argued. Each text holds
+      // one match that does not contain the run the earlier extractor chose
+      // (the optional group is absent, the other alternative was taken, the
+      // forbidden text is not there), far enough from either end for the scan
+      // to be prefiltered. The prefiltered scan has to find what the full one
+      // finds.
+      const far = "_".repeat(20000);
+      const hidden = [
+        [
+          `prefix(?:optional)?suffix`,
+          "prefixsuffix",
+          "a match without its optional group is still found",
+        ],
+        [
+          `ab(?:cdefgh|ij)klmn`,
+          "abijklmn",
+          "so is one that took the other alternative",
+        ],
+        [
+          `abcd(?!wxyzwxyz)`,
+          "abcd.",
+          "and one that a negative lookahead allows",
+        ],
+      ];
+      for (const [source, text, why] of hidden) {
+        const hay = far + text + far;
+        const found = (matches) =>
+          JSON.stringify(matches.map((m) => [m.index, m[0]]));
+        const quick = found(findAll(hay, source));
+        const full = found(withoutPrefilter(() => findAll(hay, source)));
+        check(
+          quick === full && JSON.parse(full).length === 1,
+          why,
+          `prefiltered ${quick}, full scan ${full}`,
+        );
+      }
+
+      const sample = randomShapeViolations(2000, 20261001);
+      check(
+        sample.violations.length === 0 &&
+          sample.literals > 1000 &&
+          sample.matches > 100000,
+        `${sample.shapes} random shapes: every one of ${sample.matches} matches contains the literal drawn from its source`,
+        sample.violations.length > 0
+          ? `${sample.violations.length} do not, first ${JSON.stringify(sample.violations[0])}`
+          : `only ${sample.literals} shapes gave a literal and ${sample.matches} matches were seen`,
+      );
     }
 
     console.log("\nderivation (the release that need not happen)");
@@ -2613,7 +3158,7 @@ async function main() {
         );
         let derivedJs = pristine["webview.js"];
         for (const d of fresh)
-          derivedJs = derivedJs.replace(d.original, d.patched);
+          derivedJs = replaceLiteral(derivedJs, d.original, d.patched);
         derivedJs = test.withDerivedRecord(derivedJs, fresh);
 
         check(

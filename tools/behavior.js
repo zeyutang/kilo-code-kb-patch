@@ -50,7 +50,7 @@
 const path = require("path");
 const { loadExtension } = require("./lib/load");
 const { resolveBundleSource, assertPristine } = require("./lib/bundle");
-const { RULES, MATH_RULE, ID, esc } = require("./lib/rules");
+const { RULES, MATH_RULE, ID, esc, replaceLiteral } = require("./lib/rules");
 
 function findAll(content, source) {
   return [...content.matchAll(new RegExp(source, "g"))];
@@ -519,7 +519,7 @@ function runMath(test, content) {
   }
   const { instance, module_, helpers } = sliced;
   const stockPack = katexPack(content, entry.original);
-  const patchedBundle = content.replace(entry.original, entry.patched);
+  const patchedBundle = replaceLiteral(content, entry.original, entry.patched);
   const patchedPack = katexPack(patchedBundle, entry.patched);
 
   const stock = parser(module_, helpers, stockPack);
@@ -906,7 +906,11 @@ function runMention(test, content) {
   );
 
   const module_ = mentionModule(content, test);
-  const patchedSource = module_.source.replace(entry.original, entry.patched);
+  const patchedSource = replaceLiteral(
+    module_.source,
+    entry.original,
+    entry.patched,
+  );
   if (patchedSource === module_.source) {
     console.log(
       "  FAIL  the shipped mention-escape site is not inside the sliced controller",
@@ -979,7 +983,7 @@ function main() {
 
   const module_ = historyModule(content);
   const stockStatement = block(content, content.indexOf(entry.original));
-  const patchedBundle = content.replace(entry.original, entry.patched);
+  const patchedBundle = replaceLiteral(content, entry.original, entry.patched);
   const patchedStatement = block(
     patchedBundle,
     patchedBundle.indexOf(entry.patched),

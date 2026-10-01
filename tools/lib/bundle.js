@@ -9,6 +9,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { openVsix } = require("./vsix");
+const { replaceLiteral } = require("./rules");
 
 // Every candidate root, not just the first one that matches: the harness is a
 // maintenance tool, so being able to see (and target) an older build left behind
@@ -59,6 +60,9 @@ function resolveInstall(test, explicitPath) {
 
 // Reverse every known patch (core, their `previous` forms, and the opt-in
 // bonuses) so callers see the bytes Kilo shipped. Pure string work on a copy.
+// What is put back is Kilo's own code, where `$` and `$$` are ordinary names,
+// so each reversal is a literal one rather than a String.replace that would
+// read `$&` or `$$` in it as a pattern.
 //
 // `record` is the derivation record the install carries (in webview.js, for
 // every file). Its entries are reversed first: they describe exactly what was
@@ -68,15 +72,16 @@ function unpatched(content, filename, test, record = []) {
   let out = content;
   for (const p of record) {
     if (p.filename === filename && out.includes(p.patched)) {
-      out = out.replace(p.patched, p.original);
+      out = replaceLiteral(out, p.patched, p.original);
     }
   }
   const file = test.PATCHES.find((f) => f.filename === filename);
   if (file) {
     for (const p of file.patches) {
-      if (out.includes(p.patched)) out = out.replace(p.patched, p.original);
-      else if (p.previous && out.includes(p.previous)) {
-        out = out.replace(p.previous, p.original);
+      if (out.includes(p.patched)) {
+        out = replaceLiteral(out, p.patched, p.original);
+      } else if (p.previous && out.includes(p.previous)) {
+        out = replaceLiteral(out, p.previous, p.original);
       }
     }
   }
@@ -89,10 +94,11 @@ function unpatched(content, filename, test, record = []) {
       test.RAW_MARKDOWN_TOGGLES,
     ]) {
       for (const b of variants) {
-        if (out.includes(b.patched)) out = out.replace(b.patched, b.original);
-        else {
+        if (out.includes(b.patched)) {
+          out = replaceLiteral(out, b.patched, b.original);
+        } else {
           const prev = b.previous?.find((p) => out.includes(p));
-          if (prev) out = out.replace(prev, b.original);
+          if (prev) out = replaceLiteral(out, prev, b.original);
         }
       }
     }

@@ -14,7 +14,8 @@
 //   covered     the derived pattern is already in src/extension.ts, nothing to do
 //   n/a         the feature's gate says this build predates the Kilo behavior
 //               it fixes, and the rule agrees by finding no site, or Kilo no
-//               longer ships the file the rule patches at all
+//               longer ships the file the rule patches at all, or (for a
+//               probe) the build already carries the fix its block would add
 //   NEW         derived cleanly and not yet present, emitted below for pasting
 //   AMBIGUOUS   0 or >1 matches, so the shape moved or now aliases; needs a human
 //   ERROR       an anchor inside the shape went missing; needs a human
@@ -25,7 +26,7 @@
 // and the core chat-scroll, math-clip and hover-guard blocks apply only while
 // Kilo's textarea rule, its KaTeX and reasoning declarations, its chat templates
 // and its scroll threshold still look the way they assume), so there is never
-// anything to paste, only "still readable" or ERROR.
+// anything to paste, only "still readable", n/a, or ERROR.
 //
 // Exit code is 0 when every rule is covered, 1 when anything is new or unclear,
 // which makes this usable as a post-update check.
@@ -242,6 +243,12 @@ function main() {
         `  ERROR      ${probe.key} (${probe.file}): ${outcome.error}`,
       );
       unclear++;
+      continue;
+    }
+    // A block this build no longer needs, with the reason the probe found:
+    // nothing to paste and nothing for a human to do, like a gated-out rule.
+    if (outcome.na) {
+      console.log(`  n/a        ${probe.key} (${probe.file}): ${outcome.na}`);
       continue;
     }
     console.log(

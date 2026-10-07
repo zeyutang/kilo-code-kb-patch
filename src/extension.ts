@@ -2540,14 +2540,17 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
 const MENTION_SPACED_TRIGGER = "/(?:^|\\s)@(?![^\\n]*\\s@)([^\\n]*)$/";
 
 // A feature that fixes something Kilo only does from a certain release on is
-// not "missing" on the builds before it: there is nothing there to patch. A
-// gate says whether a build has the Kilo behavior the feature answers, keyed
-// on text the minifier cannot rename, and a feature with no gate is wanted on
-// every build. The status view reports a gated-out feature as "unneeded",
-// which draws neutrally and stays out of the verdict.
+// not "missing" on the builds before it: there is nothing there to patch. Nor
+// is one whose fix Kilo has since shipped itself, on the builds after that. A
+// gate says whether a build has the Kilo behavior the feature answers, read
+// off the file the feature patches and keyed on text the minifier cannot
+// rename, and a feature with no gate is wanted on every build. The status view
+// reports a gated-out feature as "unneeded", which draws neutrally and stays
+// out of the verdict.
 const FEATURE_GATES: Partial<Record<FeatureKey, (content: string) => boolean>> =
   {
     "mention-escape": (content) => content.includes(MENTION_SPACED_TRIGGER),
+    "math-clip": (css) => !katexContainsTwin(css),
   };
 
 // "patched": the patched text is present. "unpatched": the original text is
@@ -2555,8 +2558,9 @@ const FEATURE_GATES: Partial<Record<FeatureKey, (content: string) => boolean>> =
 // found, so its minified symbols changed for this Kilo version and the pattern
 // needs re-targeting. "missing" is what the status view must surface rather than
 // dropping the row, so an out-of-date pattern is visible instead of silent.
-// "unneeded": the feature's gate says this build predates the Kilo behavior it
-// fixes, so no variant is expected to match.
+// "unneeded": the feature's gate says this build does not have the Kilo
+// behavior it fixes, either because it predates the behavior or because it
+// already carries the fix, so no variant is expected to match.
 type FeatureState = "patched" | "unpatched" | "missing" | "unneeded";
 type Verdict =
   | "fully patched"
@@ -4104,7 +4108,9 @@ function reconcileRawMarkdownToggle(
 //   math-clip    core, webview.css: one declaration that makes each rendered
 //                formula clip its own out-of-flow MathML twin, so the twins
 //                stop extending the chat scroller past its content (see
-//                MATH_CLIP_RULE). Applied and removed with chat-scroll.
+//                MATH_CLIP_RULE). Applied and removed with chat-scroll, and
+//                not written where KaTeX already declares it, which Kilo's
+//                chat does from 7.8.7 on (see katexContainsTwin).
 //   hover-guard  core, webview.js: while the cursor macOS hid for typing stays
 //                hidden, the enter events the engine synthesizes for a layout
 //                change under the pointer are stopped, so a menu row or a
@@ -4268,9 +4274,10 @@ function reconcileBlocks<K extends PatchBlockKey>(
 
 // A file's core blocks as status rows, in the shape statusForFile gives the
 // bundle splices. "missing" means the block's anchors no longer match (this
-// build does not look the way the block assumes), "unpatched" that the block is
-// absent or stale (Apply writes the current form), "patched" that the current
-// form is present.
+// build does not look the way the block assumes), "unneeded" that the block is
+// not written because its gate says the build already does without it,
+// "unpatched" that the block is absent or stale (Apply writes the current
+// form), "patched" that the current form is present.
 function blockCoreStatus<K extends PatchBlockKey & FeatureKey>(
   content: string,
   keys: readonly K[],
@@ -4282,7 +4289,9 @@ function blockCoreStatus<K extends PatchBlockKey & FeatureKey>(
     const desired = block(key, pristine);
     const current = patchBlockRe(key).exec(content)?.[0] ?? "";
     const state: FeatureState = !desired
-      ? "missing"
+      ? FEATURE_GATES[key]?.(pristine) === false
+        ? "unneeded"
+        : "missing"
       : current === desired
         ? "patched"
         : "unpatched";
@@ -4525,7 +4534,8 @@ function readPromptSizing(css: string): PromptSizing | undefined {
 // KaTeX renders every formula twice: `.katex-html`, which paints, and
 // `.katex-mathml`, an invisible MathML twin kept for screen readers and for
 // what a copy yields, hidden the old way (`position: absolute; height: 1px;
-// width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px)`). Being
+// width: 1px; overflow: hidden`, with `clip: rect(1px,1px,1px,1px)` before
+// KaTeX 0.16.46 and `clip-path: inset(50%)` from it). Being
 // absolutely positioned with no offsets of its own, that twin is laid out at
 // its static position but belongs to its containing block, the nearest
 // positioned ancestor, which in the chat history is
@@ -4565,6 +4575,9 @@ function readPromptSizing(css: string): PromptSizing | undefined {
 // resolves to `.katex-html`, which already declares position: relative, so it
 // is unaffected, and so is the MathML-only output mode, where the `.katex`
 // element is itself the MathML and there is no twin.
+//
+// KaTeX later shipped the same declaration in its own stylesheet, and a build
+// that carries it gets no block (see katexContainsTwin).
 const MATH_CLIP_RULE = `${CHAT_ANY_MD} .katex { position: relative; }`;
 
 // The stylesheet half of the raw-markdown bonus. The splice appends
@@ -4611,12 +4624,15 @@ const RAW_MARKDOWN_RULES = [
 // position Kilo relies on would be a different change), and the peek box the
 // leak was measured in still looks the way it did. A build that changed any of
 // them reads as "missing" in the status view and keeps stock behavior, rather
-// than carrying a rule whose reason is gone.
+// than carrying a rule whose reason is gone. The one change with a known
+// answer is a `.katex` that declares `position: relative` itself, which is the
+// fix already in place, and that build reads as "not needed" instead.
 //
 // Exported to the harness, whose probe asserts each matches exactly once and
 // reports whether Kilo has since made the peek box a containing block of its
 // own, which would fix that one surface upstream and leave this rule covering
-// the rest.
+// the rest. On a build that already carries the fix it reads n/a instead, once
+// it has checked that no other rule can take that position back out.
 const MATH_CLIP_ANCHORS: Record<string, RegExp> = {
   "katex mathml twin": /\.katex-mathml\{[^{}]*position:absolute[^{}]*\}/,
   "katex root": /\.katex\{font:[^{}]*\}/,
@@ -4636,6 +4652,43 @@ function readMathClip(css: string): MathClip | undefined {
   if (/position:/.test(root[0])) return undefined;
   return { peekMaxHeight: peek[1] };
 }
+
+// Whether this build's KaTeX already makes each formula the containing block
+// for its own twin, with the declaration MATH_CLIP_RULE adds. KaTeX's root rule
+// declares `position: relative` from KaTeX 0.16.40 on (KaTeX#4170, which fixes
+// KaTeX#2796 and describes the same blank space at the foot of a page), and
+// Kilo's chat stylesheet carries it from 7.8.7, which moved to KaTeX 0.19.0.
+// 7.8.3 already bundled a 0.16.47 copy in its script, but its chat stylesheet
+// came from an older 0.16.27 copy. Measured in a headless Chromium on each
+// build's own stylesheet, with 900 formulas in a reasoning peek: stock 7.8.8
+// leaves no blank scroll range, and the same stylesheet with only that
+// declaration removed leaves the 8557px that stock 7.8.3 does. So the block
+// has nothing left to do there, and it is not written and reads as "not
+// needed" (see FEATURE_GATES).
+//
+// A declaration in the file is not yet the value that renders: KaTeX's rules
+// sit in `@layer base`, and an unlayered rule outranks them whatever its
+// specificity. So this holds only while no rule on `.katex` takes the position
+// back out (see KATEX_UNPOSITIONING). A build where one does reads as "missing"
+// for a human to judge, and the harness probe widens the same check to every
+// selector that could reach a formula's root.
+function katexContainsTwin(css: string): boolean {
+  const root = MATH_CLIP_ANCHORS["katex root"].exec(css);
+  if (!root || !MATH_CLIP_ANCHORS["katex mathml twin"].test(css)) return false;
+  if (!/[{;]position:relative[;}]/.test(root[0])) return false;
+  // The declarations of each rule on `.katex` itself, up to any nested rule.
+  return ![...css.matchAll(/\.katex\s*\{([^{}]*)/g)].some((m) =>
+    KATEX_UNPOSITIONING.test(m[1]),
+  );
+}
+
+// A declaration that leaves a formula's root unpositioned, which undoes the
+// fix wherever it outranks KaTeX's rule: `position` set to a value that
+// computes to `static` there, or an `all` reset. Any other position still
+// makes the formula the containing block for its twin. Exported to the
+// harness, whose probe asks it of every rule that can reach a formula's root.
+const KATEX_UNPOSITIONING =
+  /(?:^|;)\s*(?:position\s*:\s*(?:static|initial|unset|revert|revert-layer|inherit)\s*(?:!important\s*)?(?:;|$)|all\s*:)/;
 
 // --- chat-scroll, the script half --------------------------------------------
 // With the textarea engine-sized, Kilo's measurement no longer moves anything,
@@ -6837,6 +6890,8 @@ export const __test = {
   MATH_CLIP_RULE,
   MATH_CLIP_ANCHORS,
   readMathClip,
+  katexContainsTwin,
+  KATEX_UNPOSITIONING,
   coreCssDecision,
   chatCssCoreStatus,
   forceSettingOff,

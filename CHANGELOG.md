@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.7
+
+- On Kilo Code 7.8.7 and later, **Show Status** reads the math clip patch as **not needed on this Kilo Code build**, where before it read as needing an update and the install as partially patched.
+  Kilo Code's own math rendering now keeps math from adding empty chat scroll space, so there is nothing left to patch
+- **Apply Patches** no longer warns on those releases that a feature has no matching pattern
+
 ## 2.1.6
 
 - Fix message recall on Kilo Code 7.8.2 and 7.8.3, where `Cmd/Ctrl+Up` and `Cmd/Ctrl+Down` had stopped recalling and a bare `Up` or `Down` recalled a message as in native Kilo Code

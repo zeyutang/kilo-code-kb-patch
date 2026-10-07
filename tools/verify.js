@@ -429,13 +429,23 @@ async function main() {
     }
     // The core stylesheet block, the way Apply Patches writes it. The bonus
     // settings are still at their defaults here, so only the core block lands.
+    // A core block whose gate says this build already does without it is not
+    // written at all (math-clip, where KaTeX declares the fix itself).
     const pristineCss = pristine[test.CHAT_STYLE_FILE];
     const cssPath = path.join(dist, test.CHAT_STYLE_FILE);
     const coreOn = test.coreCssDecision(true);
     const coreOff = test.coreCssDecision(false);
+    const cssCoreNeeded = (key) =>
+      pristineCss === undefined ||
+      test.FEATURE_GATES[key]?.(pristineCss) !== false;
     const cssApplied = test.reconcileChatStyle(sandbox, coreOn);
     for (const key of test.CHAT_CSS_CORE) {
-      check(cssApplied[key], `${test.CHAT_STYLE_FILE}: applied "${key}"`);
+      check(
+        cssApplied[key] === cssCoreNeeded(key),
+        cssCoreNeeded(key)
+          ? `${test.CHAT_STYLE_FILE}: applied "${key}"`
+          : `${test.CHAT_STYLE_FILE}: "${key}" not written, since this build does without it`,
+      );
     }
     // The core script block, the same patch's other half, appended to the
     // bundle the splices above landed in.
@@ -456,8 +466,8 @@ async function main() {
       `got "${status.verdict}"`,
     );
     // A row may also read "unneeded", but only where the feature's gate says
-    // this build predates the Kilo behavior it fixes; a label maps back to its
-    // key through the extension's own label table.
+    // this build does not have the Kilo behavior it fixes; a label maps back to
+    // its key through the extension's own label table.
     const keyOf = (label) =>
       Object.entries(test.FEATURE_LABELS).find(([, l]) => l === label)?.[0];
     for (const file of status.files) {
@@ -546,9 +556,25 @@ async function main() {
     // for a build that needs a retarget, and a gate that closes where the
     // rule derives would hide a site that is there to patch.
     console.log(
-      "\ngates (features that fix a behavior this build may predate)",
+      "\ngates (features that fix a behavior this build may not have)",
     );
     for (const [key, gate] of Object.entries(test.FEATURE_GATES)) {
+      // A core stylesheet block has no shape rule, and its counterpart is the
+      // block itself: the gate has to close exactly where the extension
+      // declines to write it, or the row would read "not needed" beside a
+      // block it still writes, or "missing" on a build that carries the fix.
+      if (test.CHAT_CSS_CORE.includes(key)) {
+        if (pristineCss === undefined) continue;
+        const wanted = gate(pristineCss);
+        const writes = test.chatCssBlock(key, pristineCss) !== "";
+        check(
+          wanted === writes,
+          `${key}: the gate (${wanted ? "wanted" : "not needed"}) agrees with the block (${
+            writes ? "written" : "not written"
+          })`,
+        );
+        continue;
+      }
       const rule = RULES.find((r) => r.key === key);
       if (
         !check(rule !== undefined, `${key}: the gated feature has a shape rule`)
@@ -710,17 +736,15 @@ async function main() {
     // comment above MATH_CLIP_RULE in src/extension.ts; nothing here can run
     // layout). It stores no per-release text either, so what is asserted is the
     // shape of the rule, that it leaves the MathML in the tree, and the same
-    // carry-over contract and status rows as the block above.
+    // carry-over contract and status rows as the block above. From Kilo 7.8.7
+    // KaTeX declares the same position itself, and there the block is not
+    // written and its row reads "not needed", so both readings of the gate are
+    // also run on this build's own stylesheet with KaTeX's declaration put in
+    // and taken out, whichever of the two the build ships.
     console.log("\nmath clip (core stylesheet patch)");
     if (pristineCss === undefined) {
       check(false, `${test.CHAT_STYLE_FILE} is present in dist/`);
     } else {
-      const clip = test.readMathClip(pristineCss);
-      check(
-        clip !== undefined,
-        "KaTeX's out-of-flow MathML twin and the reasoning peek are readable",
-        JSON.stringify(clip),
-      );
       check(
         test.MATH_CLIP_RULE.includes(".katex {") &&
           test.MATH_CLIP_RULE.includes("position: relative"),
@@ -731,42 +755,171 @@ async function main() {
           !test.MATH_CLIP_RULE.includes("display: none"),
         "and leaves the MathML in the tree for screen readers and copying",
       );
+
+      const probe = PROBES.find((p) => p.key === "math-clip");
+      const rowOf = (css) =>
+        test
+          .chatCssCoreStatus(css)
+          .find((f) => f.label === test.FEATURE_LABELS["math-clip"])?.state;
+      const root = test.MATH_CLIP_ANCHORS["katex root"].exec(pristineCss)?.[0];
+      if (check(root !== undefined, "KaTeX's root rule is readable")) {
+        const fixed = /[{;]position:relative[;}]/.test(root);
+        const withFix = fixed
+          ? pristineCss
+          : replaceLiteral(
+              pristineCss,
+              root,
+              root.replace(/\}$/, ";position:relative}"),
+            );
+        const withoutFix = fixed
+          ? replaceLiteral(
+              pristineCss,
+              root,
+              root.replace(/position:relative;?/, ""),
+            )
+          : pristineCss;
+        check(
+          test.FEATURE_GATES["math-clip"](withoutFix) &&
+            test.readMathClip(withoutFix) !== undefined &&
+            rowOf(withoutFix) === "unpatched",
+          'without KaTeX\'s declaration the block is wanted, and absent reads "unpatched"',
+          `got "${rowOf(withoutFix)}"`,
+        );
+        check(
+          !test.FEATURE_GATES["math-clip"](withFix) &&
+            test.chatCssBlock("math-clip", withFix) === "" &&
+            rowOf(withFix) === "unneeded",
+          'with it the block is not written, and the row reads "not needed"',
+          `got "${rowOf(withFix)}"`,
+        );
+        check(
+          probe.read(withFix, test).na !== undefined,
+          "and the probe reads n/a rather than ERROR",
+          JSON.stringify(probe.read(withFix, test)),
+        );
+
+        // KaTeX's rule sits in `@layer base`, so a rule of Kilo's that leaves a
+        // formula's root unpositioned outranks it and brings the blank space
+        // back. The extension looks for one on `.katex` itself and then reads
+        // "missing" rather than "not needed"; the probe looks through every
+        // selector that can reach the root, and stops only at a declaration
+        // that unpositions it.
+        const plus = (rule) => `${withFix}\n${rule}`;
+        const overridden = plus(
+          "[data-component=markdown] .katex{position:static}",
+        );
+        check(
+          test.FEATURE_GATES["math-clip"](overridden) &&
+            rowOf(overridden) === "missing",
+          'a rule on .katex that unpositions it reads "missing", not "not needed"',
+          `got "${rowOf(overridden)}"`,
+        );
+        const undoing = [
+          "[data-component=markdown] .katex{position:static}",
+          "[data-component=markdown] span{all:unset}",
+          "[data-component=markdown]{.katex{&:hover{position:initial}}}",
+          ".katex-display>.katex,.x{position:revert-layer}",
+        ];
+        const passed = (rule) =>
+          probe.read(plus(rule), test).error === undefined;
+        check(
+          undoing.every((rule) => !passed(rule)),
+          "the probe refuses each rule that can unposition a formula's root",
+          undoing.filter(passed).join(" | "),
+        );
+        const harmless = [
+          "[data-component=markdown] .katex{position:relative}",
+          "[data-component=markdown] .katex::before{position:static}",
+          "[data-component=markdown] .katex .katex-html{position:static}",
+          "[data-component=markdown] .katex-display{all:unset}",
+          "@keyframes kbp-probe{0%{position:static}}",
+        ];
+        check(
+          harmless.every(
+            (rule) => probe.read(plus(rule), test).na !== undefined,
+          ),
+          "and passes each that cannot reach it or keeps it positioned",
+          harmless
+            .filter((rule) => !probe.read(plus(rule), test).na)
+            .join(" | "),
+        );
+      }
+
       const hasClip = () =>
         fs
           .readFileSync(cssPath, "utf8")
           .includes("kilo-code-kb-patch:math-clip:begin");
-      check(
-        countOccurrences(
-          fs.readFileSync(cssPath, "utf8"),
-          "kilo-code-kb-patch:math-clip:begin",
-        ) === 1 && test.chatCssApplied(sandbox, "math-clip"),
-        "exactly one math-clip block, and it reads as applied",
-      );
-      shim.setConfig({ chatHistoryFontSizeEm: 1.3 });
-      const clipWithBonus = test.reconcileChatStyle(sandbox);
-      check(
-        !clipWithBonus["math-clip"] && hasClip(),
-        "a bonus reconcile leaves the applied block in place",
-      );
-      shim.setConfig({});
       const clipRow = () =>
         test
           .computeStatus(dist)
           .files.find((f) => f.filename === test.CHAT_STYLE_FILE)
           ?.features.find((f) => f.label === test.FEATURE_LABELS["math-clip"])
           ?.state;
-      const clipOff = test.reconcileChatStyle(sandbox, coreOff);
-      check(
-        clipOff["math-clip"] && !hasClip() && clipRow() === "unpatched",
-        'restoring removes the block, which then reads "unpatched"',
-        `got "${clipRow()}"`,
-      );
-      const clipOn = test.reconcileChatStyle(sandbox, coreOn);
-      check(
-        clipOn["math-clip"] && hasClip() && clipRow() === "patched",
-        'Apply writes it again, which reads "patched"',
-        `got "${clipRow()}"`,
-      );
+      const read = probe.read(pristineCss, test);
+      if (test.FEATURE_GATES["math-clip"](pristineCss)) {
+        const clip = test.readMathClip(pristineCss);
+        check(
+          clip !== undefined && read.values !== undefined,
+          "KaTeX's out-of-flow MathML twin and the reasoning peek are readable",
+          JSON.stringify(clip ?? read),
+        );
+        check(
+          countOccurrences(
+            fs.readFileSync(cssPath, "utf8"),
+            "kilo-code-kb-patch:math-clip:begin",
+          ) === 1 && test.chatCssApplied(sandbox, "math-clip"),
+          "exactly one math-clip block, and it reads as applied",
+        );
+        shim.setConfig({ chatHistoryFontSizeEm: 1.3 });
+        const clipWithBonus = test.reconcileChatStyle(sandbox);
+        check(
+          !clipWithBonus["math-clip"] && hasClip(),
+          "a bonus reconcile leaves the applied block in place",
+        );
+        shim.setConfig({});
+        const clipOff = test.reconcileChatStyle(sandbox, coreOff);
+        check(
+          clipOff["math-clip"] && !hasClip() && clipRow() === "unpatched",
+          'restoring removes the block, which then reads "unpatched"',
+          `got "${clipRow()}"`,
+        );
+        const clipOn = test.reconcileChatStyle(sandbox, coreOn);
+        check(
+          clipOn["math-clip"] && hasClip() && clipRow() === "patched",
+          'Apply writes it again, which reads "patched"',
+          `got "${clipRow()}"`,
+        );
+      } else {
+        check(
+          read.na !== undefined,
+          "this build's KaTeX contains its own twins, and the probe reads n/a",
+          JSON.stringify(read),
+        );
+        check(
+          !hasClip() && clipRow() === "unneeded",
+          'Apply wrote no math-clip block, and the row reads "not needed"',
+          `got "${clipRow()}"`,
+        );
+        shim.setConfig({ chatHistoryFontSizeEm: 1.3 });
+        const clipWithBonus = test.reconcileChatStyle(sandbox);
+        check(
+          !clipWithBonus["math-clip"] && !hasClip(),
+          "a bonus reconcile writes none either",
+        );
+        shim.setConfig({});
+        const clipOff = test.reconcileChatStyle(sandbox, coreOff);
+        check(
+          !clipOff["math-clip"] && !hasClip() && clipRow() === "unneeded",
+          'restoring has nothing to remove, and the row still reads "not needed"',
+          `got "${clipRow()}"`,
+        );
+        const clipOn = test.reconcileChatStyle(sandbox, coreOn);
+        check(
+          !clipOn["math-clip"] && !hasClip() && clipRow() === "unneeded",
+          "and Apply again writes nothing",
+          `got "${clipRow()}"`,
+        );
+      }
     }
 
     // The script block is the other half of the same patch: a listener pair
@@ -2086,14 +2239,21 @@ async function main() {
         "no rule touches code blocks",
       );
       for (const key of test.CHAT_CSS_BLOCKS) {
+        const expected = cssCoreNeeded(key) ? 1 : 0;
         check(
-          countOccurrences(styled, `kilo-code-kb-patch:${key}:begin`) === 1 &&
-            countOccurrences(styled, `kilo-code-kb-patch:${key}:end`) === 1,
-          `exactly one ${key} block`,
+          countOccurrences(styled, `kilo-code-kb-patch:${key}:begin`) ===
+            expected &&
+            countOccurrences(styled, `kilo-code-kb-patch:${key}:end`) ===
+              expected,
+          expected === 1
+            ? `exactly one ${key} block`
+            : `no ${key} block, since this build does without it`,
         );
         check(
           test.chatCssApplied(sandbox, key),
-          `${key} block reads as applied`,
+          expected === 1
+            ? `${key} block reads as applied`
+            : `and ${key} reads as in step, with nothing to write`,
         );
       }
       const reapplied = test.reconcileChatStyle(sandbox);

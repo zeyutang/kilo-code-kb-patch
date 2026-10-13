@@ -284,6 +284,11 @@ function patternReadingReplaces(file) {
 // followed by the anchor it was inserted before, and the anchor is cut
 // mid-expression, so only the button half is evaluated.
 //
+// On a toolbar that folds (7.8.9 on) the button is Kilo's action wrapper with
+// the tooltip inserted into it, and the wrapper goes in before the node the
+// indexing button's insert names, so both inserts are checked, and so is the
+// node: one that is not the toolbar's would throw at render.
+//
 // Returns what one click did for each draft, or an error string.
 function clickAttachButton(edit, symbols) {
   if (!edit.patched.endsWith(edit.original))
@@ -301,8 +306,10 @@ function clickAttachButton(edit, symbols) {
   const setter = () => {};
   const sync = () => {};
   const inserted = [];
+  const wrappers = [];
   const context = {
-    [symbols.insert]: (parent, node) => inserted.push({ parent, node }),
+    [symbols.insert]: (parent, node, marker) =>
+      inserted.push({ parent, node, marker }),
     [symbols.create]: (component, props) => ({ component, props }),
     [symbols.tooltip]: "tooltip",
     [symbols.ghost]: "icon-button",
@@ -315,15 +322,39 @@ function clickAttachButton(edit, symbols) {
       execCommand: (command, ui, text) => calls.push({ command, text }),
     },
   };
+  const wrapped = symbols.wrapper !== undefined;
+  if (wrapped) {
+    context[symbols.wrapper] = () => {
+      const node = { wrapper: wrappers.length };
+      wrappers.push(node);
+      return node;
+    };
+    context[symbols.marker] = "the indexing button's node";
+  }
   try {
     vm.runInNewContext(button, context);
   } catch (e) {
     return `the button text does not run: ${e.message}`;
   }
-  if (inserted.length !== 1 || inserted[0].parent !== "toolbar") {
-    return `expected one insert into the toolbar, got ${inserted.length}`;
+  const top = inserted.filter((i) => i.parent === "toolbar");
+  if (top.length !== 1 || inserted.length !== (wrapped ? 2 : 1)) {
+    return `expected one insert into the toolbar, got ${top.length} of ${inserted.length}`;
   }
-  const tip = inserted[0].node;
+  // A toolbar that appends reads `null` there, a keyword the stub cannot bind.
+  const marker =
+    wrapped && symbols.marker !== "null" ? context[symbols.marker] : null;
+  if (top[0].marker !== marker) {
+    return `inserted before ${String(top[0].marker)}, not ${String(marker)}`;
+  }
+  let tip = top[0].node;
+  if (wrapped) {
+    if (wrappers.length !== 1 || tip !== wrappers[0]) {
+      return "the toolbar is not given Kilo's action wrapper";
+    }
+    const inner = inserted.filter((i) => i.parent === wrappers[0]);
+    if (inner.length !== 1) return "the wrapper does not hold the tooltip";
+    tip = inner[0].node;
+  }
   const iconButton = tip?.props?.children;
   if (tip?.component !== "tooltip" || iconButton?.component !== "icon-button") {
     return "the button is not the toolbar's tooltip-wrapped icon-button";

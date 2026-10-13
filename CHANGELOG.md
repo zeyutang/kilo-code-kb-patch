@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.8
+
+- Fix the opt-in attach-file `+` button on Kilo Code 7.8.9, where it no longer appeared and **Show Status** read it as **unavailable**
+- When the prompt is too narrow for every toolbar button, the `+` button stays in view while Kilo Code moves its own buttons into **More actions**
+
 ## 2.1.7
 
 - On Kilo Code 7.8.7 and later, **Show Status** reads the math clip patch as **not needed on this Kilo Code build**, where before it read as needing an update and the install as partially patched.

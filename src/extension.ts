@@ -5655,7 +5655,7 @@ function occurrences(haystack: string, needle: string): number {
 
 // How far from the edit a rule may reach for a symbol its anchor does not
 // contain. The furthest any admitted hop sits on a build checked (7.4.17
-// through 7.8.1) is the attach button's mention row, 4.1 KB before the
+// through 7.8.9) is the attach button's mention row, 4.5 KB before the
 // toolbar, while the 7.6.2 drift that bound the permission dialog's button
 // instead of the toolbar's walked 18 KB. So this bound is not a tuning knob: it
 // is the line between "the same component" and "wherever the next match

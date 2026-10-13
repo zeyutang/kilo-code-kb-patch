@@ -942,9 +942,9 @@ function deriveIconComponent(content) {
 }
 
 // How far before the toolbar anchor Kilo's own mention row may sit. Measured
-// at 3.5 to 4.1 KB on every build from 7.4.17 through 7.8.1, inside the same
-// render function as the toolbar, so twice the largest leaves the menu room to
-// grow while a call in some other component is still refused.
+// at 3.5 to 4.5 KB on every build from 7.4.17 through 7.8.9, inside the same
+// render function as the toolbar, so nearly twice the largest leaves the menu
+// room to grow while a call in some other component is still refused.
 const MENTION_WINDOW = 8192;
 
 // The opt-in attach-file button is not a rewrite of an existing expression but
@@ -962,16 +962,44 @@ const ATTACH_RULE = {
   key: "attach-button",
   file: "webview.js",
   derive(content) {
-    // The indexing-status accessor is a minified local (`r` through 7.4.20,
-    // `a` in 7.4.21), so capture it with a backreference rather than naming it.
-    const anchors = findAll(
-      content,
+    // The anchor is the indexing button's insert, which the toolbar has
+    // written in two shapes. Through 7.8.8 each button is inserted straight
+    // into the toolbar. From 7.8.9 Kilo folds its actions into an overflow
+    // menu when the prompt is too narrow for them, so each one is inserted
+    // wrapped in its own <div class=prompt-action>, the element Kilo marks
+    // data-folded. Whichever shape matches exactly once is the one read, and
+    // both matching at once is reported rather than settled by their order,
+    // the contract formsRule holds. The indexing-status accessor is a
+    // minified local (`r` through 7.4.20, `a` in 7.4.21), so capture it with a
+    // backreference rather than naming it.
+    const head =
       `(${ID})\\((${ID}),(${ID})\\((${ID}),\\{get when\\(\\)\\{return (${ID})\\(\\)\\},` +
-        `get children\\(\\)\\{return \\3\\((${ID}),\\{get value\\(\\)\\{return (${ID})\\.status\\(\\)\\.message\\|\\|\\7\\.label\\(\\)\\}`,
-    );
-    if (anchors.length !== 1) return { matches: anchors.length };
+      `get children\\(\\)\\{`;
+    const forms = [
+      {
+        wrapped: false,
+        matches: findAll(
+          content,
+          head +
+            `return \\3\\((${ID}),\\{get value\\(\\)\\{return (${ID})\\.status\\(\\)\\.message\\|\\|\\7\\.label\\(\\)\\}`,
+        ),
+      },
+      {
+        wrapped: true,
+        matches: findAll(
+          content,
+          head +
+            `var (${ID})=(${ID})\\(\\);return \\1\\(\\6,\\3\\((${ID}),\\{get value\\(\\)\\{return (${ID})\\.status\\(\\)\\.message\\|\\|\\9\\.label\\(\\)\\}`,
+        ),
+      },
+    ].filter((form) => form.matches.length > 0);
+    const total = forms.reduce((n, form) => n + form.matches.length, 0);
+    if (total !== 1) return { matches: total };
+    const { wrapped } = forms[0];
+    const anchors = forms[0].matches;
     const anchor = anchors[0];
-    const [, insert, container, create, , , tooltip] = anchor;
+    const [, insert, container, create] = anchor;
+    const tooltip = anchor[wrapped ? 8 : 6];
 
     // The mention menu's "Browse files..." row calls selectMention with exactly
     // the four PromptInput locals the button needs. The lookbehind keeps a
@@ -1073,6 +1101,40 @@ const ATTACH_RULE = {
     const neighbour = asIconButton ? iconButtons[0] : ghosts[0];
     const ghost = neighbour[1];
 
+    // The wrapped toolbar inserts each action before a node of its own
+    // template (the enhance action's wrapper, on 7.8.9) rather than at its
+    // end, and inserting before a node that is not the toolbar's child throws
+    // and takes the whole prompt down with it. So the node is not looked up
+    // but read off the indexing button's own insert, which names it last,
+    // after the getter returns its wrapper. The button is inserted with that
+    // parent and node, by a call placed just before that one, which keeps it
+    // immediately before the indexing button whatever that button's Show
+    // does. The getter that closes has to be the anchor's own: another
+    // action's getter declaring the same wrapper first would make this match
+    // that one's end.
+    let wrapperTemplate;
+    let marker;
+    let markerHop;
+    if (wrapped) {
+      const wrapperLocal = anchor[6];
+      wrapperTemplate = anchor[7];
+      const from = anchor.index + anchor[0].length;
+      const rest = content.slice(from, anchor.index + NEIGHBOUR_WINDOW);
+      const close = new RegExp(
+        `,${esc(wrapperLocal)}\\}\\}\\),(${ID})\\)`,
+      ).exec(rest);
+      if (
+        !close ||
+        rest.slice(0, close.index).includes(`var ${wrapperLocal}=`)
+      ) {
+        return {
+          error: "the indexing button's insert does not close beside it",
+        };
+      }
+      marker = close[1];
+      markerHop = { index: from + close.index, text: close[0] };
+    }
+
     // An icon-button resolves the glyph from its own `icon` prop, so that
     // branch needs no icon component at all. The legacy Button form still
     // passes one as a child, which is why this stays conditional rather than
@@ -1109,6 +1171,31 @@ const ATTACH_RULE = {
 
     const label = attachLabelExpression(content, i18n);
 
+    // The button declares locals of its own (its wrapper, then the draft's
+    // value, caret and the text before the caret), and one sharing a name the
+    // button reads would shadow it: `let _v=_v.value` throws on every click.
+    // A minifier is free to produce any of these names, so this is checked
+    // rather than assumed.
+    const declared = [...(wrapped ? ["_a"] : []), "_v", "_s", "_b"];
+    const read = [
+      insert,
+      create,
+      tooltip,
+      ghost,
+      icon?.name,
+      i18n,
+      wrapperTemplate,
+      controller,
+      textarea,
+      setter,
+      sync,
+    ];
+    if (declared.some((name) => read.includes(name))) {
+      return {
+        error: "a local the button declares would shadow a name it reads",
+      };
+    }
+
     const original = anchors[0][0];
     // Mirror whichever form the neighbours use, prop order included, so the
     // emitted text reads like the code it is spliced into.
@@ -1118,14 +1205,23 @@ const ATTACH_RULE = {
     const child = asIconButton
       ? ""
       : `,get children(){return ${create}(${icon.name},{name:"${glyph}",size:"small"})}`;
-    const button =
-      `${insert}(${container},${create}(${tooltip},{get value(){return ${label}},` +
+    const tip =
+      `${create}(${tooltip},{get value(){return ${label}},` +
       `placement:"top",get children(){return ${create}(${ghost},${open}` +
       `onClick:()=>{if(!${textarea})return;${textarea}.focus();let _v=${textarea}.value,` +
       `_s=${textarea}.selectionStart??_v.length,_b=_v.substring(0,_s);` +
       `document.execCommand("insertText",!1,(_b&&!/\\s$/.test(_b)?" ":"")+"@");` +
       `${controller}.selectMention({type:"file-picker"},${textarea},${setter},${sync})},` +
-      `get"aria-label"(){return ${label}}${child}})}}),null),`;
+      `get"aria-label"(){return ${label}}${child}})}})`;
+    // The wrapped form builds its wrapper from the template Kilo builds each
+    // action's from, and never marks it folded. Kilo's fold arithmetic counts
+    // only its own actions, so the button stays in view and takes its slot
+    // from the selectors beside the toolbar, as it did before the toolbar
+    // could fold.
+    const button = wrapped
+      ? `${insert}(${container},(()=>{var _a=${wrapperTemplate}();` +
+        `return ${insert}(_a,${tip}),_a})(),${marker}),`
+      : `${insert}(${container},${tip},null),`;
 
     return {
       original,
@@ -1138,6 +1234,7 @@ const ATTACH_RULE = {
         container,
         create,
         tooltip,
+        ...(wrapped ? { wrapper: wrapperTemplate, marker } : {}),
         ghost,
         ...(icon ? { icon: icon.name } : {}),
         ...(i18n ? { i18n } : {}),
@@ -1151,6 +1248,7 @@ const ATTACH_RULE = {
         hop(mention),
         { index: mention.index + ref.index, text: ref[0] },
         hop(neighbour),
+        ...(markerHop ? [markerHop] : []),
         ...(icon ? [icon.hop] : []),
         ...(i18nHop ? [i18nHop] : []),
       ],

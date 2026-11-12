@@ -36,7 +36,6 @@ const {
   RULES,
   ATTACH_RULE,
   RAW_MARKDOWN_RULE,
-  PROBES,
   longestLiteral,
   findAll,
   withoutPrefilter,
@@ -45,6 +44,7 @@ const {
   esc,
   HISTORY_DECLARATIONS_LIMIT,
 } = require("./lib/rules");
+const { PROBES } = require("./lib/probes");
 
 // A stand-in for the few DOM operations the raw-markdown toggle performs, in
 // the spirit of the chat-scroll scroller below: enough of an element to run

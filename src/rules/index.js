@@ -43,14 +43,12 @@ const {
   MATH_RULE,
   RAW_MARKDOWN_RULE,
 } = require("./bonus");
-const { stylesheetRules, couldBeKatexRoot, PROBES } = require("./probes");
 
 module.exports = {
   RULES,
   ATTACH_RULE,
   MATH_RULE,
   RAW_MARKDOWN_RULE,
-  PROBES,
   mathExtensions,
   ID,
   esc,
@@ -60,6 +58,4 @@ module.exports = {
   withoutPrefilter,
   longestLiteral,
   HISTORY_DECLARATIONS_LIMIT,
-  stylesheetRules,
-  couldBeKatexRoot,
 };

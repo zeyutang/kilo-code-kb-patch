@@ -55,7 +55,7 @@ const CHAT_ANY_MD = '[data-component="markdown"]';
 // specificity, so "exactly one match" does not mean "the value that renders".
 //
 // Exported to the harness, which asserts each anchor still matches exactly
-// once against a fresh build (see PROBES in src/rules/probes.js). Duplicating
+// once against a fresh build (see PROBES in tools/lib/probes.js). Duplicating
 // them there would let the two drift.
 export const CHAT_STYLE_ANCHORS: Record<string, RegExp> = {
   "markdown font-size":
@@ -150,7 +150,7 @@ export function headingRules(): string[] {
 // so the measurement layout never differs from the final one and nothing is
 // clamped. Kilo's own min-height and max-height keep bounding the box, and the
 // script's cap agrees with that max-height (the harness checks it, see PROBES
-// in src/rules/probes.js). Guarded by @supports so an engine without
+// in tools/lib/probes.js). Guarded by @supports so an engine without
 // field-sizing (Chrome before 123) keeps stock behavior rather than getting a
 // textarea that cannot grow, and scoped to .chat-view so no other textarea is
 // touched. The one visible difference is that the textarea is 2px taller,

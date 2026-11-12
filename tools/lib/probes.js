@@ -2,7 +2,7 @@
 // patches that store no per-release text, and the stylesheet walker one of
 // them reads the cascade with.
 
-const { ID } = require("./engine");
+const { ID } = require("./rules");
 
 // --- Stylesheet rules, for the probes ----------------------------------------
 //
@@ -141,6 +141,25 @@ function couldBeKatexRoot(subject) {
   );
 }
 
+// The anchors among `labels` that do not match exactly once, as a probe's
+// error, or undefined when every one does. An anchor that matches twice is as
+// unreadable as one that matches nowhere, since the value read through it
+// would be whichever match came first.
+function notOnce(content, anchors, labels = Object.keys(anchors)) {
+  const off = labels
+    .map((label) => [
+      label,
+      (content.match(new RegExp(anchors[label].source, "g")) ?? []).length,
+    ])
+    .filter(([, count]) => count !== 1);
+  if (off.length === 0) return undefined;
+  return {
+    error:
+      "not exactly one match for: " +
+      off.map(([label, n]) => `${label} (${n}x)`).join(", "),
+  };
+}
+
 // Probes are rules that assert a derivation still works without proposing a
 // pattern to paste. Two patches need one, and neither stores per-release text
 // in src at all. The typography bonus reads three font-size declarations out
@@ -164,19 +183,8 @@ const PROBES = [
       // second match would mean the value read is whichever comes first, which
       // is a guess. The anchors come from the extension itself so the two
       // cannot drift.
-      const ambiguous = Object.entries(test.CHAT_STYLE_ANCHORS)
-        .map(([label, re]) => [
-          label,
-          (content.match(new RegExp(re.source, "g")) ?? []).length,
-        ])
-        .filter(([, count]) => count !== 1);
-      if (ambiguous.length > 0) {
-        return {
-          error:
-            "not exactly one match for: " +
-            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
-        };
-      }
+      const unmatched = notOnce(content, test.CHAT_STYLE_ANCHORS);
+      if (unmatched) return unmatched;
       const values = test.readChatStyleValues(content);
       if (!values)
         return { error: "anchors matched but no value could be read" };
@@ -203,19 +211,8 @@ const PROBES = [
     file: "webview.css",
     describe: "what the chat-scroll block assumes about the prompt textarea",
     read(content, test, bundles) {
-      const ambiguous = Object.entries(test.CHAT_SCROLL_ANCHORS)
-        .map(([label, re]) => [
-          label,
-          (content.match(new RegExp(re.source, "g")) ?? []).length,
-        ])
-        .filter(([, count]) => count !== 1);
-      if (ambiguous.length > 0) {
-        return {
-          error:
-            "not exactly one match for: " +
-            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
-        };
-      }
+      const unmatched = notOnce(content, test.CHAT_SCROLL_ANCHORS);
+      if (unmatched) return unmatched;
       const sizing = test.readPromptSizing(content);
       if (!sizing)
         return { error: "anchors matched but the sizing could not be read" };
@@ -283,22 +280,8 @@ const PROBES = [
     describe:
       "what the math-clip block assumes about KaTeX and the reasoning peek",
     read(content, test) {
-      const counts = Object.fromEntries(
-        Object.entries(test.MATH_CLIP_ANCHORS).map(([label, re]) => [
-          label,
-          (content.match(new RegExp(re.source, "g")) ?? []).length,
-        ]),
-      );
-      const ambiguous = (labels) => {
-        const off = labels.filter((label) => counts[label] !== 1);
-        return off.length === 0
-          ? undefined
-          : {
-              error:
-                "not exactly one match for: " +
-                off.map((label) => `${label} (${counts[label]}x)`).join(", "),
-            };
-      };
+      const ambiguous = (labels) =>
+        notOnce(content, test.MATH_CLIP_ANCHORS, labels);
 
       // From KaTeX 0.16.40 (KaTeX#4170) KaTeX's own root rule declares the
       // position the block adds, and Kilo's chat stylesheet carries it from
@@ -339,7 +322,7 @@ const PROBES = [
       // position of its own, and that the clipped surface the leak was measured
       // in is still shaped that way. The anchors come from the extension itself
       // so the two cannot drift.
-      const moved = ambiguous(Object.keys(counts));
+      const moved = ambiguous(Object.keys(test.MATH_CLIP_ANCHORS));
       if (moved) return moved;
       const clip = test.readMathClip(content);
       if (!clip) {
@@ -370,19 +353,8 @@ const PROBES = [
       // that fails here would read "missing" in the status view rather than
       // carry a script that finds nothing. The anchors come from the extension
       // itself so the two cannot drift.
-      const ambiguous = Object.entries(test.CHAT_SCROLL_SCRIPT_ANCHORS)
-        .map(([label, re]) => [
-          label,
-          (content.match(new RegExp(re.source, "g")) ?? []).length,
-        ])
-        .filter(([, count]) => count !== 1);
-      if (ambiguous.length > 0) {
-        return {
-          error:
-            "not exactly one match for: " +
-            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
-        };
-      }
+      const unmatched = notOnce(content, test.CHAT_SCROLL_SCRIPT_ANCHORS);
+      if (unmatched) return unmatched;
       const threshold = test.readScrollThreshold(content);
       if (threshold === undefined) {
         return { error: "anchors matched but the threshold could not be read" };
@@ -416,19 +388,8 @@ const PROBES = [
       // list-item triggers on pointerenter), so a Kilo that moved its menus or
       // tooltips off enter events shows up in the log without failing the
       // probe: the block is harmless where it has nothing to stop.
-      const ambiguous = Object.entries(test.HOVER_GUARD_ANCHORS)
-        .map(([label, re]) => [
-          label,
-          (content.match(new RegExp(re.source, "g")) ?? []).length,
-        ])
-        .filter(([, count]) => count !== 1);
-      if (ambiguous.length > 0) {
-        return {
-          error:
-            "not exactly one match for: " +
-            ambiguous.map(([label, n]) => `${label} (${n}x)`).join(", "),
-        };
-      }
+      const unmatched = notOnce(content, test.HOVER_GUARD_ANCHORS);
+      if (unmatched) return unmatched;
       if (!test.hoverGuardAnchorsPresent(content)) {
         return {
           error: "anchors matched but the extension would not write the block",

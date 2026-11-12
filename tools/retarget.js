@@ -42,9 +42,9 @@ const {
   ATTACH_RULE,
   MATH_RULE,
   RAW_MARKDOWN_RULE,
-  PROBES,
   withoutPrefilter,
 } = require("./lib/rules");
+const { PROBES } = require("./lib/probes");
 
 function parseArgs(argv) {
   const args = {};

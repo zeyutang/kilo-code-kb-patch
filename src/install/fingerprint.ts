@@ -4,6 +4,7 @@
 import fs = require("fs");
 import path = require("path");
 import { RETIRED_FILES } from "../core/features";
+import { PATCHES } from "../patterns";
 import { extensionContext } from "../host/context";
 import { BONUS_SETTING_DEFAULTS, config } from "../host/settings";
 import { CHAT_STYLE_FILE } from "../blocks/machinery";
@@ -27,7 +28,12 @@ import { bonusReconcileFailed } from "../bonuses/session";
 // through to the full check, so the worst case is what activation costs today,
 // and Show Status never consults it at all.
 const SETTLED_KEY = "settledFingerprint.v1";
-const FINGERPRINT_FILES = ["webview.js", "kiloclaw.js", CHAT_STYLE_FILE];
+// Every file the patch set touches: the bundles PATCHES names, and the
+// stylesheet the blocks are appended to.
+const FINGERPRINT_FILES = [
+  ...PATCHES.map((fp) => fp.filename),
+  CHAT_STYLE_FILE,
+];
 
 // kb-patch's own code, named by the files that hold it rather than by its
 // version alone. The version says which release this is, and a build can

@@ -9,6 +9,7 @@ import { RULES } from "../rules";
 import { RETIRED_FILES } from "./features";
 import type { FeatureKey, FilePatches, PatchDef } from "./features";
 import { PATCHES } from "../patterns";
+import { WEBVIEW_PATCHES } from "../patterns/webview";
 import { BONUS_SETTING_DEFAULTS, forceSettingOff } from "../host/settings";
 import {
   candidateExtensionRoots,
@@ -381,7 +382,7 @@ export function webviewNeedsPatching(
   // exactly the users this path exists for. At most one variant of a feature
   // matches a build, so which one is looked at first is free.
   const byFeature = new Map<FeatureKey, PatchDef[]>();
-  for (const patch of [...extra, ...PATCHES[0].patches]) {
+  for (const patch of [...extra, ...WEBVIEW_PATCHES.patches]) {
     const variants = byFeature.get(patch.feature);
     if (variants) variants.push(patch);
     else byFeature.set(patch.feature, [patch]);
@@ -411,7 +412,7 @@ export function webviewNeedsPatching(
   for (const key of unresolved) {
     if (!DERIVABLE.includes(key)) continue;
     const rule = RULES.find(
-      (r) => r.key === key && r.file === PATCHES[0].filename,
+      (r) => r.key === key && r.file === WEBVIEW_PATCHES.filename,
     );
     if (rule && admissible(rule, content)) return true;
   }
@@ -444,7 +445,7 @@ export function startupPass(extPath: string, ownDir?: string): StartupPass {
 
   // Read after the bonus reconcile, which may itself rewrite webview.js, so the
   // needs-patching check sees the reconciled bundle.
-  const webviewPath = path.join(extPath, "dist", "webview.js");
+  const webviewPath = path.join(extPath, "dist", CHAT_SCRIPT_FILE);
   const content = fs.existsSync(webviewPath)
     ? fs.readFileSync(webviewPath, "utf8")
     : "";
@@ -460,9 +461,11 @@ export function startupPass(extPath: string, ownDir?: string): StartupPass {
   const needsPatching =
     webviewNeedsPatching(
       content,
-      recordedFor(readDerivedRecord(content), PATCHES[0].filename, content).map(
-        asPatchDef,
-      ),
+      recordedFor(
+        readDerivedRecord(content),
+        WEBVIEW_PATCHES.filename,
+        content,
+      ).map(asPatchDef),
     ) ||
     cssNeedsPatching ||
     scriptNeedsPatching;

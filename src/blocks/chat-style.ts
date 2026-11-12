@@ -9,6 +9,7 @@ import {
   chatMathRenderingEnabled,
   chatRawMarkdownEnabled,
   clampSetting,
+  KATEX_DEFAULT_EM,
 } from "../host/settings";
 import {
   CHAT_CSS_BLOCKS,
@@ -67,13 +68,6 @@ export const CHAT_STYLE_ANCHORS: Record<string, RegExp> = {
   // default in package.json is the thing that needs updating.
   "katex em size": /\.katex\{font:\s*([\d.]+)em\s/,
 };
-
-// KaTeX's own `.katex` size, and therefore the value at which the math size
-// asks for nothing. Kept in step with the schema default in package.json, and
-// checked against the shipped stylesheet by the harness rather than read from
-// it, so that a KaTeX upgrade cannot silently start overriding the size for
-// users who never touched the setting.
-export const KATEX_DEFAULT_EM = 1.21;
 
 // The font sizes Kilo declares inside the assistant markdown: two the
 // typography block re-declares multiplied, and the code-block size it re-states
@@ -377,7 +371,7 @@ export function chatCssRules(
     // Gated on the math bonus as a whole: sizing math the user cannot produce
     // would be a rule with nothing to style.
     if (!chatMathRenderingEnabled()) return [];
-    const em = clampSetting("chatMathFontSizeEm", KATEX_DEFAULT_EM, 0.5, 2);
+    const em = clampSetting("chatMathFontSizeEm");
     if (em === KATEX_DEFAULT_EM) return [];
     return [`${CHAT_ANY_MD} .katex { font-size: ${em}em; }`];
   }
@@ -389,7 +383,7 @@ export function chatCssRules(
   }
 
   const rules: string[] = [];
-  const scale = clampSetting("chatHistoryFontSizeEm", 1, 0.5, 3);
+  const scale = clampSetting("chatHistoryFontSizeEm");
   const family = chatFontFamily();
   // Either knob puts this block in the file, and the whole size treatment rides
   // along with either one: the ladder is not separately requestable, and a reply

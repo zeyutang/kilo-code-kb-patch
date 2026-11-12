@@ -1,14 +1,15 @@
 // One reconcile pass over every bonus, what this host is still waiting to
 // restart for, and the bonus rows of the status view.
 
-import vscode = require("vscode");
 import fs = require("fs");
 import path = require("path");
 import {
+  addAttachFileButtonEnabled,
   chatFontFamily,
   chatMathRenderingEnabled,
   chatRawMarkdownEnabled,
   clampSetting,
+  renameOpenInTabEnabled,
 } from "../host/settings";
 import {
   CHAT_SCRIPT_FILE,
@@ -156,7 +157,6 @@ export function reconcileBonuses(extPath: string): BonusChanges {
 // comes from its setting first (not enabled -> "off"), then from whether the file
 // actually reflects it. Bonus state never affects the verdict.
 export function computeBonusStatus(extPath: string): BonusStatus[] {
-  const cfg = vscode.workspace.getConfiguration("kiloCodeKbPatch");
   const read = (p: string) =>
     fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
 
@@ -186,12 +186,12 @@ export function computeBonusStatus(extPath: string): BonusStatus[] {
   };
 
   let attach: BonusState = "off";
-  if (cfg.get<boolean>("addAttachFileButton", false)) {
+  if (addAttachFileButtonEnabled()) {
     attach = splice("attach-button", () => true);
   }
 
   let openInTab: BonusState = "off";
-  if (cfg.get<boolean>("renameOpenInTab", false)) {
+  if (renameOpenInTabEnabled()) {
     const match = read(path.join(extPath, "package.json")).match(
       OPEN_IN_TAB_TITLE_RE,
     );
@@ -224,7 +224,7 @@ export function computeBonusStatus(extPath: string): BonusStatus[] {
   // declarations could not be read still gets a row, and it reads "unavailable"
   // rather than silently "off".
   let typography: BonusState = "off";
-  const scale = clampSetting("chatHistoryFontSizeEm", 1, 0.5, 3);
+  const scale = clampSetting("chatHistoryFontSizeEm");
   const scalesText = scale !== 1;
   if (scalesText || chatFontFamily() !== "") {
     const css = read(path.join(extPath, "dist", CHAT_STYLE_FILE));

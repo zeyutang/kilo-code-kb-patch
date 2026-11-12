@@ -16,7 +16,12 @@ import { ATTACH_FILE_BUTTONS } from "./patterns/attach-button";
 import { MATH_EXTENSIONS } from "./patterns/math-rendering";
 import { RAW_MARKDOWN_TOGGLES } from "./patterns/raw-markdown";
 import { setExtensionContext } from "./host/context";
-import { BONUS_SETTING_DEFAULTS, forceSettingOff } from "./host/settings";
+import {
+  BONUS_SETTING_DEFAULTS,
+  KATEX_DEFAULT_EM,
+  SETTINGS,
+  forceSettingOff,
+} from "./host/settings";
 import {
   KNOWN_EXT_DIRS,
   candidateExtensionRoots,
@@ -41,7 +46,6 @@ import {
   CHAT_SCROLL_RULE,
   CHAT_STYLE_ANCHORS,
   HEADING_LADDER,
-  KATEX_DEFAULT_EM,
   KATEX_UNPOSITIONING,
   MATH_CLIP_ANCHORS,
   MATH_CLIP_RULE,
@@ -286,6 +290,7 @@ export const __test = {
   chatCssCoreStatus,
   forceSettingOff,
   BONUS_SETTING_DEFAULTS,
+  SETTINGS,
   computeBonusStatus,
   DERIVABLE,
   RULES,

@@ -1,9 +1,9 @@
 // The editor-title bonus, the one that edits Kilo's manifest.
 
-import vscode = require("vscode");
 import fs = require("fs");
 import path = require("path");
 import { extensionContext } from "../host/context";
+import { renameOpenInTabEnabled } from "../host/settings";
 
 // --- Bonus editor-title icon knob -------------------------------------------
 // Kilo's editor/title action `kilo-code.new.openInTab` ("Open in Tab") rides on
@@ -28,10 +28,7 @@ export const OPEN_IN_TAB_TITLE_RE =
   /("command":\s*"kilo-code\.new\.openInTab"\s*,\s*"title":\s*)"(?:[^"\\]|\\.)*"/;
 
 function desiredOpenInTabTitle(): string {
-  const rename = vscode.workspace
-    .getConfiguration("kiloCodeKbPatch")
-    .get<boolean>("renameOpenInTab", false);
-  return rename ? OPEN_IN_TAB_RENAMED : OPEN_IN_TAB_ORIGINAL;
+  return renameOpenInTabEnabled() ? OPEN_IN_TAB_RENAMED : OPEN_IN_TAB_ORIGINAL;
 }
 
 // Rewrite the openInTab title in Kilo's manifest to match the bonus setting.

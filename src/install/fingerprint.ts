@@ -1,12 +1,11 @@
 // The settled-launch fingerprint, which lets a launch skip a check whose
 // inputs have not changed since it last found nothing to do.
 
-import vscode = require("vscode");
 import fs = require("fs");
 import path = require("path");
 import { RETIRED_FILES } from "../core/features";
 import { extensionContext } from "../host/context";
-import { BONUS_SETTING_DEFAULTS } from "../host/settings";
+import { BONUS_SETTING_DEFAULTS, config } from "../host/settings";
 import { CHAT_STYLE_FILE } from "../blocks/machinery";
 import { bonusReconcileFailed } from "../bonuses/session";
 
@@ -85,9 +84,9 @@ export function installFingerprint(
   // BONUS_SETTING_DEFAULTS keys are bare, as every other reader here expects,
   // so the section has to be named or each lookup misses and a settings change
   // leaves the record standing.
-  const config = vscode.workspace.getConfiguration("kiloCodeKbPatch");
+  const settings = config();
   for (const [key, off] of BONUS_SETTING_DEFAULTS) {
-    parts.push(`${key}=${String(config.get(key, off))}`);
+    parts.push(`${key}=${String(settings.get(key, off))}`);
   }
   return parts.join("|");
 }

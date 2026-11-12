@@ -21,7 +21,8 @@ import {
   readChatStyleValues,
   reconcileChatStyle,
 } from "../blocks/chat-style";
-import type { DerivedBonusKey } from "./registry";
+import { BONUSES, STATUS_ORDER, noBonusChanges } from "./registry";
+import type { BonusChanges, BonusKey, DerivedBonusKey } from "./registry";
 import { readDerivedRecord } from "../core/record";
 import type { DerivedPatch } from "../core/record";
 import { deriveBonus } from "../core/derive";
@@ -59,17 +60,6 @@ export interface BonusStatus {
   needs: RestartScope;
 }
 
-// Which bonus files a reconcile pass actually rewrote. Anything true here is a
-// change the running session does not reflect until the restart it needs (see
-// RestartScope): the window for `title`, the extension host for the rest.
-export interface BonusChanges {
-  title: boolean;
-  attach: boolean;
-  math: boolean;
-  typography: boolean;
-  rawMarkdown: boolean;
-}
-
 // The bonus files this extension host has rewritten since it started. Kilo
 // reads its bundle and stylesheet when its view is rebuilt, which is what the
 // restart offered alongside these changes does, so a file rewritten after that
@@ -80,13 +70,7 @@ export interface BonusChanges {
 // stay pure disk operations that a caller with no session to speak of (the
 // offline harness) can use for exactly what they say they do. The flags need no
 // clearing: the restart that settles them ends the host that holds them.
-const bonusAwaitingRestart: BonusChanges = {
-  title: false,
-  attach: false,
-  math: false,
-  typography: false,
-  rawMarkdown: false,
-};
+const bonusAwaitingRestart: BonusChanges = noBonusChanges();
 
 // Fold one reconcile pass's result into what this session is still waiting on.
 export function noteBonusChanges(changed: BonusChanges): void {
@@ -259,31 +243,16 @@ export function computeBonusStatus(extPath: string): BonusStatus[] {
           : "unapplied";
   }
 
-  return [
-    {
-      label: "Prompt toolbar: + button opens the file picker",
-      state: pendingIfUnseen(attach, bonusAwaitingRestart.attach),
-      needs: "extensions",
-    },
-    {
-      label: 'Editor title: group the "Open in Tab" icon',
-      state: pendingIfUnseen(openInTab, bonusAwaitingRestart.title),
-      needs: "window",
-    },
-    {
-      label: "Chat: render $...$ and \\[...\\] math",
-      state: pendingIfUnseen(math, bonusAwaitingRestart.math),
-      needs: "extensions",
-    },
-    {
-      label: "Chat history: size and font of the agent's response",
-      state: pendingIfUnseen(typography, bonusAwaitingRestart.typography),
-      needs: "extensions",
-    },
-    {
-      label: "Chat: button to read a reply's markdown source",
-      state: pendingIfUnseen(rawMarkdown, bonusAwaitingRestart.rawMarkdown),
-      needs: "extensions",
-    },
-  ];
+  const states: Record<BonusKey, BonusState> = {
+    attach,
+    title: openInTab,
+    math,
+    typography,
+    rawMarkdown,
+  };
+  return STATUS_ORDER.map((key) => ({
+    label: BONUSES[key].label,
+    state: pendingIfUnseen(states[key], bonusAwaitingRestart[key]),
+    needs: BONUSES[key].needs,
+  }));
 }

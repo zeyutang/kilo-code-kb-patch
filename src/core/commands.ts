@@ -55,7 +55,8 @@ import {
   noteBonusChanges,
   reconcileBonuses,
 } from "../bonuses/session";
-import type { BonusChanges } from "../bonuses/session";
+import { noBonusChanges } from "../bonuses/registry";
+import type { BonusChanges } from "../bonuses/registry";
 import { computeStatus } from "./status";
 import { refreshStatusPanel, showStatusPanel } from "../host/status-view";
 import { clearSettled, isSettled, markSettled } from "../install/fingerprint";
@@ -247,13 +248,7 @@ export async function patchInstall(
       for (const [key, off] of BONUS_SETTING_DEFAULTS) {
         await forceSettingOff(key, off);
       }
-      const reverted: BonusChanges = {
-        title: false,
-        attach: false,
-        math: false,
-        typography: false,
-        rawMarkdown: false,
-      };
+      const reverted = noBonusChanges();
       // `record` as read at the top of this run, for each bundle splice: the
       // core restore above has already rewritten webview.js without its record
       // block, so a derived splice could not be named from the file any more.

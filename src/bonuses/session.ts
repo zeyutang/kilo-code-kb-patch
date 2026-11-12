@@ -32,12 +32,7 @@ import {
   OPEN_IN_TAB_TITLE_RE,
   reconcileOpenInTabTitle,
 } from "./open-in-tab";
-import {
-  bonusVariantIn,
-  reconcileAttachFileButton,
-  reconcileMathRendering,
-  reconcileRawMarkdownToggle,
-} from "./splices";
+import { bonusVariantIn, reconcileDerivableBonus } from "./splices";
 import type { RestartScope } from "../host/restart";
 
 // Bonus (opt-in) items are reported in their own status section and never feed
@@ -125,17 +120,17 @@ export function reconcileBonuses(extPath: string): BonusChanges {
     failed = true;
   }
   try {
-    attach = reconcileAttachFileButton(extPath);
+    attach = reconcileDerivableBonus(extPath, "attach-button");
   } catch {
     failed = true;
   }
   try {
-    math = reconcileMathRendering(extPath);
+    math = reconcileDerivableBonus(extPath, "math-rendering");
   } catch {
     failed = true;
   }
   try {
-    rawMarkdown = reconcileRawMarkdownToggle(extPath);
+    rawMarkdown = reconcileDerivableBonus(extPath, "raw-markdown");
   } catch {
     failed = true;
   }
@@ -228,13 +223,12 @@ export function computeBonusStatus(extPath: string): BonusStatus[] {
   const scalesText = scale !== 1;
   if (scalesText || chatFontFamily() !== "") {
     const css = read(path.join(extPath, "dist", CHAT_STYLE_FILE));
-    const pristine = css === undefined ? undefined : stripChatCss(css);
+    const pristine = stripChatCss(css);
     // The family needs nothing read out of the build, so "unavailable" has to
     // name the part that actually failed: a build whose declarations no longer
     // parse breaks the size knob specifically, and reporting "on" because the
     // family rule still got written would hide it.
     typography =
-      pristine === undefined ||
       chatCssRules("typography", pristine).length === 0 ||
       (scalesText && readChatStyleValues(pristine) === undefined)
         ? "unavailable"

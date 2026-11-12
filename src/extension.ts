@@ -4,7 +4,6 @@
 // core/commands.ts.
 
 import vscode = require("vscode");
-import { RULES } from "./rules";
 import {
   FEATURE_GATES,
   FEATURE_LABELS,
@@ -20,11 +19,9 @@ import {
   BONUS_SETTING_DEFAULTS,
   KATEX_DEFAULT_EM,
   SETTINGS,
-  forceSettingOff,
 } from "./host/settings";
 import {
   KNOWN_EXT_DIRS,
-  candidateExtensionRoots,
   compareKiloVersions,
   extractVersion,
   findLatestKiloExt,
@@ -33,11 +30,9 @@ import {
 import {
   CHAT_CSS_BLOCKS,
   CHAT_CSS_CORE,
-  CHAT_SCRIPT_BLOCKS,
   CHAT_SCRIPT_CORE,
   CHAT_SCRIPT_FILE,
   CHAT_STYLE_FILE,
-  patchBlockRe,
   stripChatCss,
   stripChatScript,
 } from "./blocks/machinery";
@@ -56,7 +51,6 @@ import {
   chatCssRules,
   coreCssDecision,
   headingRules,
-  katexContainsTwin,
   readChatStyleValues,
   readMathClip,
   readPromptSizing,
@@ -66,7 +60,6 @@ import {
   CHAT_SCROLL_SCRIPT_ANCHORS,
   HOVER_GUARD_ANCHORS,
   chatScriptBlock,
-  chatScriptCoreStatus,
   chatScrollScript,
   hoverGuardAnchorsPresent,
   hoverGuardScript,
@@ -78,27 +71,22 @@ import {
   BONUS_RULES,
   BONUS_VARIANTS,
   DERIVABLE_BONUSES,
-  DERIVED_BONUS_MARKERS,
 } from "./bonuses/registry";
 import {
   bonusDerivationsToKeep,
   readDerivedRecord,
   readDerivedRecordAt,
-  recordedBonus,
   recordedFor,
   withDerivedRecord,
 } from "./core/record";
+import type { DerivedPatch } from "./core/record";
 import {
   DERIVABLE,
-  HOP_LIMIT,
   admissibility,
-  admissible,
   deriveBonus,
   deriveFor,
   derivedGuard,
   patchSetFor,
-  resolveFeatures,
-  unresolvedFeatures,
 } from "./core/derive";
 import {
   OPEN_IN_TAB_ORIGINAL,
@@ -107,13 +95,7 @@ import {
   reconcileOpenInTabTitle,
 } from "./bonuses/open-in-tab";
 import {
-  matchingAttachFileButton,
-  matchingMathExtension,
-  matchingRawMarkdownToggle,
-  reconcileAttachFileButton,
   reconcileDerivableBonus,
-  reconcileMathRendering,
-  reconcileRawMarkdownToggle,
   shippedBonusVariant,
 } from "./bonuses/splices";
 import { notifyBonusRestart } from "./host/restart";
@@ -126,7 +108,6 @@ import { computeStatus } from "./core/status";
 import {
   refreshStatusPanel,
   replaceStaleStatusPanel,
-  showStatusPanel,
 } from "./host/status-view";
 import {
   clearSettled,
@@ -227,36 +208,38 @@ export const __test = {
   computeStatus,
   applyPatches,
   restorePatches,
-  showStatusPanel,
   reconcileOpenInTabTitle,
   OPEN_IN_TAB_TITLE_RE,
   OPEN_IN_TAB_ORIGINAL,
   OPEN_IN_TAB_RENAMED,
-  reconcileAttachFileButton,
-  matchingAttachFileButton,
+  // The bundle splices by the per-bonus names the harness has always called
+  // them by, each the generic reconciler or lookup with its key.
+  reconcileAttachFileButton: (extPath: string, record?: DerivedPatch[]) =>
+    reconcileDerivableBonus(extPath, "attach-button", record),
+  matchingAttachFileButton: (content: string) =>
+    shippedBonusVariant(content, "attach-button"),
   ATTACH_FILE_BUTTONS,
   MATH_EXTENSIONS,
-  matchingMathExtension,
-  reconcileMathRendering,
+  matchingMathExtension: (content: string) =>
+    shippedBonusVariant(content, "math-rendering"),
+  reconcileMathRendering: (extPath: string, record?: DerivedPatch[]) =>
+    reconcileDerivableBonus(extPath, "math-rendering", record),
   DERIVABLE_BONUSES,
   BONUS_RULES,
   BONUS_VARIANTS,
-  DERIVED_BONUS_MARKERS,
   deriveBonus,
-  reconcileDerivableBonus,
   shippedBonusVariant,
-  recordedBonus,
   bonusDerivationsToKeep,
   RAW_MARKDOWN_TOGGLES,
-  matchingRawMarkdownToggle,
-  reconcileRawMarkdownToggle,
+  matchingRawMarkdownToggle: (content: string) =>
+    shippedBonusVariant(content, "raw-markdown"),
+  reconcileRawMarkdownToggle: (extPath: string, record?: DerivedPatch[]) =>
+    reconcileDerivableBonus(extPath, "raw-markdown", record),
   RAW_MARKDOWN_RULES,
   CHAT_STYLE_FILE,
   CHAT_CSS_BLOCKS,
   stripChatCss,
-  patchBlockRe,
   CHAT_SCRIPT_FILE,
-  CHAT_SCRIPT_BLOCKS,
   CHAT_SCRIPT_CORE,
   stripChatScript,
   CHAT_SCROLL_SCRIPT_ANCHORS,
@@ -267,7 +250,6 @@ export const __test = {
   hoverGuardScript,
   chatScriptBlock,
   reconcileChatScript,
-  chatScriptCoreStatus,
   CHAT_STYLE_ANCHORS,
   KATEX_DEFAULT_EM,
   HEADING_LADDER,
@@ -284,16 +266,13 @@ export const __test = {
   MATH_CLIP_RULE,
   MATH_CLIP_ANCHORS,
   readMathClip,
-  katexContainsTwin,
   KATEX_UNPOSITIONING,
   coreCssDecision,
   chatCssCoreStatus,
-  forceSettingOff,
   BONUS_SETTING_DEFAULTS,
   SETTINGS,
   computeBonusStatus,
   DERIVABLE,
-  RULES,
   installFingerprint,
   ownBuildIdentity,
   isSettled,
@@ -303,10 +282,7 @@ export const __test = {
   startupPass,
   reconcileBonuses,
   forgetSession,
-  admissible,
   admissibility,
-  HOP_LIMIT,
-  unresolvedFeatures,
   deriveFor,
   derivedGuard,
   readDerivedRecord,
@@ -314,11 +290,8 @@ export const __test = {
   withDerivedRecord,
   recordedFor,
   patchSetFor,
-  resolveFeatures,
   parseKiloVersion,
   compareKiloVersions,
-  candidateExtensionRoots,
   KNOWN_EXT_DIRS,
-  findLatestKiloExt,
   extractVersion,
 };

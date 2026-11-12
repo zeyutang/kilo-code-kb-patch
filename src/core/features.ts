@@ -110,9 +110,10 @@ export const FEATURE_GATES: Partial<
 // already carries the fix, so no variant is expected to match.
 export type FeatureState = "patched" | "unpatched" | "missing" | "unneeded";
 
-// One release's form of an opt-in webview.js edit. Both bonuses that splice
-// that bundle (the attach button and the math extensions) are lists of these,
-// newest first, and share one reconciler (see bonuses/splices.ts).
+// One release's form of an opt-in webview.js edit. The bonuses that splice
+// that bundle (the attach button, the math extensions and the markdown-source
+// toggle) are lists of these, newest first, and share one reconciler (see
+// bonuses/splices.ts).
 export interface WebviewVariant {
   original: string;
   patched: string;

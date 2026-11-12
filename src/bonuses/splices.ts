@@ -6,7 +6,6 @@ import path = require("path");
 import { replaceLiteral } from "../rules";
 import type { DeriveResult } from "../rules";
 import type { WebviewVariant } from "../core/features";
-import type { AttachButtonDef } from "../patterns/attach-button";
 import { CHAT_SCRIPT_FILE } from "../blocks/machinery";
 import { variantEdit } from "../core/splice";
 import {
@@ -23,70 +22,6 @@ import {
 } from "../core/record";
 import type { DerivedPatch } from "../core/record";
 import { deriveBonus, derivedGuard } from "../core/derive";
-
-// The reviewed entry that answers for this build, checked against the rule
-// (see RULE_CHECKED_BONUSES).
-export function matchingAttachFileButton(
-  content: string,
-): AttachButtonDef | undefined {
-  return shippedBonusVariant(content, "attach-button");
-}
-
-// Falls back to working the button out from the build when no shipped variant
-// matches (see reconcileDerivableBonus), so a Kilo release that only
-// re-minified the toolbar keeps the button instead of waiting for a kb-patch
-// release.
-export function reconcileAttachFileButton(
-  extPath: string,
-  // Passed in on the restore path; see reconcileDerivableBonus.
-  record?: DerivedPatch[],
-): boolean {
-  return reconcileDerivableBonus(extPath, "attach-button", record);
-}
-
-// Unlike the attach button, a patched string here does not contain its own
-// original: the splice lands between the last renderer and the `]});` that
-// closed it, and every injected local is `_`-prefixed, so nothing in the
-// injected text reproduces the original span. That is load-bearing rather than
-// incidental. Reusing the parameter name `n` would end the last extension with
-// exactly the original's bytes and make a patched bundle read as pristine.
-export function matchingMathExtension(
-  content: string,
-): WebviewVariant | undefined {
-  return shippedBonusVariant(content, "math-rendering");
-}
-
-// Falls back to working the splice out from the build (see
-// reconcileDerivableBonus), so a Kilo release that only re-minified this site
-// keeps rendering `$...$` instead of waiting for a kb-patch release.
-export function reconcileMathRendering(
-  extPath: string,
-  // Passed in on the restore path; see reconcileDerivableBonus.
-  record?: DerivedPatch[],
-): boolean {
-  return reconcileDerivableBonus(extPath, "math-rendering", record);
-}
-
-// Like the attach button, each patched string here contains its own original
-// as a *prefix* (the splice appends after Kilo's copy button), so a patched
-// build makes both includes()-true and variantEdit's "already patched before
-// pristine" ordering is what keeps them apart.
-export function matchingRawMarkdownToggle(
-  content: string,
-): WebviewVariant | undefined {
-  return shippedBonusVariant(content, "raw-markdown");
-}
-
-// Falls back to working the toggle out from the build (see
-// reconcileDerivableBonus), so a Kilo release that only re-minified the footer
-// keeps the button instead of waiting for a kb-patch release.
-export function reconcileRawMarkdownToggle(
-  extPath: string,
-  // Passed in on the restore path; see reconcileDerivableBonus.
-  record?: DerivedPatch[],
-): boolean {
-  return reconcileDerivableBonus(extPath, "raw-markdown", record);
-}
 
 // The reviewed variant of one bonus that answers for this build, or undefined
 // when none does (a future Kilo re-minify), which sends the reconciler to

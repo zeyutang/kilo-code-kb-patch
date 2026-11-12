@@ -61,8 +61,6 @@ export const CHAT_SCROLL_SCRIPT_ANCHORS: Record<string, RegExp> = {
   "bottom threshold": /bottomThreshold\?\?(\d+)/,
 };
 
-// Kilo's own "at the bottom" distance in px, or undefined when any anchor is
-// missing or ambiguous.
 // Whether every anchor matches exactly once, which is what makes a value read
 // through one a fact about this build rather than a guess.
 function anchorsEachOnce(js: string, anchors: Record<string, RegExp>): boolean {
@@ -71,6 +69,8 @@ function anchorsEachOnce(js: string, anchors: Record<string, RegExp>): boolean {
   );
 }
 
+// Kilo's own "at the bottom" distance in px, or undefined when any anchor is
+// missing or ambiguous.
 export function readScrollThreshold(js: string): number | undefined {
   if (!anchorsEachOnce(js, CHAT_SCROLL_SCRIPT_ANCHORS)) return undefined;
   const threshold = Number(

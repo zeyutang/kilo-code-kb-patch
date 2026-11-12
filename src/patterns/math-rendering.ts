@@ -43,6 +43,13 @@ import type { WebviewVariant } from "../core/features";
 // from 7.5.6 on.
 // Note this is the first patch site where 7.5.11 and 7.5.14 could have
 // differed and did not, even though they ship distinct bundles.
+//
+// Unlike the attach button, a patched string here does not contain its own
+// original: the splice lands between the last renderer and the `]});` that
+// closed it, and every injected local is `_`-prefixed, so nothing in the
+// injected text reproduces the original span. That is load-bearing rather than
+// incidental. Reusing the parameter name `n` would end the last extension with
+// exactly the original's bytes and make a patched bundle read as pristine.
 export const MATH_EXTENSIONS: WebviewVariant[] = [
   {
     // v7.8.2+ (7.8.3 ships the same bundle): the render helper HQ→ZQ.

@@ -29,6 +29,11 @@ import type { WebviewVariant } from "../core/features";
 // do. None of it collides with Solid: the attribute sits on the one element in
 // this component Solid sets no attributes on, and the block is appended
 // alongside a child Solid's insert placed once and does not track.
+//
+// Like the attach button, each patched string here contains its own original
+// as a *prefix* (the splice appends after Kilo's copy button), so a patched
+// build makes both includes()-true and variantEdit's "already patched before
+// pristine" ordering is what keeps them apart.
 export const RAW_MARKDOWN_TOGGLES: WebviewVariant[] = [
   {
     // v7.8.2+ (7.8.3 ships the same bundle): tooltip Pn→Ln and icon-button

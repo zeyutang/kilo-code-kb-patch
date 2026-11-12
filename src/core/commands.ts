@@ -45,11 +45,7 @@ import {
 import type { DerivedPatch } from "./record";
 import { DERIVABLE, admissible, derivedGuard, patchSetFor } from "./derive";
 import { reconcileOpenInTabTitle } from "../bonuses/open-in-tab";
-import {
-  reconcileAttachFileButton,
-  reconcileMathRendering,
-  reconcileRawMarkdownToggle,
-} from "../bonuses/splices";
+import { reconcileDerivableBonus } from "../bonuses/splices";
 import { offerRestart } from "../host/restart";
 import {
   computeBonusStatus,
@@ -253,7 +249,7 @@ export async function patchInstall(
       // `record` as read at the top of this run, for each bundle splice: the
       // core restore above has already rewritten webview.js without its record
       // block, so a derived splice could not be named from the file any more.
-      if (reconcileAttachFileButton(extPath, record)) {
+      if (reconcileDerivableBonus(extPath, "attach-button", record)) {
         bonusReverted++;
         reverted.attach = true;
       }
@@ -262,11 +258,11 @@ export async function patchInstall(
         manifestChanged = true;
         reverted.title = true;
       }
-      if (reconcileMathRendering(extPath, record)) {
+      if (reconcileDerivableBonus(extPath, "math-rendering", record)) {
         bonusReverted++;
         reverted.math = true;
       }
-      if (reconcileRawMarkdownToggle(extPath, record)) {
+      if (reconcileDerivableBonus(extPath, "raw-markdown", record)) {
         bonusReverted++;
         reverted.rawMarkdown = true;
       }

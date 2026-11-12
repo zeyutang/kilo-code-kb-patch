@@ -93,18 +93,20 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node tools/build.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "watch": "tsc -watch -p ./",
+    "watch": "node tools/build.js --watch",
     "retarget": "npm run compile && node tools/retarget.js",
     "verify": "npm run compile && node tools/verify.js",
     "behavior": "npm run compile && node tools/behavior.js",
+    "snapshot": "npm run compile && node tools/snapshot.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "esbuild": "^0.28.2",
     "prettier": "^3.9.6",
     "typescript": "^5.4.0"
   }

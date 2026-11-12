@@ -1,15 +1,17 @@
 {
   "compilerOptions": {
     "module": "commonjs",
-    // src/rules.js is plain JS on purpose: it is shared verbatim with the
-    // offline harness, and a rewrite would put the shipped rules and the
-    // proposed ones in two places.
+    // src/rules/ is plain JS on purpose: the offline harness loads the same
+    // bundle the extension requires (out/rules.js), so the shipped rules and
+    // the ones retarget proposes are one copy. Its surface is declared in
+    // src/rules/index.d.ts.
     "allowJs": true,
     "target": "ES2021",
     "lib": ["ES2021"],
-    "outDir": "out",
+    // Type checking only. tools/build.js bundles out/, which keeps it two
+    // files (out/extension.js and out/rules.js) however src/ is divided.
+    "noEmit": true,
     "rootDir": "src",
-    "sourceMap": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

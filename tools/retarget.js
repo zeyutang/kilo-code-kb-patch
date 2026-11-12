@@ -11,7 +11,7 @@
 // a release that is not installed.
 //
 // Each rule lands in one of five states:
-//   covered     the derived pattern is already in src/extension.ts, nothing to do
+//   covered     the derived pattern is already in src/patterns/, nothing to do
 //   n/a         the feature's gate says this build predates the Kilo behavior
 //               it fixes, and the rule agrees by finding no site, or Kilo no
 //               longer ships the file the rule patches at all, or (for a
@@ -81,7 +81,7 @@ function main() {
   assertPristine(bundles);
 
   // Every pattern currently shipped, keyed by original, so "already covered" is
-  // an exact check against what src/extension.ts really contains. The patched
+  // an exact check against what src/patterns/ really contains. The patched
   // side is kept too: a rule that derives the right site but rebuilds the edit
   // differently would otherwise pass silently, so the two are compared.
   const known = new Map();

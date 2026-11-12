@@ -647,8 +647,8 @@ async function main() {
     // exactly as found, never applied or dropped on the side), and the status
     // rows that make an absent or stale block visible. What the rule does in a
     // browser was established in a headless Chromium on a copy of Kilo's layout
-    // (see the comment above CHAT_SCROLL_RULE in src/extension.ts); nothing
-    // here can run layout.
+    // (see the comment above CHAT_SCROLL_RULE in src/blocks/chat-style.ts);
+    // nothing here can run layout.
     console.log("\nchat scroll (core stylesheet patch)");
     if (pristineCss === undefined) {
       check(false, `${test.CHAT_STYLE_FILE} is present in dist/`);
@@ -764,14 +764,14 @@ async function main() {
     // The second core stylesheet block: one declaration that makes each
     // rendered formula clip its own out-of-flow MathML twin, so the twins stop
     // extending the chat scroller past its content (the measurement is in the
-    // comment above MATH_CLIP_RULE in src/extension.ts; nothing here can run
-    // layout). It stores no per-release text either, so what is asserted is the
-    // shape of the rule, that it leaves the MathML in the tree, and the same
-    // carry-over contract and status rows as the block above. From Kilo 7.8.7
-    // KaTeX declares the same position itself, and there the block is not
-    // written and its row reads "not needed", so both readings of the gate are
-    // also run on this build's own stylesheet with KaTeX's declaration put in
-    // and taken out, whichever of the two the build ships.
+    // comment above MATH_CLIP_RULE in src/blocks/chat-style.ts; nothing here
+    // can run layout). It stores no per-release text either, so what is
+    // asserted is the shape of the rule, that it leaves the MathML in the tree,
+    // and the same carry-over contract and status rows as the block above. From
+    // Kilo 7.8.7 KaTeX declares the same position itself, and there the block
+    // is not written and its row reads "not needed", so both readings of the
+    // gate are also run on this build's own stylesheet with KaTeX's declaration
+    // put in and taken out, whichever of the two the build ships.
     console.log("\nmath clip (core stylesheet patch)");
     if (pristineCss === undefined) {
       check(false, `${test.CHAT_STYLE_FILE} is present in dist/`);
@@ -1191,9 +1191,9 @@ async function main() {
     // and the round trip, and, since the script depends on nothing of Kilo's,
     // what it does when driven with the event sequences the engine produces
     // (measured in a headless Chromium; see the comment above
-    // HOVER_GUARD_ANCHORS in src/extension.ts). Pointer events keep fractional
-    // coordinates and mouse events truncate them, which the sequences below
-    // reproduce.
+    // HOVER_GUARD_ANCHORS in src/blocks/chat-script.ts). Pointer events keep
+    // fractional coordinates and mouse events truncate them, which the
+    // sequences below reproduce.
     console.log("\nhover guard (core script patch)");
     if (pristineJs === undefined) {
       check(false, `${test.CHAT_SCRIPT_FILE} is present in dist/`);

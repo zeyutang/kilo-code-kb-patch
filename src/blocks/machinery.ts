@@ -2,6 +2,7 @@
 // and the status rows and command results of the core ones.
 
 import fs = require("fs");
+import { esc } from "../rules";
 import { FEATURE_GATES, FEATURE_LABELS } from "../core/features";
 import type { FeatureKey, FeatureState } from "../core/features";
 import type { PatchResult } from "../core/splice";
@@ -121,7 +122,6 @@ const patchBlockEnd = (key: PatchBlockKey) =>
 // each other and a key-agnostic pattern could pair one block's begin with
 // another's end.
 export function patchBlockRe(key: PatchBlockKey): RegExp {
-  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
     `\\n?${esc(patchBlockBegin(key))}[\\s\\S]*?${esc(patchBlockEnd(key))}\\n?`,
   );

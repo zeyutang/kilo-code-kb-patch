@@ -32,6 +32,15 @@ export interface ShapeRule {
 // captioned in the status view rather than in an apply log.
 export type BonusRule = Omit<ShapeRule, "description">;
 
+// A regex source for one identifier, the placeholder every shape is written
+// with.
+export const ID: string;
+// A literal made safe to embed in a regex source.
+export function esc(literal: string): string;
+// The non-overlapping occurrences of `needle` in `haystack`, and 0 for an
+// empty needle.
+export function countIn(haystack: string, needle: string): number;
+
 export const RULES: ShapeRule[];
 export const MATH_RULE: BonusRule;
 export const ATTACH_RULE: BonusRule;

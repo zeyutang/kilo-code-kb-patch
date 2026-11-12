@@ -11,7 +11,7 @@ const { ID, esc, findAll, countIn, crossesFunction, hop } = require("./engine");
 function hasSpriteGlyph(content, name) {
   if (content.includes(`"${name}":`)) return true;
   // A name that is not a bare identifier can only ever appear quoted.
-  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) return false;
+  if (!new RegExp(`^${ID}$`).test(name)) return false;
   return new RegExp(`[,{]${name}:["']`).test(content);
 }
 

@@ -4,7 +4,7 @@
 
 import fs = require("fs");
 import vm = require("vm");
-import { RULES } from "../rules";
+import { ID, RULES, countIn, esc } from "../rules";
 import type { DeriveResult } from "../rules";
 import { FEATURE_GATES } from "./features";
 import type { FeatureKey, PatchDef } from "./features";
@@ -92,16 +92,6 @@ export function unresolvedFeatures(
   return resolveFeatures(content, patches).unresolved;
 }
 
-function occurrences(haystack: string, needle: string): number {
-  let count = 0;
-  let at = 0;
-  while ((at = haystack.indexOf(needle, at)) !== -1) {
-    count++;
-    at += needle.length;
-  }
-  return count;
-}
-
 // How far from the edit a rule may reach for a symbol its anchor does not
 // contain. The furthest any admitted hop sits on a build checked (7.4.17
 // through 7.8.9) is the attach button's mention row, 4.5 KB before the
@@ -117,11 +107,10 @@ export const HOP_LIMIT = 8192;
 // `o` of `onClick`), which is the property failing while the check reads it as
 // holding.
 function hasToken(text: string, name: string): boolean {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[^\\w$])${escaped}([^\\w$]|$)`).test(text);
+  return new RegExp(`(^|[^\\w$])${esc(name)}([^\\w$]|$)`).test(text);
 }
 
-const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const IDENTIFIER = new RegExp(`^${ID}$`);
 
 type Admission =
   | {
@@ -163,7 +152,7 @@ export function admissibility(
   ) {
     return { refused: "the rule derived no edit" };
   }
-  if (occurrences(content, result.original) !== 1) {
+  if (countIn(content, result.original) !== 1) {
     return { refused: "the derived original is not unique" };
   }
   if (content.includes(result.patched)) {
@@ -269,7 +258,7 @@ export function deriveFor(
   // collide with another edit's.
   const texts = new Set<string>();
   for (const p of found) {
-    if (occurrences(content, p.patched) !== 0) return [];
+    if (countIn(content, p.patched) !== 0) return [];
     if (texts.has(p.original) || texts.has(p.patched)) return [];
     texts.add(p.original);
     texts.add(p.patched);
@@ -310,7 +299,7 @@ export function derivedGuard(
 ): (modified: string) => boolean {
   return (modified) => {
     for (const p of derived) {
-      if (occurrences(modified, p.patched) !== 1) return false;
+      if (countIn(modified, p.patched) !== 1) return false;
     }
     try {
       new vm.Script(modified, { filename });

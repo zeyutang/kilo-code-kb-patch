@@ -30,6 +30,7 @@
 const {
   ID,
   esc,
+  countIn,
   replaceLiteral,
   longestLiteral,
   withoutPrefilter,
@@ -53,6 +54,7 @@ module.exports = {
   mathExtensions,
   ID,
   esc,
+  countIn,
   replaceLiteral,
   findAll,
   withoutPrefilter,

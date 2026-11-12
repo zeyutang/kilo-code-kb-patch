@@ -9,7 +9,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { openVsix } = require("./vsix");
-const { replaceLiteral } = require("./rules");
+const { replaceLiteral, countIn } = require("./rules");
 
 // Every candidate root, not just the first one that matches: the harness is a
 // maintenance tool, so being able to see (and target) an older build left behind
@@ -259,17 +259,6 @@ function resolveBundleSource(test, args) {
   };
 }
 
-function countOccurrences(haystack, needle) {
-  if (!needle) return 0;
-  let count = 0;
-  let i = 0;
-  while ((i = haystack.indexOf(needle, i)) !== -1) {
-    count++;
-    i += needle.length;
-  }
-  return count;
-}
-
 module.exports = {
   findKiloInstalls,
   resolveInstall,
@@ -280,5 +269,6 @@ module.exports = {
   resolveBundleSource,
   assertPristine,
   residualPatchMarkers,
-  countOccurrences,
+  // The engine's counter, under the name the harness has always used.
+  countOccurrences: countIn,
 };

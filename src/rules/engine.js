@@ -266,9 +266,12 @@ function findAll(content, source) {
   return [...found.values()].sort((a, b) => a.index - b.index);
 }
 
-// Occurrences of a literal inside a span, for a rule that has to know where
-// its edit lands within the bytes it anchored.
+// Occurrences of a literal in a text, not overlapping: for a rule that has to
+// know where its edit lands within the bytes it anchored, and for admission,
+// which needs an edit to occur exactly once. An empty needle occurs nowhere,
+// where the search would otherwise find it at the same offset forever.
 function countIn(haystack, needle) {
+  if (!needle) return 0;
   let count = 0;
   let i = 0;
   while ((i = haystack.indexOf(needle, i)) !== -1) {

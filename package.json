@@ -109,5 +109,8 @@
     "esbuild": "^0.28.2",
     "prettier": "^3.9.6",
     "typescript": "^5.4.0"
+  },
+  "allowScripts": {
+    "esbuild": false
   }
 }

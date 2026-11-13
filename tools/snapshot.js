@@ -69,10 +69,17 @@ async function main() {
 
   const test = loadExtension();
   const extension = require(path.join(REPO_ROOT, "out", "extension.js"));
+  // A setting with no value here would sit out every timeline unnoticed.
+  const unvalued = test.BONUS_SETTING_DEFAULTS.map(([key]) => key).filter(
+    (key) => !(key in BONUS_ON),
+  );
+  if (unvalued.length > 0) {
+    throw new Error(`BONUS_ON has no value for ${unvalued.join(", ")}`);
+  }
   // Read before HOME is sealed, since with neither flag the newest install is
   // found under the real one. Reading is all that happens to it.
   const source = resolveBundleSource(test, args);
-  assertPristine(source.bundles);
+  assertPristine(source.bundles, test);
   const pristine = {
     ...source.bundles,
     "package.json": pristineManifest(source, test),
@@ -310,7 +317,8 @@ async function main() {
       }
       for (const key of test.DERIVABLE_BONUSES) {
         const list = test.BONUS_VARIANTS[key];
-        const left = list.filter((v) => !matches(pristine["webview.js"], v));
+        const content = pristine[test.BONUS_RULES[key].file];
+        const left = list.filter((v) => !matches(content, v));
         withheld.push(`${key} ${list.length - left.length}`);
         list.splice(0, list.length, ...left);
       }

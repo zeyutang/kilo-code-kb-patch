@@ -85,21 +85,17 @@ function unpatched(content, filename, test, record = []) {
       }
     }
   }
-  if (filename === "webview.js") {
-    // Every webview.js bonus is a variant list of the same shape: newest
-    // patched form first, older ones in `previous`.
-    for (const variants of [
-      test.ATTACH_FILE_BUTTONS,
-      test.MATH_EXTENSIONS,
-      test.RAW_MARKDOWN_TOGGLES,
-    ]) {
-      for (const b of variants) {
-        if (out.includes(b.patched)) {
-          out = replaceLiteral(out, b.patched, b.original);
-        } else {
-          const prev = b.previous?.find((p) => out.includes(p));
-          if (prev) out = replaceLiteral(out, prev, b.original);
-        }
+  // Every bonus splice is a variant list of the same shape: newest patched
+  // form first, older ones in `previous`. Each is read from the extension's
+  // own list, in its order, and applies to the file its rule patches.
+  for (const key of test.DERIVABLE_BONUSES) {
+    if (test.BONUS_RULES[key].file !== filename) continue;
+    for (const b of test.BONUS_VARIANTS[key]) {
+      if (out.includes(b.patched)) {
+        out = replaceLiteral(out, b.patched, b.original);
+      } else {
+        const prev = b.previous?.find((p) => out.includes(p));
+        if (prev) out = replaceLiteral(out, prev, b.original);
       }
     }
   }
@@ -159,14 +155,22 @@ const PATCH_MARKERS = [
   "kbp-raw-markdown",
 ];
 
-function residualPatchMarkers(content) {
-  return PATCH_MARKERS.filter((marker) => content.includes(marker));
+// The markers above, plus the one the extension keeps for each bonus splice
+// (DERIVED_BONUS_MARKERS), which its derivation also refuses to run past. The
+// two lists overlap for every splice today, and reading the extension's covers
+// a splice added later without an entry here.
+function residualPatchMarkers(content, test) {
+  const markers = new Set([
+    ...PATCH_MARKERS,
+    ...Object.values(test.DERIVED_BONUS_MARKERS),
+  ]);
+  return [...markers].filter((marker) => content.includes(marker));
 }
 
-function assertPristine(bundles) {
+function assertPristine(bundles, test) {
   const dirty = [];
   for (const [filename, content] of Object.entries(bundles)) {
-    const residual = residualPatchMarkers(content);
+    const residual = residualPatchMarkers(content, test);
     if (residual.length > 0) dirty.push({ filename, residual });
   }
   if (dirty.length === 0) return;

@@ -32,13 +32,7 @@
 // which makes this usable as a post-update check.
 const { parseArgs, openBuild } = require("./lib/cli");
 const { countOccurrences } = require("./lib/bundle");
-const {
-  RULES,
-  ATTACH_RULE,
-  MATH_RULE,
-  RAW_MARKDOWN_RULE,
-  withoutPrefilter,
-} = require("./lib/rules");
+const { RULES, withoutPrefilter } = require("./lib/rules");
 const { PROBES } = require("./lib/probes");
 
 function main() {
@@ -65,10 +59,12 @@ function main() {
       new Map(fp.patches.map((p) => [p.original, p.patched])),
     );
   }
-  // The webview.js bonuses keep their own variant lists rather than living in
+  // The bonus splices keep their own variant lists rather than living in
   // PATCHES, so each is compared against its own list. Keyed by original with
   // every patched form it ships, since two builds can share a bonus's anchor
   // while needing different edits (the attach button on 7.7.6 and 7.7.9).
+  // The splices, their rules and their lists are the extension's own, in its
+  // order, so a splice it gains is covered here without an entry.
   const byOriginal = (variants) => {
     const map = new Map();
     for (const v of variants) {
@@ -77,11 +73,13 @@ function main() {
     }
     return map;
   };
-  const knownBonus = new Map([
-    [ATTACH_RULE.key, byOriginal(test.ATTACH_FILE_BUTTONS)],
-    [MATH_RULE.key, byOriginal(test.MATH_EXTENSIONS)],
-    [RAW_MARKDOWN_RULE.key, byOriginal(test.RAW_MARKDOWN_TOGGLES)],
-  ]);
+  const bonusRules = test.DERIVABLE_BONUSES.map((key) => test.BONUS_RULES[key]);
+  const knownBonus = new Map(
+    test.DERIVABLE_BONUSES.map((key) => [
+      key,
+      byOriginal(test.BONUS_VARIANTS[key]),
+    ]),
+  );
 
   // Whether the extension would derive this rule at apply on this build, and
   // if not, why. Shown on every derivable rule's row, because a NEW there is
@@ -198,9 +196,7 @@ function main() {
   };
 
   for (const rule of RULES) run(rule, false);
-  run(ATTACH_RULE, true);
-  run(MATH_RULE, true);
-  run(RAW_MARKDOWN_RULE, true);
+  for (const rule of bonusRules) run(rule, true);
 
   for (const probe of PROBES) {
     const content = bundles[probe.file];
@@ -238,7 +234,7 @@ function main() {
   // about what deriving alone used to, and this tool runs once per release.
   if (!args.fast) {
     let disagreed = 0;
-    for (const rule of [...RULES, ATTACH_RULE, MATH_RULE, RAW_MARKDOWN_RULE]) {
+    for (const rule of [...RULES, ...bonusRules]) {
       const content = bundles[rule.file];
       if (content === undefined) continue;
       const quick = JSON.stringify(rule.derive(content) ?? null);
@@ -256,7 +252,7 @@ function main() {
     unclear += disagreed;
     if (disagreed === 0) {
       console.log(
-        `\n  prefilters proven: all ${RULES.length + 3} rules derive identically without them`,
+        `\n  prefilters proven: all ${RULES.length + bonusRules.length} rules derive identically without them`,
       );
     }
   }
@@ -270,7 +266,7 @@ function main() {
     console.log("=".repeat(76));
 
     const core = proposals.filter((p) => !p.isBonus);
-    for (const file of ["webview.js", "kiloclaw.js"]) {
+    for (const file of test.PATCHES.map((fp) => fp.filename)) {
       const forFile = core.filter((p) => p.rule.file === file);
       if (forFile.length === 0) continue;
       console.log(`\n// --- ${file}: prepend inside its patches[] array ---`);
@@ -297,15 +293,14 @@ function main() {
       }
     }
 
-    const BONUS_ARRAYS = {
-      [ATTACH_RULE.key]: "ATTACH_FILE_BUTTONS",
-      [MATH_RULE.key]: "MATH_EXTENSIONS",
-      [RAW_MARKDOWN_RULE.key]: "RAW_MARKDOWN_TOGGLES",
-    };
+    // A splice's list goes by the name __test exports it under, which is its
+    // name in src/patterns/.
+    const listName = (key) =>
+      Object.keys(test).find(
+        (name) => test[name] === test.BONUS_VARIANTS[key],
+      ) ?? `BONUS_VARIANTS["${key}"]`;
     for (const { rule, result } of proposals.filter((p) => p.isBonus)) {
-      console.log(
-        `\n// --- ${BONUS_ARRAYS[rule.key]}: prepend (newest first) ---`,
-      );
+      console.log(`\n// --- ${listName(rule.key)}: prepend (newest first) ---`);
       console.log(`// v${version}+ derived symbols:`);
       console.log(`//     ${JSON.stringify(result.symbols)}`);
       if (result.data)

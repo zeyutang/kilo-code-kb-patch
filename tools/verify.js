@@ -27,7 +27,11 @@ const vm = require("vm");
 const { execFileSync } = require("child_process");
 const { parseArgs, openBuild, check, verdict } = require("./lib/cli");
 const { shim, REPO_ROOT } = require("./lib/load");
-const { countOccurrences, unpatched } = require("./lib/bundle");
+const {
+  countOccurrences,
+  unpatched,
+  patchedFilenames,
+} = require("./lib/bundle");
 const {
   RULES,
   ATTACH_RULE,
@@ -1631,7 +1635,6 @@ async function main() {
       "attach-button": {
         setting: "addAttachFileButton",
         row: "Prompt toolbar",
-        reconcile: (box, record) => test.reconcileAttachFileButton(box, record),
         injected: (js) =>
           countOccurrences(js, 'selectMention({type:"file-picker"}') === 1,
         kilo: (js) =>
@@ -1653,7 +1656,6 @@ async function main() {
       "math-rendering": {
         setting: "chatMathRendering",
         row: "math",
-        reconcile: (box, record) => test.reconcileMathRendering(box, record),
         injected: (js) =>
           countOccurrences(js, 'name:"kbpKatexInlineDollar"') === 1 &&
           countOccurrences(js, 'name:"kbpKatexBlockBracket"') === 1 &&
@@ -1666,8 +1668,6 @@ async function main() {
       "raw-markdown": {
         setting: "chatRawMarkdownButton",
         row: "markdown source",
-        reconcile: (box, record) =>
-          test.reconcileRawMarkdownToggle(box, record),
         injected: (js) =>
           countOccurrences(js, '"data-slot":"kbp-raw-markdown-toggle"') === 1,
         kilo: (js) =>
@@ -1687,6 +1687,8 @@ async function main() {
       console.log(`\n${key} derived (the release that need not happen)`);
       const spec = DERIVED_SPECS[key];
       if (!check(spec !== undefined, "the harness knows this bonus")) continue;
+      const reconcile = (dir, record) =>
+        test.reconcileDerivableBonus(dir, key, record);
       const list = test.BONUS_VARIANTS[key];
       const kept = [...list];
       const shipped = test.shippedBonusVariant(pristineJs, key);
@@ -1745,7 +1747,7 @@ async function main() {
             "byte-identical to the entry this release reviewed and ships",
           );
         }
-        check(spec.reconcile(box), "enabling applies the derived splice");
+        check(reconcile(box), "enabling applies the derived splice");
         const after = js();
         check(spec.injected(after), "exactly one copy of the added code");
         check(spec.kilo(after), spec.kiloLabel);
@@ -1808,7 +1810,7 @@ async function main() {
           'the bonus reports "on" rather than "unavailable"',
           `got "${row()}"`,
         );
-        check(spec.reconcile(box) === false, "re-enabling is a no-op");
+        check(reconcile(box) === false, "re-enabling is a no-op");
         // A second derivation against the patched bundle must find nothing:
         // the math extensions end in the bytes their rule anchors on, and the
         // two buttons keep their anchor beside the insertion.
@@ -1829,16 +1831,16 @@ async function main() {
         );
         shim.setConfig({ [spec.setting]: false });
         check(
-          spec.reconcile(box, [derived]) && js() === pristineJs,
+          reconcile(box, [derived]) && js() === pristineJs,
           "and the passed-in record still reverses the edit, byte for byte",
         );
         // Then the ordinary path: apply again, turn it off with the record
         // where it lives, and the entry goes with the edit.
         shim.setConfig({ [spec.setting]: true });
-        spec.reconcile(box);
+        reconcile(box);
         shim.setConfig({ [spec.setting]: false });
         check(
-          spec.reconcile(box) && entry() === undefined,
+          reconcile(box) && entry() === undefined,
           "turning it off removes the edit and its record entry",
         );
         check(js() === pristineJs, "leaving the bundle as Kilo shipped it");
@@ -1865,7 +1867,7 @@ async function main() {
             );
             reset();
             shim.setConfig({ [spec.setting]: true });
-            spec.reconcile(box);
+            reconcile(box);
             check(
               js().includes(derived.patched) &&
                 !js().includes(impostor.patched),
@@ -1891,7 +1893,7 @@ async function main() {
           reinstate();
           shim.setConfig({ [spec.setting]: true });
           check(
-            spec.reconcile(box),
+            reconcile(box),
             "a stale derived edit is replaced by the reviewed one",
           );
           check(
@@ -1902,7 +1904,7 @@ async function main() {
           );
           shim.setConfig({ [spec.setting]: false });
           check(
-            spec.reconcile(box) && js() === pristineJs,
+            reconcile(box) && js() === pristineJs,
             "which then turns off to the bundle Kilo shipped",
           );
           withhold();
@@ -3410,29 +3412,27 @@ async function main() {
         chatMathRendering: true,
         chatRawMarkdownButton: true,
       };
-      // The three bundle splices: the name a reconcile pass reports each under,
-      // the rule key, the words its status row carries, and the text only its
-      // edit puts in the bundle.
-      const SPLICES = [
-        {
-          name: "attach",
-          key: "attach-button",
-          row: "Prompt toolbar",
-          marker: 'selectMention({type:"file-picker"}',
-        },
-        {
-          name: "math",
-          key: "math-rendering",
-          row: "math",
-          marker: 'name:"kbpKatexInlineDollar"',
-        },
-        {
-          name: "rawMarkdown",
-          key: "raw-markdown",
-          row: "markdown source",
-          marker: '"data-slot":"kbp-raw-markdown-toggle"',
-        },
-      ];
+      // The bundle splices as the extension lists them, each with its rule
+      // key and the text only its edit puts in the bundle, and with what the
+      // extension does not say of a splice: the name a reconcile pass reports
+      // it under and the words its status row carries.
+      const NAMED = {
+        "attach-button": { name: "attach", row: "Prompt toolbar" },
+        "math-rendering": { name: "math", row: "math" },
+        "raw-markdown": { name: "rawMarkdown", row: "markdown source" },
+      };
+      const SPLICES = test.DERIVABLE_BONUSES.map((key) => ({
+        key,
+        ...NAMED[key],
+        marker: test.DERIVED_BONUS_MARKERS[key],
+      }));
+      check(
+        SPLICES.every((s) => s.name !== undefined),
+        "the harness names every splice the extension lists",
+        SPLICES.filter((s) => s.name === undefined)
+          .map((s) => s.key)
+          .join(", "),
+      );
       const jsNow = () =>
         fs.readFileSync(path.join(boxDist, test.CHAT_SCRIPT_FILE), "utf8");
       const rows = () => {
@@ -3710,7 +3710,7 @@ async function main() {
       // and moving a file cannot touch the real one.
       const fake = path.join(sandbox, "settled");
       fs.mkdirSync(path.join(fake, "dist"), { recursive: true });
-      for (const name of ["webview.js", "kiloclaw.js", test.CHAT_STYLE_FILE]) {
+      for (const name of patchedFilenames(test)) {
         fs.writeFileSync(path.join(fake, "dist", name), `// ${name}\n`);
       }
       test.setExtensionContext(ctx("1.0.0"));
@@ -3964,11 +3964,12 @@ async function main() {
     }
 
     console.log("\nzero leakage (restore returns the file to pristine)");
-    // Every bonus at its off value, which is what Restore Originals writes.
+    // Every bonus at its off value, which is what Restore Originals writes,
+    // and every splice the extension lists reconciled to it.
     shim.setConfig(Object.fromEntries(test.BONUS_SETTING_DEFAULTS));
-    test.reconcileAttachFileButton(sandbox);
-    test.reconcileMathRendering(sandbox);
-    test.reconcileRawMarkdownToggle(sandbox);
+    for (const key of test.DERIVABLE_BONUSES) {
+      test.reconcileDerivableBonus(sandbox, key);
+    }
     test.reconcileChatStyle(sandbox, coreOff);
     test.reconcileChatScript(sandbox, false);
     for (const fp of test.PATCHES) {

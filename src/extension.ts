@@ -71,6 +71,7 @@ import {
   BONUS_RULES,
   BONUS_VARIANTS,
   DERIVABLE_BONUSES,
+  DERIVED_BONUS_MARKERS,
 } from "./bonuses/registry";
 import {
   bonusDerivationsToKeep,
@@ -224,9 +225,12 @@ export const __test = {
     shippedBonusVariant(content, "math-rendering"),
   reconcileMathRendering: (extPath: string, record?: DerivedPatch[]) =>
     reconcileDerivableBonus(extPath, "math-rendering", record),
+  // Every splice by its key, for the harness's passes over all of them.
   DERIVABLE_BONUSES,
   BONUS_RULES,
   BONUS_VARIANTS,
+  DERIVED_BONUS_MARKERS,
+  reconcileDerivableBonus,
   deriveBonus,
   shippedBonusVariant,
   bonusDerivationsToKeep,

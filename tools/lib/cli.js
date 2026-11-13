@@ -34,7 +34,7 @@ function openBuild(args) {
     `Kilo Code v${source.version}\n  ${source.label}` +
       `${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`,
   );
-  assertPristine(source.bundles);
+  assertPristine(source.bundles, test);
   return { test, source };
 }
 

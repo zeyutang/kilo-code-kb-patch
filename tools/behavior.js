@@ -42,6 +42,11 @@
 //                 is sliced and driven through a table of edits and keys in
 //                 both forms.
 //
+// Each is run on its own, so a build one of them cannot be run on still gets
+// the others' rows, and each in the form a user's install gets: the reviewed
+// entry the build matches, or on a build no entry covers, the edit apply-time
+// derivation writes there.
+//
 // What each keystroke outcome means:
 //   handled       the handler consumed the key and rewrote the draft
 //   guard-return  Kilo's own selection guard stopped it, without preventDefault
@@ -68,6 +73,36 @@ function block(content, at) {
     }
   }
   throw new Error(`unbalanced braces from offset ${at}`);
+}
+
+// The edit the extension applies to this build for a core feature, which is
+// what a section runs, rather than what the rule rebuilds. Where a reviewed
+// entry matches, that entry, held to the rule by `agrees`, so that drift
+// between the two is reported here rather than tested as if it shipped. Where
+// none does, the edit apply-time derivation writes, which is the rule's own
+// once admitted. Undefined, with a failed row, where neither applies.
+function appliedEdit(test, rule, content, agrees, mismatch) {
+  const entry = test.PATCHES.find((f) => f.filename === rule.file).patches.find(
+    (p) => p.feature === rule.key && content.includes(p.original),
+  );
+  if (entry) {
+    check(
+      agrees(entry),
+      `the ${rule.key} entry that applies here is the one the shape rule derives`,
+      mismatch,
+    );
+    return entry;
+  }
+  const derivable = test.DERIVABLE.includes(rule.key);
+  const admission = test.admissibility(rule, content);
+  check(
+    derivable && "edit" in admission,
+    `no shipped ${rule.key} entry matches, so the derived edit is what applies`,
+    derivable
+      ? `apply refuses it: ${admission.refused}`
+      : "and apply does not derive this feature",
+  );
+  return derivable ? admission.edit : undefined;
 }
 
 // The history module, as raw bytes, plus the two names the runner has to bind
@@ -134,6 +169,12 @@ function historyTail(statement, symbols) {
 }
 
 // A callable copy of one keydown handler, closed over a live history navigator.
+//
+// By 7.8.9 the history is kept per session, and the factory takes the
+// session's accessor and whether the prompt reads the global list instead,
+// which the prompt asks for while it has no session. The navigator here is
+// made for such a prompt, and a factory from before takes no arguments and
+// ignores them.
 function runner(module_, statement, symbols, tailSymbols) {
   const { setter, resize, pastes } = tailSymbols;
   // Kilo's paste controller keeps one record per pasted chunk and the handler
@@ -161,7 +202,7 @@ const ${module_.signal} = (init) => {
 };
 ${module_.source}
 return (seed, draft, pasted = []) => {
-  const ${symbols.history} = ${module_.factory}();
+  const ${symbols.history} = ${module_.factory}(() => undefined, () => true);
   ${symbols.history}.seed(seed);
   let text = draft;
   let chunks = pasted.slice();
@@ -286,6 +327,118 @@ const WALK = [
 // collects the chunks, and the argument that passes them, back verbatim.
 const PASTED = ["a pasted chunk"];
 const WALK_CHUNKS = [[], [], [], PASTED];
+
+// The keystroke table, the draft stash and the pasted chunks, through Kilo's
+// own history module and the handler statement in both forms.
+function runHistory(test, content) {
+  const rule = RULES.find((r) => r.key === "chat-history");
+  const derived = rule.derive(content);
+  if (!derived.original) {
+    check(
+      false,
+      `chat-history does not derive here: ${JSON.stringify(derived)}`,
+    );
+    return;
+  }
+  const symbols = derived.symbols;
+
+  const entry = appliedEdit(
+    test,
+    rule,
+    content,
+    (shipped) => shipped.original === derived.original,
+    "shipped and derived anchors differ; run retarget",
+  );
+  if (!entry) return;
+
+  const module_ = historyModule(content);
+  const stockStatement = block(content, content.indexOf(entry.original));
+  const patchedBundle = replaceLiteral(content, entry.original, entry.patched);
+  const patchedStatement = block(
+    patchedBundle,
+    patchedBundle.indexOf(entry.patched),
+  );
+
+  const tailSymbols = historyTail(patchedStatement, symbols);
+  if (!tailSymbols) {
+    check(
+      false,
+      "could not bind the locals the handler uses past the anchor " +
+        "(setter, resize, and the paste controller where there is one)",
+    );
+    return;
+  }
+
+  // A bare `return` (Kilo's selection guard) yields undefined from the wrapper,
+  // which the runner reports as "guard-return"; every other exit is explicit.
+  const label = (s) => s.replace(/return\}\}$/, 'return"handled"}}');
+  const stock = runner(module_, label(stockStatement), symbols, tailSymbols);
+  const patched = runner(
+    module_,
+    label(patchedStatement),
+    symbols,
+    tailSymbols,
+  );
+
+  console.log(
+    `keystrokes (event ${symbols.event}, history ${symbols.history}, ` +
+      `text ${symbols.text}, textarea ${symbols.textarea})`,
+  );
+  for (const c of CASES) {
+    const before = stock(SENT, DRAFT)(c.press);
+    const after = patched(SENT, DRAFT)(c.press);
+    check(
+      before.outcome === c.stock && after.outcome === c.patched,
+      `${c.label}: ${c.stock} -> ${c.patched}`,
+      `stock "${before.outcome}", patched "${after.outcome}"`,
+    );
+  }
+
+  console.log(
+    "\ndraft stash (one navigator, Cmd+Up twice then Cmd+Down twice)",
+  );
+  const session = patched(SENT, "my draft");
+  for (const step of WALK) {
+    const r = session({ key: step.key, meta: true, caret: 3 });
+    check(
+      r.outcome === "handled" && r.text === step.text,
+      `Cmd+${step.key.replace("Arrow", "")} recalls ${JSON.stringify(step.text)}`,
+      `got "${r.outcome}" with ${JSON.stringify(r.text)}`,
+    );
+  }
+
+  console.log("\npasted chunks (stashed with the draft, handed back with it)");
+  if (!tailSymbols.pastes) {
+    console.log(
+      "  n/a   this build's history holds text alone, so there is nothing to carry",
+    );
+  } else {
+    // The same walk in both forms, each by its own route to the history: the
+    // chord from mid-draft once patched, and on stock the bare key from the
+    // boundary Kilo's gate wants, which is where the handler itself leaves the
+    // caret after every recall.
+    const chord = patched(SENT, "my draft", PASTED);
+    const bare = stock(SENT, "my draft", PASTED);
+    let caret = 0;
+    for (const [i, step] of WALK.entries()) {
+      const want = WALK_CHUNKS[i];
+      const after = chord({ key: step.key, meta: true, caret: 3 });
+      const before = bare({ key: step.key, caret });
+      caret = before.caret;
+      const same = (r) =>
+        r.outcome === "handled" &&
+        r.text === step.text &&
+        JSON.stringify(r.chunks) === JSON.stringify(want);
+      check(
+        same(before) && same(after),
+        `${step.key.replace("Arrow", "")} to ${JSON.stringify(step.text)} ` +
+          `carries ${want.length === 0 ? "no chunks" : JSON.stringify(want)}, stock and patched alike`,
+        `stock "${before.outcome}" ${JSON.stringify(before.text)} ${JSON.stringify(before.chunks)}, ` +
+          `patched "${after.outcome}" ${JSON.stringify(after.text)} ${JSON.stringify(after.chunks)}`,
+      );
+    }
+  }
+}
 
 // --- math rendering ---------------------------------------------------------
 // Same argument as above, one step further. retarget proves the splice lands in
@@ -864,20 +1017,16 @@ function runMention(test, content) {
     );
     return;
   }
-  const entry = test.PATCHES.find(
-    (f) => f.filename === "webview.js",
-  ).patches.find(
-    (p) => p.feature === "mention-escape" && content.includes(p.original),
-  );
-  if (!entry) {
-    check(false, "no shipped mention-escape entry matches this build");
-    return;
-  }
-  check(
-    entry.original === derived.original && entry.patched === derived.patched,
-    "the mention-escape entry that applies here is the one the shape rule derives",
+  const entry = appliedEdit(
+    test,
+    rule,
+    content,
+    (shipped) =>
+      shipped.original === derived.original &&
+      shipped.patched === derived.patched,
     "shipped and derived text differ; run retarget",
   );
+  if (!entry) return;
 
   const module_ = mentionModule(content, test);
   const patchedSource = replaceLiteral(
@@ -921,126 +1070,21 @@ function main() {
   const content = source.bundles["webview.js"];
   if (content === undefined) throw new Error("no webview.js in this source");
 
-  const rule = RULES.find((r) => r.key === "chat-history");
-  const derived = rule.derive(content);
-  if (!derived.original) {
-    console.log(
-      `  FAIL  chat-history does not derive here: ${JSON.stringify(derived)}`,
-    );
-    return 1;
-  }
-  const symbols = derived.symbols;
-
-  // Exercise what ships, not what the rule rebuilds, since the shipped entry is
-  // what applies on a user's machine. retarget compares the two; if they have
-  // drifted, say so here rather than testing a pattern nobody runs.
-  const entry = test.PATCHES.find(
-    (f) => f.filename === "webview.js",
-  ).patches.find(
-    (p) => p.feature === "chat-history" && content.includes(p.original),
-  );
-  if (!entry) {
-    console.log("  FAIL  no shipped chat-history entry matches this build");
-    return 1;
-  }
-  check(
-    entry.original === derived.original,
-    "the chat-history entry that applies here is the one the shape rule derives",
-    "shipped and derived anchors differ; run retarget",
-  );
-
-  const module_ = historyModule(content);
-  const stockStatement = block(content, content.indexOf(entry.original));
-  const patchedBundle = replaceLiteral(content, entry.original, entry.patched);
-  const patchedStatement = block(
-    patchedBundle,
-    patchedBundle.indexOf(entry.patched),
-  );
-
-  const tailSymbols = historyTail(patchedStatement, symbols);
-  if (!tailSymbols) {
-    console.log(
-      "  FAIL  could not bind the locals the handler uses past the anchor " +
-        "(setter, resize, and the paste controller where there is one)",
-    );
-    return 1;
-  }
-
-  // A bare `return` (Kilo's selection guard) yields undefined from the wrapper,
-  // which the runner reports as "guard-return"; every other exit is explicit.
-  const label = (s) => s.replace(/return\}\}$/, 'return"handled"}}');
-  const stock = runner(module_, label(stockStatement), symbols, tailSymbols);
-  const patched = runner(
-    module_,
-    label(patchedStatement),
-    symbols,
-    tailSymbols,
-  );
-
-  console.log(
-    `keystrokes (event ${symbols.event}, history ${symbols.history}, ` +
-      `text ${symbols.text}, textarea ${symbols.textarea})`,
-  );
-  for (const c of CASES) {
-    const before = stock(SENT, DRAFT)(c.press);
-    const after = patched(SENT, DRAFT)(c.press);
-    check(
-      before.outcome === c.stock && after.outcome === c.patched,
-      `${c.label}: ${c.stock} -> ${c.patched}`,
-      `stock "${before.outcome}", patched "${after.outcome}"`,
-    );
-  }
-
-  console.log(
-    "\ndraft stash (one navigator, Cmd+Up twice then Cmd+Down twice)",
-  );
-  const session = patched(SENT, "my draft");
-  for (const step of WALK) {
-    const r = session({ key: step.key, meta: true, caret: 3 });
-    check(
-      r.outcome === "handled" && r.text === step.text,
-      `Cmd+${step.key.replace("Arrow", "")} recalls ${JSON.stringify(step.text)}`,
-      `got "${r.outcome}" with ${JSON.stringify(r.text)}`,
-    );
-  }
-
-  console.log("\npasted chunks (stashed with the draft, handed back with it)");
-  if (!tailSymbols.pastes) {
-    console.log(
-      "  n/a   this build's history holds text alone, so there is nothing to carry",
-    );
-  } else {
-    // The same walk in both forms, each by its own route to the history: the
-    // chord from mid-draft once patched, and on stock the bare key from the
-    // boundary Kilo's gate wants, which is where the handler itself leaves the
-    // caret after every recall.
-    const chord = patched(SENT, "my draft", PASTED);
-    const bare = stock(SENT, "my draft", PASTED);
-    let caret = 0;
-    for (const [i, step] of WALK.entries()) {
-      const want = WALK_CHUNKS[i];
-      const after = chord({ key: step.key, meta: true, caret: 3 });
-      const before = bare({ key: step.key, caret });
-      caret = before.caret;
-      const same = (r) =>
-        r.outcome === "handled" &&
-        r.text === step.text &&
-        JSON.stringify(r.chunks) === JSON.stringify(want);
-      check(
-        same(before) && same(after),
-        `${step.key.replace("Arrow", "")} to ${JSON.stringify(step.text)} ` +
-          `carries ${want.length === 0 ? "no chunks" : JSON.stringify(want)}, stock and patched alike`,
-        `stock "${before.outcome}" ${JSON.stringify(before.text)} ${JSON.stringify(before.chunks)}, ` +
-          `patched "${after.outcome}" ${JSON.stringify(after.text)} ${JSON.stringify(after.chunks)}`,
-      );
+  // Each section on its own, so a build that one of them cannot be run on
+  // still gets the rows of the others.
+  const sections = [
+    ["chat-history", runHistory],
+    ["math-rendering", runMath],
+    ["mention-escape", runMention],
+  ];
+  for (const [i, [key, run]] of sections.entries()) {
+    if (i > 0) console.log("");
+    try {
+      run(test, content);
+    } catch (err) {
+      check(false, `${key} could not be run on this build: ${err.message}`);
     }
   }
-
-  console.log("");
-  runMath(test, content);
-
-  console.log("");
-  runMention(test, content);
 
   return verdict();
 }

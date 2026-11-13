@@ -30,13 +30,8 @@
 //
 // Exit code is 0 when every rule is covered, 1 when anything is new or unclear,
 // which makes this usable as a post-update check.
-const path = require("path");
-const { loadExtension } = require("./lib/load");
-const {
-  resolveBundleSource,
-  assertPristine,
-  countOccurrences,
-} = require("./lib/bundle");
+const { parseArgs, openBuild } = require("./lib/cli");
+const { countOccurrences } = require("./lib/bundle");
 const {
   RULES,
   ATTACH_RULE,
@@ -46,22 +41,8 @@ const {
 } = require("./lib/rules");
 const { PROBES } = require("./lib/probes");
 
-function parseArgs(argv) {
-  const args = {};
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === "--ext") args.ext = argv[++i];
-    else if (argv[i] === "--vsix") args.vsix = argv[++i];
-    else if (argv[i] === "--fast") args.fast = true;
-    else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
-    else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
-  }
-  if (args.ext && args.vsix)
-    throw new Error("pass either --ext or --vsix, not both");
-  return args;
-}
-
 function main() {
-  const args = parseArgs(process.argv);
+  const args = parseArgs(process.argv, { "--fast": true });
   if (args.help) {
     console.log(
       "usage: node tools/retarget.js [--ext <path> | --vsix <path>] [--fast]",
@@ -69,16 +50,9 @@ function main() {
     return 0;
   }
 
-  const test = loadExtension();
-  const source = resolveBundleSource(test, args);
+  const { test, source } = openBuild(args);
   const bundles = source.bundles;
   const version = source.version;
-
-  console.log(`Kilo Code v${version}`);
-  console.log(
-    `  ${source.label}${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`,
-  );
-  assertPristine(bundles);
 
   // Every pattern currently shipped, keyed by original, so "already covered" is
   // an exact check against what src/patterns/ really contains. The patched

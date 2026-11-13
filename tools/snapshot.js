@@ -23,22 +23,10 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { parseArgs } = require("./lib/cli");
 const { loadExtension, shim, REPO_ROOT } = require("./lib/load");
 const { resolveBundleSource, assertPristine } = require("./lib/bundle");
 const { openVsix } = require("./lib/vsix");
-
-function parseArgs(argv) {
-  const args = {};
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === "--ext") args.ext = argv[++i];
-    else if (argv[i] === "--vsix") args.vsix = argv[++i];
-    else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
-    else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
-  }
-  if (args.ext && args.vsix)
-    throw new Error("pass either --ext or --vsix, not both");
-  return args;
-}
 
 const digest = (text) =>
   crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);

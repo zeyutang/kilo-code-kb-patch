@@ -25,13 +25,9 @@ const os = require("os");
 const path = require("path");
 const vm = require("vm");
 const { execFileSync } = require("child_process");
-const { loadExtension, shim, REPO_ROOT } = require("./lib/load");
-const {
-  resolveBundleSource,
-  assertPristine,
-  countOccurrences,
-  unpatched,
-} = require("./lib/bundle");
+const { parseArgs, openBuild, check, verdict } = require("./lib/cli");
+const { shim, REPO_ROOT } = require("./lib/load");
+const { countOccurrences, unpatched } = require("./lib/bundle");
 const {
   RULES,
   ATTACH_RULE,
@@ -240,7 +236,6 @@ function randomShapeViolations(count, seed) {
 // project already builds with, since telling a regex literal from a division
 // is not a job for a regex. Returns `file:line` for each call found.
 function patternReadingReplaces(file) {
-  // eslint-disable-next-line global-require
   const ts = require("typescript");
   const text = fs.readFileSync(file, "utf8");
   const sourceFile = ts.createSourceFile(
@@ -379,30 +374,6 @@ function clickAttachButton(edit, symbols) {
   };
 }
 
-let failures = 0;
-function check(condition, label, detail) {
-  if (condition) {
-    console.log(`  ok    ${label}`);
-  } else {
-    failures++;
-    console.log(`  FAIL  ${label}${detail ? `\n          ${detail}` : ""}`);
-  }
-  return condition;
-}
-
-function parseArgs(argv) {
-  const args = {};
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === "--ext") args.ext = argv[++i];
-    else if (argv[i] === "--vsix") args.vsix = argv[++i];
-    else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
-    else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
-  }
-  if (args.ext && args.vsix)
-    throw new Error("pass either --ext or --vsix, not both");
-  return args;
-}
-
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -410,14 +381,8 @@ async function main() {
     return 0;
   }
 
-  const test = loadExtension();
-  const source = resolveBundleSource(test, args);
+  const { test, source } = openBuild(args);
   const pristine = source.bundles;
-  console.log(
-    `Kilo Code v${source.version}\n  ${source.label}` +
-      `${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`,
-  );
-  assertPristine(pristine);
 
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "kb-patch-verify-"));
   const dist = path.join(sandbox, "dist");
@@ -4021,8 +3986,7 @@ async function main() {
     fs.rmSync(sandbox, { recursive: true, force: true });
   }
 
-  console.log(`\n${failures === 0 ? "PASS" : `FAIL (${failures})`}`);
-  return failures === 0 ? 0 : 1;
+  return verdict();
 }
 
 // Async because Restore Originals is: it writes the bonus settings back before

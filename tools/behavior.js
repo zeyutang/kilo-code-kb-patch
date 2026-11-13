@@ -47,36 +47,11 @@
 //   guard-return  Kilo's own selection guard stopped it, without preventDefault
 //   fell-through  the key reaches the handler's later branches, so the
 //                 platform's caret gesture survives
-const path = require("path");
-const { loadExtension } = require("./lib/load");
-const { resolveBundleSource, assertPristine } = require("./lib/bundle");
+const { parseArgs, openBuild, check, verdict } = require("./lib/cli");
 const { RULES, MATH_RULE, ID, esc, replaceLiteral } = require("./lib/rules");
 
 function findAll(content, source) {
   return [...content.matchAll(new RegExp(source, "g"))];
-}
-
-let failures = 0;
-function check(condition, label, detail) {
-  if (condition) console.log(`  ok    ${label}`);
-  else {
-    failures++;
-    console.log(`  FAIL  ${label}${detail ? `\n          ${detail}` : ""}`);
-  }
-  return condition;
-}
-
-function parseArgs(argv) {
-  const args = {};
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === "--ext") args.ext = argv[++i];
-    else if (argv[i] === "--vsix") args.vsix = argv[++i];
-    else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
-    else throw new Error(`unknown argument ${JSON.stringify(argv[i])}`);
-  }
-  if (args.ext && args.vsix)
-    throw new Error("pass either --ext or --vsix, not both");
-  return args;
 }
 
 // Brace-walk from an anchor offset to the end of the enclosing {...}.
@@ -471,10 +446,10 @@ function signature(html) {
 function runMath(test, content) {
   const rule = MATH_RULE.derive(content);
   if (!rule.original) {
-    console.log(
-      `  FAIL  math-rendering does not derive here: ${JSON.stringify(rule)}`,
+    check(
+      false,
+      `math-rendering does not derive here: ${JSON.stringify(rule)}`,
     );
-    failures++;
     return;
   }
   // Exercise what the extension would actually apply here: a shipped entry
@@ -883,10 +858,10 @@ function runMention(test, content) {
   const rule = RULES.find((r) => r.key === "mention-escape");
   const derived = rule.derive(content);
   if (!derived.original) {
-    console.log(
-      `  FAIL  mention-escape does not derive here: ${JSON.stringify(derived)}`,
+    check(
+      false,
+      `mention-escape does not derive here: ${JSON.stringify(derived)}`,
     );
-    failures++;
     return;
   }
   const entry = test.PATCHES.find(
@@ -895,8 +870,7 @@ function runMention(test, content) {
     (p) => p.feature === "mention-escape" && content.includes(p.original),
   );
   if (!entry) {
-    console.log("  FAIL  no shipped mention-escape entry matches this build");
-    failures++;
+    check(false, "no shipped mention-escape entry matches this build");
     return;
   }
   check(
@@ -912,10 +886,10 @@ function runMention(test, content) {
     entry.patched,
   );
   if (patchedSource === module_.source) {
-    console.log(
-      "  FAIL  the shipped mention-escape site is not inside the sliced controller",
+    check(
+      false,
+      "the shipped mention-escape site is not inside the sliced controller",
     );
-    failures++;
     return;
   }
   const stock = mentionSession(module_);
@@ -942,13 +916,7 @@ function main() {
     return 0;
   }
 
-  const test = loadExtension();
-  const source = resolveBundleSource(test, args);
-  console.log(
-    `Kilo Code v${source.version}\n  ${source.label}` +
-      `${source.kind === "vsix" ? " (vsix, pristine)" : ""}\n`,
-  );
-  assertPristine(source.bundles);
+  const { test, source } = openBuild(args);
 
   const content = source.bundles["webview.js"];
   if (content === undefined) throw new Error("no webview.js in this source");
@@ -1074,8 +1042,7 @@ function main() {
   console.log("");
   runMention(test, content);
 
-  console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
-  return failures === 0 ? 0 : 1;
+  return verdict();
 }
 
 try {

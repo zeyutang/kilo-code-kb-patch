@@ -56,6 +56,7 @@ const SECTIONS = [
   "shape-literals",
   "derivation",
   "commands",
+  "activate",
   "fingerprint",
   "editor-title",
   "settings",

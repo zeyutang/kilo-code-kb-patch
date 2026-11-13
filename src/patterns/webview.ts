@@ -20,7 +20,7 @@ export const WEBVIEW_PATCHES: FilePatches = {
     //     string. The chat-history rule spelled that call out, so 2.1.5
     //     derived the six other patches that moved here and left Up/Down on
     //     Kilo's own routing. The rule now captures what Kilo declares ahead
-    //     of the call and passes after the caret (see src/rules/core.js). The
+    //     of the call and passes after the caret (see src/rules/core.ts). The
     //     edit is what it always was: the gate that reads the caret is
     //     byte-identical to 7.8.1's apart from its name.
     //
@@ -1075,7 +1075,7 @@ export const WEBVIEW_PATCHES: FilePatches = {
     // anchor runs from the mention controller's onInput trigger test
     // through its onKeyDown Escape branch: that span binds the dead-query
     // slot J, the "@" offset se, the text pt, the close Ie and the query
-    // accessor l, every symbol the two edits reference (see src/rules/core.js).
+    // accessor l, every symbol the two edits reference (see src/rules/core.ts).
     {
       feature: "mention-escape",
       original:

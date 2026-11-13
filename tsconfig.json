@@ -1,11 +1,6 @@
 {
   "compilerOptions": {
     "module": "commonjs",
-    // src/rules/ is plain JS on purpose: the offline harness loads the same
-    // bundle the extension requires (out/rules.js), so the shipped rules and
-    // the ones retarget proposes are one copy. Its surface is declared in
-    // src/rules/index.d.ts.
-    "allowJs": true,
     "target": "ES2021",
     "lib": ["ES2021"],
     // Type checking only. tools/build.js bundles out/, which keeps it two

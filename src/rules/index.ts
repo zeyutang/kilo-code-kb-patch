@@ -26,30 +26,13 @@
 // `data`, values the edit writes that are not names in the bundle's scope (a
 // glyph key, say). The extension derives at apply only when every symbol is a
 // whole token of the anchor or of a hop, and every hop lies near the edit.
+//
+// The extension imports what it derives with, and the offline harness requires
+// the same bundle (out/rules.js) for that and for what it checks the engine by
+// (the literal extractor, the prefilter switch, the chat-history limit), so
+// both run one instance of the engine.
 
-const {
-  ID,
-  esc,
-  countIn,
-  replaceLiteral,
-  longestLiteral,
-  withoutPrefilter,
-  findAll,
-} = require("./engine");
-const { HISTORY_DECLARATIONS_LIMIT, RULES } = require("./core");
-const {
-  ATTACH_RULE,
-  mathExtensions,
-  MATH_RULE,
-  RAW_MARKDOWN_RULE,
-} = require("./bonus");
-
-module.exports = {
-  RULES,
-  ATTACH_RULE,
-  MATH_RULE,
-  RAW_MARKDOWN_RULE,
-  mathExtensions,
+export {
   ID,
   esc,
   countIn,
@@ -57,5 +40,7 @@ module.exports = {
   findAll,
   withoutPrefilter,
   longestLiteral,
-  HISTORY_DECLARATIONS_LIMIT,
-};
+} from "./engine";
+export type { BonusRule, DeriveResult, ShapeRule } from "./engine";
+export { HISTORY_DECLARATIONS_LIMIT, RULES } from "./core";
+export { ATTACH_RULE, MATH_RULE, RAW_MARKDOWN_RULE } from "./bonus";

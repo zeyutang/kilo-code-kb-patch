@@ -65,7 +65,7 @@ const common = {
 const BUILDS = [
   {
     ...common,
-    entryPoints: [path.join(RULES_DIR, "index.js")],
+    entryPoints: [path.join(RULES_DIR, "index.ts")],
     outfile: path.join(ROOT, "out", "rules.js"),
   },
   {

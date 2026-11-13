@@ -1,9 +1,52 @@
 // The engine every shape rule is built on: identifier placeholders, literal
-// replacement, the candidate prefilter, and the helpers rules share.
+// replacement, the candidate prefilter, the helpers rules share, and what a
+// rule reports.
 
-const ID = "[A-Za-z_$][A-Za-z0-9_$]*";
+// What a rule reports: the edit it derived, or why it could not (see the
+// outcomes in index.ts).
+export interface DeriveResult {
+  original?: string;
+  patched?: string;
+  symbols?: Record<string, string>;
+  matches?: number;
+  error?: string;
+  // The edit for entries shipped before a rule widened its anchor, which
+  // still read as covered.
+  legacy?: { original: string; patched: string };
+  // What the matched form does, for a rule whose forms differ in that.
+  description?: (version: string) => string;
+  // Which of its forms a rule with several matched.
+  form?: string;
+  // The further matches a rule read a symbol from, where the edit names
+  // something its own anchor does not contain. See `admissibility`.
+  hops?: Hop[];
+  // Values the edit writes that are not names in the bundle's scope.
+  data?: Record<string, string>;
+}
 
-function esc(literal) {
+// A span a rule matched: where it sits in the bundle and its text.
+export interface Hop {
+  index: number;
+  text: string;
+}
+
+export interface ShapeRule {
+  key: string;
+  file: string;
+  description: (version: string) => string;
+  derive: (content: string) => DeriveResult;
+}
+
+// A bonus rule carries no description, since the bonus lists it feeds are
+// captioned in the status view rather than in an apply log.
+export type BonusRule = Omit<ShapeRule, "description">;
+
+// A regex source for one identifier, the placeholder every shape is written
+// with.
+export const ID = "[A-Za-z_$][A-Za-z0-9_$]*";
+
+// A literal made safe to embed in a regex source.
+export function esc(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
@@ -20,7 +63,11 @@ function esc(literal) {
 // moves patch text goes through here: the rules that build an edit by
 // replacing inside the text they matched, Apply, Restore, the bonus
 // reconcilers, and the harness when it reverses or stages one.
-function replaceLiteral(text, find, put) {
+export function replaceLiteral(
+  text: string,
+  find: string,
+  put: string,
+): string {
   return text.replace(find, () => put);
 }
 
@@ -42,7 +89,13 @@ const CANDIDATE_WINDOW = 8192;
 
 // The escapes that stand for one fixed character, which a literal run can
 // carry as that character.
-const CHARACTER_ESCAPE = { n: "\n", r: "\r", t: "\t", f: "\f", v: "\v" };
+const CHARACTER_ESCAPE: Record<string, string> = {
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  f: "\f",
+  v: "\v",
+};
 
 // The longest run of literal characters that every match of a regex source is
 // certain to contain, or "" when nothing is certain. It nominates the offsets
@@ -61,14 +114,14 @@ const CHARACTER_ESCAPE = { n: "\n", r: "\r", t: "\t", f: "\f", v: "\v" };
 // text beside the match rather than in it). The characters that spell a
 // group's kind (`?:`, `?<name>`) are syntax, not text. An alternation at the
 // top level leaves nothing certain at all.
-function longestLiteral(source) {
+export function longestLiteral(source: string): string {
   let i = 0;
 
   // The quantifier that starts at `i`, if one does: the fewest repeats it
   // allows. Moves past it and past the `?` that makes it lazy.
-  const quantifier = () => {
+  const quantifier = (): number | undefined => {
     const c = source[i];
-    let fewest;
+    let fewest: number;
     if (c === "?" || c === "*") fewest = 0;
     else if (c === "+") fewest = 1;
     else if (c === "{") {
@@ -85,8 +138,8 @@ function longestLiteral(source) {
   // One list of alternatives, up to the `)` that closes it or the end of the
   // source: the runs each match is certain to contain if this list is, in the
   // order they appear, and whether it held a `|`.
-  const alternatives = () => {
-    const runs = [];
+  const alternatives = (): { runs: string[]; alternated: boolean } => {
+    const runs: string[] = [];
     let run = "";
     let alternated = false;
     const end = () => {
@@ -142,7 +195,7 @@ function longestLiteral(source) {
         const next = source[i + 1];
         i += 2;
         if (next === undefined) break;
-        const past = (closer) => {
+        const past = (closer: string) => {
           const close = source.indexOf(closer, i);
           i = close === -1 ? source.length : close + 1;
         };
@@ -199,8 +252,8 @@ function longestLiteral(source) {
   return best;
 }
 
-const literalCache = new Map();
-function shapeLiteral(source) {
+const literalCache = new Map<string, string>();
+function shapeLiteral(source: string): string {
   let lit = literalCache.get(source);
   if (lit === undefined) {
     lit = longestLiteral(source);
@@ -217,7 +270,7 @@ function shapeLiteral(source) {
 // byte-identical output, which is what keeps the extraction honest per build
 // rather than per review.
 let prefilterEnabled = true;
-function withoutPrefilter(fn) {
+export function withoutPrefilter<T>(fn: () => T): T {
   prefilterEnabled = false;
   try {
     return fn();
@@ -226,7 +279,7 @@ function withoutPrefilter(fn) {
   }
 }
 
-function findAll(content, source) {
+export function findAll(content: string, source: string): RegExpExecArray[] {
   const literal = prefilterEnabled ? shapeLiteral(source) : "";
   // Short of two windows there is nothing to save, and slices this size are
   // where the two-hop rules do their local scans.
@@ -234,7 +287,7 @@ function findAll(content, source) {
     return [...content.matchAll(new RegExp(source, "g"))];
   }
 
-  const found = new Map();
+  const found = new Map<number, RegExpExecArray>();
   let at = 0;
   while ((at = content.indexOf(literal, at)) !== -1) {
     // Widen on the rare chance that a match reaches a window edge, so the
@@ -270,7 +323,7 @@ function findAll(content, source) {
 // know where its edit lands within the bytes it anchored, and for admission,
 // which needs an edit to occur exactly once. An empty needle occurs nowhere,
 // where the search would otherwise find it at the same offset forever.
-function countIn(haystack, needle) {
+export function countIn(haystack: string, needle: string): number {
   if (!needle) return 0;
   let count = 0;
   let i = 0;
@@ -288,7 +341,7 @@ function countIn(haystack, needle) {
 // the scope they sit in, while the `function` keyword is how this bundle opens
 // a component or a helper with a scope of its own. A quote beside the word is
 // Solid's `typeof ref=="function"` check rather than a declaration.
-function crossesFunction(text) {
+export function crossesFunction(text: string): boolean {
   return /(?<![\w$."'`])function(?![\w$"'`])/.test(text);
 }
 
@@ -300,28 +353,46 @@ function crossesFunction(text) {
 // Counting any of them would refuse a build the edit is sound on, which leaves
 // its users on stock Kilo for nothing. The boundary is not `\b`, which reads
 // `$` as one and would let `$e` answer for `e`.
-function namesToken(text, name) {
+export function namesToken(text: string, name: string): boolean {
   return new RegExp(`(?<![\\w$."'\`])${esc(name)}(?![\\w$"'\`])`).test(text);
 }
 
 // A matched span as a rule reports it to apply-time admission: where it sits
 // in the bundle and the text it matched, so the extension can check that the
 // symbols read from it lie near the edit (see `hops` in DeriveResult).
-function hop(match) {
+export function hop(match: RegExpExecArray): Hop {
   return { index: match.index, text: match[0] };
 }
 
 // The identifier a capture group holds, for the emitted symbol map.
-function symbolMap(names, match) {
-  const out = {};
+function symbolMap(
+  names: string[],
+  match: RegExpExecArray,
+): Record<string, string> {
+  const out: Record<string, string> = {};
   names.forEach((name, i) => {
     out[name] = match[i + 1];
   });
   return out;
 }
 
+// One shape and how to rebuild its edit from a match: the captures are the
+// symbols, named in capture order.
+interface Shape {
+  shape: string;
+  names: string[];
+  build: (match: RegExpExecArray) => string;
+}
+
 // Most rules are a single shape plus a rebuild function.
-function shapeRule({ key, file, shape, names, build, description }) {
+export function shapeRule({
+  key,
+  file,
+  shape,
+  names,
+  build,
+  description,
+}: Shape & Omit<ShapeRule, "derive">): ShapeRule {
   return {
     key,
     file,
@@ -346,7 +417,12 @@ function shapeRule({ key, file, shape, names, build, description }) {
 // matches exactly once. Two forms matching at once is an aliasing hazard, so it
 // is reported as ambiguous rather than resolved by list order, the same
 // contract shapeRule holds for two matches of one shape.
-function formsRule({ key, file, forms, description }) {
+export function formsRule({
+  key,
+  file,
+  forms,
+  description,
+}: { forms: Shape[] } & Omit<ShapeRule, "derive">): ShapeRule {
   return {
     key,
     file,
@@ -367,18 +443,3 @@ function formsRule({ key, file, forms, description }) {
     },
   };
 }
-
-module.exports = {
-  ID,
-  esc,
-  replaceLiteral,
-  longestLiteral,
-  withoutPrefilter,
-  findAll,
-  countIn,
-  crossesFunction,
-  namesToken,
-  hop,
-  shapeRule,
-  formsRule,
-};

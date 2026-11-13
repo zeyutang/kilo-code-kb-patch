@@ -133,7 +133,7 @@ interface Splice {
 // toggle the part's raw-text accessor), which used to keep them on reviewed
 // literals alone. Their rules now read each of those from a hop pinned to the
 // same component by properties no re-minify can move (see
-// src/rules/bonus.js), and admission checks that every hop lies near the edit,
+// src/rules/bonus.ts), and admission checks that every hop lies near the edit,
 // so a hop that drifts into another component refuses rather than binding the
 // wrong name. The attach button's pre-7.6.0 text-button form still
 // reaches megabytes away for its sprite component and is refused on that

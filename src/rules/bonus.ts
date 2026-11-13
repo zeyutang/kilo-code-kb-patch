@@ -1,14 +1,15 @@
 // The shape rules for the bonus splices: the attach-file button, the math
 // extensions and the markdown-source toggle.
 
-const { ID, esc, findAll, countIn, crossesFunction, hop } = require("./engine");
+import { ID, countIn, crossesFunction, esc, findAll, hop } from "./engine";
+import type { BonusRule, Hop } from "./engine";
 
 // Sprite map keys are minified, so a key is quoted only when it has to be:
 // `"plus-small"` must be quoted because of the hyphen, while `plus` is a valid
 // identifier and is emitted bare. Grepping only the quoted form therefore
 // reports the larger glyph as missing when it is present, which is exactly the
 // false negative that pushed the 7.4.13+ buttons onto the small glyph.
-function hasSpriteGlyph(content, name) {
+function hasSpriteGlyph(content: string, name: string): boolean {
   if (content.includes(`"${name}":`)) return true;
   // A name that is not a bare identifier can only ever appear quoted.
   if (!new RegExp(`^${ID}$`).test(name)) return false;
@@ -33,7 +34,10 @@ const GLYPH_PREFERENCE = ["plus", "plus-small"];
 // hardcoding this row's label. The catalog form is the quoted key with a
 // colon, which the injected t() call does not contain, so the test cannot be
 // confused by a patched bundle.
-function attachLabelExpression(content, i18n) {
+function attachLabelExpression(
+  content: string,
+  i18n: string | undefined,
+): string {
   return content.includes('"prompt.action.attachFile":')
     ? `${i18n}.t("prompt.action.attachFile")`
     : '"Attach file"';
@@ -47,7 +51,9 @@ function attachLabelExpression(content, i18n) {
 // declaration as a hop, since the component is module-level and sits nowhere
 // near the toolbar, which is also why the form that needs it (the pre-7.6.0
 // text button) is left to reviewed entries rather than derived at apply.
-function deriveIconComponent(content) {
+function deriveIconComponent(
+  content: string,
+): { name: string; hop: Hop } | undefined {
   // findAll rather than String.match so these two scans are prefiltered like
   // every other; taking the first hit of an ordered list is what an unanchored
   // match() returns anyway.
@@ -90,7 +96,7 @@ const MENTION_WINDOW = 8192;
 // pins to the toolbar's own render function, by properties no re-minify can
 // move, and the extension additionally checks that every hop lies near the
 // edit before it lets a derived button be written (see `admissible`).
-const ATTACH_RULE = {
+export const ATTACH_RULE: BonusRule = {
   key: "attach-button",
   file: "webview.js",
   derive(content) {
@@ -213,7 +219,7 @@ const ATTACH_RULE = {
       windowStart,
       anchor.index + NEIGHBOUR_WINDOW + 1024,
     );
-    const nearAnchor = (source) =>
+    const nearAnchor = (source: string) =>
       [...windowText.matchAll(new RegExp(source, "g"))]
         .map((m) => {
           m.index += windowStart;
@@ -244,9 +250,9 @@ const ATTACH_RULE = {
     // does. The getter that closes has to be the anchor's own: another
     // action's getter declaring the same wrapper first would make this match
     // that one's end.
-    let wrapperTemplate;
-    let marker;
-    let markerHop;
+    let wrapperTemplate: string | undefined;
+    let marker: string | undefined;
+    let markerHop: Hop | undefined;
     if (wrapped) {
       const wrapperLocal = anchor[6];
       wrapperTemplate = anchor[7];
@@ -278,8 +284,8 @@ const ATTACH_RULE = {
     // The caption reads Kilo's catalog only where the catalog still carries
     // the key, which no build since 7.4.17 does, so the accessor is looked up
     // (and reported as a symbol the edit names) only then.
-    let i18n;
-    let i18nHop;
+    let i18n: string | undefined;
+    let i18nHop: Hop | undefined;
     if (content.includes('"prompt.action.attachFile":')) {
       const i18nMatches = findAll(
         content,
@@ -336,7 +342,7 @@ const ATTACH_RULE = {
       : `{variant:"ghost",size:"small",`;
     const child = asIconButton
       ? ""
-      : `,get children(){return ${create}(${icon.name},{name:"${glyph}",size:"small"})}`;
+      : `,get children(){return ${create}(${icon!.name},{name:"${glyph}",size:"small"})}`;
     const tip =
       `${create}(${tooltip},{get value(){return ${label}},` +
       `placement:"top",get children(){return ${create}(${ghost},${open}` +
@@ -366,7 +372,7 @@ const ATTACH_RULE = {
         container,
         create,
         tooltip,
-        ...(wrapped ? { wrapper: wrapperTemplate, marker } : {}),
+        ...(wrapped ? { wrapper: wrapperTemplate!, marker: marker! } : {}),
         ghost,
         ...(icon ? { icon: icon.name } : {}),
         ...(i18n ? { i18n } : {}),
@@ -401,7 +407,7 @@ const ATTACH_RULE = {
 // marked's use() *unshifts* each tokenizer, so last-registered is first-tried;
 // the `$...$` regex fails immediately on `$$` precisely so that Kilo's own
 // `$$...$$` extension keeps priority regardless.
-const MATH_EXTENSION_SOURCES = [
+const MATH_EXTENSION_SOURCES: ((render: string) => string)[] = [
   (render) =>
     `{name:"kbpKatexInlineDollar",level:"inline",start(_e){let _i=_e.indexOf("$");if(_i!==-1)return _i},` +
     `tokenizer(_e){let _m=_e.match(/^\\$([^\\s$](?:[^$\\n]*?[^\\s$])?)\\$(?!\\d)/);` +
@@ -419,11 +425,11 @@ const MATH_EXTENSION_SOURCES = [
     `renderer(_n){return ${render}(_n.text,{displayMode:!0,throwOnError:!1})}}`,
 ];
 
-function mathExtensions(render) {
+function mathExtensions(render: string): string {
   return MATH_EXTENSION_SOURCES.map((build) => build(render)).join(",");
 }
 
-const MATH_RULE = {
+export const MATH_RULE: BonusRule = {
   key: "math-rendering",
   file: "webview.js",
   derive(content) {
@@ -507,7 +513,7 @@ const COPY_HANDLER_WINDOW = 8192;
 // name is what makes the icon render.
 const RAW_MARKDOWN_GLYPH = "code-lines";
 
-const RAW_MARKDOWN_RULE = {
+export const RAW_MARKDOWN_RULE: BonusRule = {
   key: "raw-markdown",
   file: "webview.js",
   derive(content) {
@@ -603,11 +609,4 @@ const RAW_MARKDOWN_RULE = {
       hops: [hop(handler)],
     };
   },
-};
-
-module.exports = {
-  ATTACH_RULE,
-  mathExtensions,
-  MATH_RULE,
-  RAW_MARKDOWN_RULE,
 };

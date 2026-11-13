@@ -1,20 +1,21 @@
 // The shape rules for the core patches, one per feature.
 
-const {
+import {
   ID,
-  esc,
-  replaceLiteral,
-  findAll,
   countIn,
-  namesToken,
-  shapeRule,
+  esc,
+  findAll,
   formsRule,
-} = require("./engine");
+  namesToken,
+  replaceLiteral,
+  shapeRule,
+} from "./engine";
+import type { DeriveResult, ShapeRule } from "./engine";
 
 // Chat input and KiloClaw chat share one shape: an Enter-check helper guarding a
 // send call, suppressed by Shift. The edit swaps "not Shift" for "Meta".
 const ENTER_SEND_SHAPE = `(${ID})\\((${ID})\\)&&!\\2\\.shiftKey&&\\(\\2\\.preventDefault\\(\\),(${ID})\\(\\)\\)`;
-const enterSendBuild = (m) =>
+const enterSendBuild = (m: RegExpExecArray) =>
   `${m[1]}(${m[2]})&&(${m[2]}.metaKey||${m[2]}.ctrlKey)&&(${m[2]}.preventDefault(),${m[3]}())`;
 
 // The two live forms of the mention controller, for the `mention-escape` rule
@@ -29,7 +30,7 @@ const enterSendBuild = (m) =>
 // test's arguments are the volatile part (7.7.0 rewrote them outright). Every
 // symbol the splice writes is inside the span, which is what the 7.4.22
 // aliasing lesson requires.
-function deriveMentionClear(content) {
+function deriveMentionClear(content: string): DeriveResult {
   const hits = findAll(
     content,
     String.raw`let (${ID})=(${ID})\.substring\(0,(${ID})\),(${ID})=\1\.match\((${ID})\);` +
@@ -68,7 +69,7 @@ function deriveMentionClear(content) {
 // branch (binding the query accessor and the event). The bare Escape branch is
 // not unique on its own, the slash-command menu has the same one, so the two
 // hops are what make the site identifiable.
-function deriveMentionRecordAndClear(content) {
+function deriveMentionRecordAndClear(content: string): DeriveResult {
   const heads = findAll(
     content,
     String.raw`let (${ID})=(${ID})\.substring\(0,(${ID})\)\.match\((${ID})\);` +
@@ -135,9 +136,9 @@ function deriveMentionRecordAndClear(content) {
 // `let` statement. The one declaration there since 7.8.2 is 33 bytes, so this
 // leaves room for several more while a span that long with no `;` and no brace
 // in it is still a declaration list rather than a run into other code.
-const HISTORY_DECLARATIONS_LIMIT = 160;
+export const HISTORY_DECLARATIONS_LIMIT = 160;
 
-const RULES = [
+export const RULES: ShapeRule[] = [
   shapeRule({
     key: "chat-input",
     file: "webview.js",
@@ -490,8 +491,3 @@ const RULES = [
       `KiloClaw chat: Enter→newline, Cmd/Ctrl+Enter→send (v${v}+)`,
   }),
 ];
-
-module.exports = {
-  HISTORY_DECLARATIONS_LIMIT,
-  RULES,
-};

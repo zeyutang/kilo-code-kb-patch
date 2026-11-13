@@ -16,8 +16,10 @@ function parseArgs(argv, own = {}) {
     else if (flag === "--vsix") args.vsix = argv[++i];
     else if (flag === "--help" || flag === "-h") args.help = true;
     else if (own[flag] === true) args[flag.slice(2)] = true;
-    else if (own[flag] === "value") args[flag.slice(2)] = argv[++i];
-    else throw new Error(`unknown argument ${JSON.stringify(flag)}`);
+    else if (own[flag] === "value") {
+      if (i + 1 >= argv.length) throw new Error(`${flag} needs a value`);
+      args[flag.slice(2)] = argv[++i];
+    } else throw new Error(`unknown argument ${JSON.stringify(flag)}`);
   }
   if (args.ext && args.vsix)
     throw new Error("pass either --ext or --vsix, not both");

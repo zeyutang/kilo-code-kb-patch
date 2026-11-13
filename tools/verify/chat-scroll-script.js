@@ -174,19 +174,41 @@ module.exports = {
               test.chatScriptBlock(key, pristineJs),
             ) === 1,
         );
-      shim.setConfig({ addAttachFileButton: true, chatMathRendering: true });
-      test.reconcileAttachFileButton(sandbox);
-      test.reconcileMathRendering(sandbox);
+      // Every splice the extension lists goes through the toggle, and each
+      // one this build can carry has to land, so a splice whose setting is
+      // missing from the list below fails here rather than sitting it out.
+      const splices = test.DERIVABLE_BONUSES.map((key) => ({
+        key,
+        marker: test.DERIVED_BONUS_MARKERS[key],
+        carried:
+          test.shippedBonusVariant(pristineJs, key) !== undefined ||
+          test.deriveBonus(key, pristineJs) !== undefined,
+      }));
+      const reconcileSplices = () => {
+        for (const { key } of splices)
+          test.reconcileDerivableBonus(sandbox, key);
+      };
+      const splicesIn = () =>
+        splices.every(
+          (s) => countOccurrences(scriptOn(), s.marker) === (s.carried ? 1 : 0),
+        );
+      shim.setConfig({
+        addAttachFileButton: true,
+        chatMathRendering: true,
+        chatRawMarkdownButton: true,
+      });
+      reconcileSplices();
       check(
-        coreBlocksWhole() && jsRow() === "patched",
-        "enabling the bundle bonuses leaves the block in place",
+        splicesIn() && coreBlocksWhole() && jsRow() === "patched",
+        "enabling the bundle bonuses writes each one this build carries and leaves the block in place",
       );
       shim.setConfig({});
-      test.reconcileAttachFileButton(sandbox);
-      test.reconcileMathRendering(sandbox);
+      reconcileSplices();
       check(
-        coreBlocksWhole() && jsRow() === "patched",
-        "disabling them does too",
+        splices.every((s) => !scriptOn().includes(s.marker)) &&
+          coreBlocksWhole() &&
+          jsRow() === "patched",
+        "disabling them takes each one out and leaves the block in place too",
       );
 
       const removed = test.reconcileChatScript(sandbox, false);

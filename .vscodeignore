@@ -1,4 +1,5 @@
 .vscode/**
+.kilo/**
 src/**
 tools/**
 node_modules/**

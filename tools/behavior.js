@@ -471,15 +471,46 @@ function markedInstance(content) {
   return init[2];
 }
 
+// A lazily initialized module's initializer: `var <names>,<init>=<helper>(()=>{`.
+// By 7.8.8 esbuild emits Kilo's modules this way, with each module's functions
+// hoisted ahead of the statement and the rest of the module moved into the
+// arrow, which runs when something first needs the module. `names` are the
+// module's other top-level names, declared by the statement and assigned in
+// the arrow.
+const INITIALIZER = `var ((?:${ID},)*)(${ID})=(${ID})\\(\\(\\)=>\\{`;
+
+// The one initializer that opens in `text`, as the parts the slicers need.
+function initializerIn(text, what) {
+  const found = [...text.matchAll(new RegExp(INITIALIZER, "g"))];
+  if (found.length !== 1) {
+    throw new Error(`${found.length} module initializers around ${what}`);
+  }
+  const [, names, init, helper] = found[0];
+  return { names: names.split(",").filter(Boolean), init, helper };
+}
+
 // That copy of marked, as raw bytes. The tail is the re-export block the module
-// ends with; the head is the last defaults factory declared before it.
+// ends with; the head is the last defaults factory declared before it. A
+// lazily initialized copy ends inside its initializer instead, which the copy
+// has to run before its instance is complete, so the initializer comes back
+// with the bytes, along with the helper that makes it.
 function markedModule(content, instance) {
-  const tail = new RegExp(
-    `${esc(instance)}\\.parse=${esc(instance)};var (${ID})=${esc(instance)}\\.options,` +
-      `(${ID})=${esc(instance)}\\.setOptions,(${ID})=${esc(instance)}\\.use,` +
-      `(${ID})=${esc(instance)}\\.walkTokens,(${ID})=${esc(instance)}\\.parseInline;` +
+  const i = esc(instance);
+  const eager = new RegExp(
+    `${i}\\.parse=${i};var (${ID})=${i}\\.options,` +
+      `(${ID})=${i}\\.setOptions,(${ID})=${i}\\.use,` +
+      `(${ID})=${i}\\.walkTokens,(${ID})=${i}\\.parseInline;` +
       `var (${ID})=(${ID})\\.parse,(${ID})=(${ID})\\.lex;`,
   ).exec(content);
+  const lazy = eager
+    ? undefined
+    : new RegExp(
+        `${i}\\.parse=${i};(${ID})=${i}\\.options,` +
+          `(${ID})=${i}\\.setOptions,(${ID})=${i}\\.use,` +
+          `(${ID})=${i}\\.walkTokens,(${ID})=${i}\\.parseInline,` +
+          `(${ID})=(${ID})\\.parse,(${ID})=(${ID})\\.lex\\}\\);`,
+      ).exec(content);
+  const tail = eager ?? lazy;
   if (!tail) throw new Error("no marked re-export block for this instance");
   const end = tail.index + tail[0].length;
 
@@ -491,12 +522,20 @@ function markedModule(content, instance) {
   if (defaults.length === 0)
     throw new Error("no marked defaults factory before the re-exports");
   const start = defaults[defaults.length - 1].index;
-  return content.slice(start, end);
+  const source = content.slice(start, end);
+  if (eager) return { source };
+  const { init, helper } = initializerIn(source, "marked");
+  return { source, init, helper };
 }
 
 // The katex helpers Kilo declares around its packs: the two `$$` regexes, the
 // render helper that wraps katex.renderToString, and the `\(...\)` pack. One
-// contiguous run, from the block regex to the `\(...\)` renderer that ends it.
+// contiguous run, from the block regex to the `\(...\)` renderer that ends it,
+// until Kilo's markdown module was initialized lazily too. Its functions (the
+// render helper through the renderer) then sit ahead of its initializer, and
+// the regexes and the pack are assigned inside it, so the two runs are taken
+// apart and the assignments get the declarations the initializer's statement
+// makes for them.
 function katexHelpers(content) {
   const start = new RegExp(`(${ID})=/\\^\\\\\\$\\\\\\$\\\\n`).exec(content);
   if (!start) throw new Error("no $$-block regex in this build");
@@ -515,11 +554,36 @@ function katexHelpers(content) {
   ).exec(content);
   if (!inlinePack) throw new Error("no inlineKatex pack in this build");
 
+  if (start.index < render.index) {
+    return {
+      // `var` because the run starts mid-declaration-list in the bundle.
+      source:
+        "var " +
+        content.slice(start.index, tailShape.index + tailShape[0].length),
+      katex: render[4],
+      inlinePack: inlinePack[1],
+    };
+  }
+  const functions = content.slice(
+    render.index,
+    tailShape.index + tailShape[0].length,
+  );
+  const { names } = initializerIn(
+    content.slice(content.lastIndexOf("var ", start.index), start.index),
+    "the katex helpers",
+  );
+  if (!names.includes(start[1]) || !names.includes(inlinePack[1])) {
+    throw new Error("the katex regexes and pack are not its initializer's");
+  }
+  const packOpen = inlinePack.index + inlinePack[0].indexOf("{");
+  const packEnd = packOpen + block(content, packOpen).length;
+  if (!/[;,]/.test(content[packEnd])) {
+    throw new Error("the inlineKatex pack does not end where it should");
+  }
   return {
-    // `var` because the run starts mid-declaration-list in the bundle.
     source:
-      "var " +
-      content.slice(start.index, tailShape.index + tailShape[0].length),
+      `${functions}\nvar ${names.join(",")};\n` +
+      `${content.slice(start.index, packEnd)};`,
     katex: render[4],
     inlinePack: inlinePack[1],
   };
@@ -537,8 +601,22 @@ function katexPack(content, tail) {
 }
 
 // A parse() closed over one registration of the two packs. marked's use()
-// mutates the instance, so each side gets its own copy of the module.
+// mutates the instance, so each side gets its own copy of the module. A lazily
+// initialized copy is run once, through a stand-in for esbuild's helper.
 function parser(module_, helpers, packSrc) {
+  const initialized = module_.init
+    ? `const ${module_.helper} = (body) => {
+  let done = false;
+  return () => {
+    if (!done) {
+      done = true;
+      body();
+    }
+  };
+};
+${module_.source}
+${module_.init}();`
+    : module_.source;
   const src = `
 "use strict";
 const ${helpers.katex} = {
@@ -546,7 +624,7 @@ const ${helpers.katex} = {
     return "<KATEX " + (opts.displayMode ? "display" : "inline") + ">" + tex + "</KATEX>";
   },
 };
-${module_}
+${initialized}
 ${helpers.source}
 const __instance = ${helpers.marked}.use(${helpers.inlinePack}, ${packSrc});
 return (md) => __instance.parse(md);
@@ -655,7 +733,7 @@ function runMath(test, content) {
 
   console.log(
     `markdown (marked ${instance}, katex ${helpers.katex}, ` +
-      `render ${rule.symbols.render}, ${module_.length} bytes sliced)`,
+      `render ${rule.symbols.render}, ${module_.source.length} bytes sliced)`,
   );
   for (const c of MATH_CASES) {
     const before = signature(stock(c.md));
